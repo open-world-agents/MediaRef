@@ -1,5 +1,6 @@
 """Batch loading utilities for MediaRef."""
 
+import warnings
 from collections import defaultdict
 from typing import TYPE_CHECKING, List, Literal, Optional, Type
 
@@ -120,6 +121,15 @@ def batch_decode(
     results: List[Optional[np.ndarray]] = [None] * len(refs)
 
     # Load images (no batching needed)
+    if image_refs:
+        warnings.warn(
+            f"batch_decode() received {len(image_refs)} image reference(s). "
+            f"Batch decoding is only optimized for video frames. "
+            f"Images will be decoded individually. "
+            f"Consider using ref.to_rgb_array() directly for images.",
+            UserWarning,
+            stacklevel=2,
+        )
     for i, ref in image_refs:
         results[i] = ref.to_rgb_array(**kwargs)
 
