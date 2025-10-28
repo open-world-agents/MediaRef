@@ -30,4 +30,3 @@ def require_video() -> None:
 
 
 __all__ = ["HAS_VIDEO", "require_video"]
-

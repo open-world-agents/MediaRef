@@ -5,7 +5,12 @@ Public API:
     - batch_decode: Efficient batch decoding of multiple media references
 """
 
+from loguru import logger
+
 from .core import MediaRef
+
+# Disable logging by default, which is best practice for library code
+logger.disable("mediaref")
 
 # Version is managed by hatch-vcs from Git tags
 try:
