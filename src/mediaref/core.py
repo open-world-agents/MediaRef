@@ -1,7 +1,7 @@
 """Core MediaRef class."""
 
 import warnings
-from pathlib import Path, PurePosixPath
+from pathlib import Path, PurePath
 from typing import Literal, Optional
 
 import cv2
@@ -74,7 +74,7 @@ class MediaRef(BaseModel):
         """True if this is a relative path (not absolute, not URI)."""
         if self.is_embedded or self.is_remote or self.uri.startswith("file://"):
             return False
-        return not PurePosixPath(self.uri).is_absolute()
+        return not PurePath(self.uri).is_absolute()
 
     # ========== Path Utilities ==========
 
