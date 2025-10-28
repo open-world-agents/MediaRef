@@ -3,7 +3,7 @@
 import numpy as np
 import pytest
 
-from mediaref import MediaRef, cleanup_cache, load_batch
+from mediaref import MediaRef, cleanup_cache, batch_decode
 
 
 class TestMediaRefProperties:
@@ -265,31 +265,31 @@ class TestBatchLoading:
 
         return video_path
 
-    def test_load_batch_images(self, sample_images):
+    def test_batch_decode_images(self, sample_images):
         """Test batch loading of images."""
         refs = [MediaRef(uri=str(img)) for img in sample_images]
-        results = load_batch(refs)
+        results = batch_decode(refs)
 
         assert len(results) == 3
         for rgb in results:
             assert isinstance(rgb, np.ndarray)
             assert rgb.shape == (48, 64, 3)
 
-    def test_load_batch_video_frames(self, sample_video):
+    def test_batch_decode_video_frames(self, sample_video):
         """Test batch loading of video frames."""
         refs = [
             MediaRef(uri=str(sample_video), pts_ns=0),
             MediaRef(uri=str(sample_video), pts_ns=100_000_000),
             MediaRef(uri=str(sample_video), pts_ns=200_000_000),
         ]
-        results = load_batch(refs)
+        results = batch_decode(refs)
 
         assert len(results) == 3
         for rgb in results:
             assert isinstance(rgb, np.ndarray)
             assert rgb.shape == (48, 64, 3)
 
-    def test_load_batch_mixed(self, sample_images, sample_video):
+    def test_batch_decode_mixed(self, sample_images, sample_video):
         """Test batch loading of mixed images and videos."""
         refs = [
             MediaRef(uri=str(sample_images[0])),
@@ -297,51 +297,51 @@ class TestBatchLoading:
             MediaRef(uri=str(sample_images[1])),
             MediaRef(uri=str(sample_video), pts_ns=100_000_000),
         ]
-        results = load_batch(refs)
+        results = batch_decode(refs)
 
         assert len(results) == 4
         for rgb in results:
             assert isinstance(rgb, np.ndarray)
             assert rgb.shape == (48, 64, 3)
 
-    def test_load_batch_empty(self):
+    def test_batch_decode_empty(self):
         """Test batch loading with empty list."""
-        results = load_batch([])
+        results = batch_decode([])
         assert results == []
 
     def test_cleanup_cache(self, sample_video):
         """Test cache cleanup."""
         # Load some frames with caching
         refs = [MediaRef(uri=str(sample_video), pts_ns=i * 100_000_000) for i in range(3)]
-        load_batch(refs)
+        batch_decode(refs)
 
         # Cleanup should not raise
         cleanup_cache()
 
-    def test_load_batch_with_pyav_decoder(self, sample_video):
+    def test_batch_decode_with_pyav_decoder(self, sample_video):
         """Test batch loading with explicit PyAV decoder."""
         refs = [
             MediaRef(uri=str(sample_video), pts_ns=0),
             MediaRef(uri=str(sample_video), pts_ns=100_000_000),
         ]
-        results = load_batch(refs, decoder="pyav")
+        results = batch_decode(refs, decoder="pyav")
 
         assert len(results) == 2
         for rgb in results:
             assert isinstance(rgb, np.ndarray)
             assert rgb.shape == (48, 64, 3)
 
-    def test_load_batch_with_torchcodec_decoder_not_installed(self, sample_video):
+    def test_batch_decode_with_torchcodec_decoder_not_installed(self, sample_video):
         """Test that requesting TorchCodec when not installed raises ImportError."""
         refs = [MediaRef(uri=str(sample_video), pts_ns=0)]
 
         # TorchCodec is not installed in the test environment
         with pytest.raises(ImportError, match="TorchCodec.*not.*install"):
-            load_batch(refs, decoder="torchcodec")
+            batch_decode(refs, decoder="torchcodec")
 
-    def test_load_batch_with_invalid_decoder(self, sample_video):
+    def test_batch_decode_with_invalid_decoder(self, sample_video):
         """Test that invalid decoder backend raises ValueError."""
         refs = [MediaRef(uri=str(sample_video), pts_ns=0)]
 
         with pytest.raises(ValueError, match="Unknown decoder backend"):
-            load_batch(refs, decoder="invalid")  # type: ignore
+            batch_decode(refs, decoder="invalid")  # type: ignore

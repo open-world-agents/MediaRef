@@ -12,7 +12,9 @@ cd mediaref
 
 2. Install in development mode with all dependencies:
 ```bash
-pip install -e ".[loader,dev]"
+pip install -e ".[video,dev]"
+# or with uv:
+uv sync --all-extras
 ```
 
 ## Running Tests

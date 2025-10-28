@@ -5,12 +5,12 @@ from typing import TYPE_CHECKING, List, Literal, Optional, Type
 
 import numpy as np
 
-from . import cached_av
-from .video_decoder import BaseVideoDecoder, PyAVVideoDecoder
-from .video_decoder.types import BatchDecodingStrategy
+from ._features import require_video
 
 if TYPE_CHECKING:
     from .core import MediaRef
+    from .video_decoder import BaseVideoDecoder
+    from .video_decoder.types import BatchDecodingStrategy
 
 NANOSECOND = 1_000_000_000  # 1 second in nanoseconds
 
@@ -18,9 +18,13 @@ NANOSECOND = 1_000_000_000  # 1 second in nanoseconds
 DecoderBackend = Literal["pyav", "torchcodec"]
 
 
-def _get_decoder_class(backend: DecoderBackend) -> Type[BaseVideoDecoder]:
+def _get_decoder_class(backend: DecoderBackend) -> Type["BaseVideoDecoder"]:
     """Get decoder class for the specified backend."""
+    require_video()
+
     if backend == "pyav":
+        from .video_decoder import PyAVVideoDecoder
+
         return PyAVVideoDecoder
     elif backend == "torchcodec":
         try:
@@ -36,13 +40,16 @@ def _get_decoder_class(backend: DecoderBackend) -> Type[BaseVideoDecoder]:
         raise ValueError(f"Unknown decoder backend: {backend}. Must be 'pyav' or 'torchcodec'")
 
 
-def load_batch(
+def batch_decode(
     refs: list["MediaRef"],
-    strategy: BatchDecodingStrategy = BatchDecodingStrategy.SEQUENTIAL_PER_KEYFRAME_BLOCK,
+    strategy: "BatchDecodingStrategy | None" = None,
     decoder: DecoderBackend = "pyav",
     **kwargs,
 ) -> list[np.ndarray]:
-    """Load multiple MediaRef objects efficiently using optimized batch decoding.
+    """Decode multiple media references efficiently using batch decoding.
+
+    For images, decodes them individually. For video frames from the same video,
+    uses optimized batch decoding API to decode multiple frames in one pass.
 
     This function groups MediaRefs by video file and uses the specified decoder's
     batch decoding API to decode multiple frames in one pass, which is much more
@@ -64,18 +71,18 @@ def load_batch(
         ImportError: If torchcodec decoder is requested but not installed
 
     Examples:
-        >>> from mediaref import MediaRef, load_batch
+        >>> from mediaref import MediaRef, batch_decode
         >>>
-        >>> # Load multiple frames from same video efficiently (default PyAV decoder)
+        >>> # Decode multiple frames from same video efficiently (default PyAV decoder)
         >>> refs = [
         ...     MediaRef(uri="video.mp4", pts_ns=0),
         ...     MediaRef(uri="video.mp4", pts_ns=1_000_000_000),
         ...     MediaRef(uri="video.mp4", pts_ns=2_000_000_000),
         ... ]
-        >>> frames = load_batch(refs)
+        >>> frames = batch_decode(refs)
         >>>
         >>> # Use TorchCodec decoder for GPU acceleration
-        >>> frames = load_batch(refs, decoder="torchcodec")
+        >>> frames = batch_decode(refs, decoder="torchcodec")
         >>>
         >>> # Also works with mixed images and videos
         >>> refs = [
@@ -83,7 +90,7 @@ def load_batch(
         ...     MediaRef(uri="video.mp4", pts_ns=0),
         ...     MediaRef(uri="image2.png"),
         ... ]
-        >>> media = load_batch(refs)
+        >>> media = batch_decode(refs)
     """
     # Input validation
     if not refs:
@@ -95,8 +102,11 @@ def load_batch(
     if any(ref is None for ref in refs):
         raise ValueError("refs list contains None values")
 
-    if not isinstance(strategy, BatchDecodingStrategy):
-        raise TypeError(f"strategy must be BatchDecodingStrategy, got {type(strategy).__name__}")
+    # Set default strategy if not provided
+    if strategy is None:
+        from .video_decoder.types import BatchDecodingStrategy
+
+        strategy = BatchDecodingStrategy.SEQUENTIAL_PER_KEYFRAME_BLOCK
 
     # Get the decoder class for the specified backend
     decoder_class = _get_decoder_class(decoder)
@@ -153,17 +163,20 @@ def load_batch(
 def cleanup_cache():
     """Clear all cached video containers from memory.
 
-    This function should be called when you're done with batch loading
+    This function should be called when you're done with batch decoding
     to free up resources. It's automatically called on process exit.
 
     Examples:
-        >>> from mediaref import MediaRef, load_batch, cleanup_cache
+        >>> from mediaref import MediaRef, batch_decode, cleanup_cache
         >>>
-        >>> # Load many frames
+        >>> # Decode many frames
         >>> refs = [MediaRef(uri="video.mp4", pts_ns=i * 1_000_000_000) for i in range(100)]
-        >>> frames = load_batch(refs)
+        >>> frames = batch_decode(refs)
         >>>
         >>> # Clean up when done
         >>> cleanup_cache()
     """
+    require_video()
+    from . import cached_av
+
     cached_av.cleanup_cache()

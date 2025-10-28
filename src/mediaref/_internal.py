@@ -5,17 +5,19 @@ import gc
 import os
 from fractions import Fraction
 from pathlib import Path
-from typing import Literal, Optional, Union
+from typing import TYPE_CHECKING, Literal, Optional, Union
 from urllib.parse import urlparse
 
-import av
 import cv2
 import numpy as np
 import PIL.Image
 import PIL.ImageOps
 import requests
 
-from . import cached_av
+from ._features import require_video
+
+if TYPE_CHECKING:
+    import av
 
 # Constants
 REQUEST_TIMEOUT = 60  # HTTP request timeout in seconds
@@ -123,9 +125,15 @@ def load_video_frame_as_bgra(
         BGRA numpy array
 
     Raises:
+        ImportError: If video dependencies are not installed
         ValueError: If loading fails
         FileNotFoundError: If local file doesn't exist
     """
+    require_video()
+
+    # Import video dependencies (only after require_video check)
+    from . import cached_av
+
     global _CALLED_TIMES
     _CALLED_TIMES += 1
     if _CALLED_TIMES % GC_COLLECTION_INTERVAL == 0:
@@ -157,9 +165,9 @@ def load_video_frame_as_bgra(
 
 
 def _read_frame_at_pts(
-    container: av.container.InputContainer,
+    container: "av.container.InputContainer",
     pts: Fraction,
-) -> av.VideoFrame:
+) -> "av.VideoFrame":
     """Read single frame at or after given timestamp."""
     if not container.streams.video:
         raise ValueError("No video streams found")

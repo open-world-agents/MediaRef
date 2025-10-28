@@ -1,4 +1,9 @@
-"""MediaRef - Lightweight media reference management for images and videos."""
+"""MediaRef - Lightweight media reference management for images and videos.
+
+Public API:
+    - MediaRef: Core class for media references
+    - batch_decode: Efficient batch decoding of multiple media references
+"""
 
 from .core import MediaRef
 
@@ -14,25 +19,29 @@ except ImportError:
     except Exception:
         __version__ = "0.0.0.dev0"
 
-__all__ = ["MediaRef"]
 
-# Optional loader module (requires extra dependencies)
-try:
-    from .loader import cleanup_cache, load_batch  # noqa: F401
-    from .video_decoder import BaseVideoDecoder, FrameBatch, PyAVVideoDecoder, TorchCodecVideoDecoder  # noqa: F401
-    from .video_decoder.types import BatchDecodingStrategy, VideoStreamMetadata  # noqa: F401
+# Lazy import for batch_decode to avoid importing video dependencies at module level
+def __getattr__(name: str):
+    """Lazy import for batch_decode and related functions."""
+    if name == "batch_decode":
+        from .batch import batch_decode
 
-    __all__.extend(
-        [
-            "load_batch",
-            "cleanup_cache",
-            "BatchDecodingStrategy",
-            "VideoStreamMetadata",
-            "BaseVideoDecoder",
-            "FrameBatch",
-            "PyAVVideoDecoder",
-            "TorchCodecVideoDecoder",
-        ]
-    )
-except ImportError:
-    pass
+        return batch_decode
+    elif name == "cleanup_cache":
+        from .batch import cleanup_cache
+
+        return cleanup_cache
+    elif name == "load_batch":
+        # Backward compatibility alias
+        from .batch import batch_decode
+
+        return batch_decode
+    elif name == "load_media":
+        # Backward compatibility alias
+        from .batch import batch_decode
+
+        return batch_decode
+    raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
+
+
+__all__ = ["MediaRef", "batch_decode", "cleanup_cache"]

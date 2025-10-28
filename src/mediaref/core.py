@@ -2,20 +2,12 @@
 
 import warnings
 from pathlib import Path, PurePosixPath
-from typing import TYPE_CHECKING, Literal, Optional
+from typing import Literal, Optional
 
 import cv2
 import numpy as np
+import PIL.Image
 from pydantic import BaseModel, Field
-
-from ._internal import (
-    encode_array_to_base64,
-    load_image_as_bgra,
-    load_video_frame_as_bgra,
-)
-
-if TYPE_CHECKING:
-    import PIL.Image
 
 
 class MediaRef(BaseModel):
@@ -148,17 +140,20 @@ class MediaRef(BaseModel):
         Returns:
             RGB numpy array (H, W, 3)
 
+        Raises:
+            ImportError: If video dependencies are not installed (for video frames)
+
         Examples:
             >>> ref = MediaRef(uri="image.png")
             >>> rgb = ref.to_rgb_array()
             >>>
             >>> ref = MediaRef(uri="video.mp4", pts_ns=1_000_000_000)
-            >>> frame = ref.to_rgb_array()
+            >>> frame = ref.to_rgb_array()  # Requires: pip install mediaref[video]
         """
         bgra = self._load_as_bgra(**kwargs)
         return cv2.cvtColor(bgra, cv2.COLOR_BGRA2RGB)
 
-    def to_pil_image(self, **kwargs) -> "PIL.Image.Image":
+    def to_pil_image(self, **kwargs) -> PIL.Image.Image:
         """Load and return media as PIL Image.
 
         Args:
@@ -168,19 +163,14 @@ class MediaRef(BaseModel):
             PIL Image object
 
         Raises:
-            ImportError: If Pillow is not installed
+            ImportError: If video dependencies are not installed (for video frames)
 
         Examples:
             >>> ref = MediaRef(uri="image.png")
             >>> img = ref.to_pil_image()
         """
-        try:
-            from PIL import Image
-        except ImportError as e:
-            raise ImportError("Pillow required for PIL conversion") from e
-
         rgb_array = self.to_rgb_array(**kwargs)
-        return Image.fromarray(rgb_array)
+        return PIL.Image.fromarray(rgb_array)
 
     def embed_as_data_uri(
         self,
@@ -196,6 +186,9 @@ class MediaRef(BaseModel):
         Returns:
             Data URI string
 
+        Raises:
+            ImportError: If video dependencies are not installed (for video frames)
+
         Examples:
             >>> ref = MediaRef(uri="image.png")
             >>> data_uri = ref.embed_as_data_uri(format="png")
@@ -203,6 +196,8 @@ class MediaRef(BaseModel):
             >>> embedded_ref.is_embedded
             True
         """
+        from ._internal import encode_array_to_base64
+
         bgra = self._load_as_bgra()
         base64_data = encode_array_to_base64(bgra, format, quality)
         return f"data:image/{format};base64,{base64_data}"
@@ -210,8 +205,15 @@ class MediaRef(BaseModel):
     # ========== Internal ==========
 
     def _load_as_bgra(self, **kwargs) -> np.ndarray:
-        """Internal: Load media as BGRA array."""
+        """Internal: Load media as BGRA array.
+
+        Raises:
+            ImportError: If video dependencies are not installed (for video frames)
+        """
+        from ._internal import load_image_as_bgra, load_video_frame_as_bgra
+
         if self.is_video:
+            assert self.pts_ns is not None  # Type guard: is_video ensures pts_ns is not None
             return load_video_frame_as_bgra(self.uri, self.pts_ns, **kwargs)
         else:
             return load_image_as_bgra(self.uri)

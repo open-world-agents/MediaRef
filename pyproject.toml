@@ -8,17 +8,17 @@ authors = [
 ]
 requires-python = ">=3.9"
 dependencies = [
-    "pydantic>=2.0",  # Requires v2 API (BaseModel, Field)
+    "pydantic>=2.0",   # Data validation and serialization
+    "numpy",           # Array operations (core functionality)
+    "pillow",          # Image loading and processing
+    "opencv-python",   # Image processing (cv2.cvtColor, etc.)
+    "requests",        # Remote image/video loading
+    "loguru",          # Logging
 ]
 
 [project.optional-dependencies]
-loader = [
-    "numpy",
-    "opencv-python",
-    "pillow",
-    "av>=15.0",
-    "requests",
-    "loguru",
+video = [
+    "av>=15.0",        # Video frame extraction (PyAV)
 ]
 dev = [
     "pytest>=7.0",
