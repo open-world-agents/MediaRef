@@ -25,7 +25,7 @@ video = [
 dev = [
     "ipython",
     "pytest",
-    "pytest-cov>",
+    "pytest-cov",
     "ruff>=0.3.0",
 ]
 
