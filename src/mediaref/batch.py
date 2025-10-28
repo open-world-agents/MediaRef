@@ -5,6 +5,7 @@ from collections import defaultdict
 from typing import TYPE_CHECKING, List, Literal, Optional, Type
 
 import numpy as np
+import numpy.typing as npt
 
 if TYPE_CHECKING:
     from .core import MediaRef
@@ -42,7 +43,7 @@ def batch_decode(
     strategy: "BatchDecodingStrategy | None" = None,
     decoder: DecoderBackend = "pyav",
     **kwargs,
-) -> list[np.ndarray]:
+) -> list[npt.NDArray[np.uint8]]:
     """Decode multiple media references efficiently using batch decoding.
 
     For images, decodes them individually. For video frames from the same video,
@@ -118,7 +119,7 @@ def batch_decode(
             image_refs.append((i, ref))
 
     # Prepare results array
-    results: List[Optional[np.ndarray]] = [None] * len(refs)
+    results: List[Optional[npt.NDArray[np.uint8]]] = [None] * len(refs)
 
     # Load images (no batching needed)
     if image_refs:

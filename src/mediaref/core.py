@@ -6,6 +6,7 @@ from typing import Literal, Optional
 
 import cv2
 import numpy as np
+import numpy.typing as npt
 import PIL.Image
 from pydantic import BaseModel, Field
 
@@ -138,7 +139,7 @@ class MediaRef(BaseModel):
 
     # ========== Loading Methods ==========
 
-    def to_rgb_array(self, **kwargs) -> np.ndarray:
+    def to_rgb_array(self, **kwargs) -> npt.NDArray[np.uint8]:
         """Load and return media as RGB numpy array.
 
         Args:
@@ -158,7 +159,8 @@ class MediaRef(BaseModel):
             >>> frame = ref.to_rgb_array()  # Requires: pip install mediaref[video]
         """
         bgra = self._load_as_bgra(**kwargs)
-        return cv2.cvtColor(bgra, cv2.COLOR_BGRA2RGB)
+        rgb_array: npt.NDArray[np.uint8] = cv2.cvtColor(bgra, cv2.COLOR_BGRA2RGB)  # type: ignore[assignment]
+        return rgb_array
 
     def to_pil_image(self, **kwargs) -> PIL.Image.Image:
         """Load and return media as PIL Image.
@@ -211,7 +213,7 @@ class MediaRef(BaseModel):
 
     # ========== Internal ==========
 
-    def _load_as_bgra(self, **kwargs) -> np.ndarray:
+    def _load_as_bgra(self, **kwargs) -> npt.NDArray[np.uint8]:
         """Internal: Load media as BGRA array.
 
         Raises:

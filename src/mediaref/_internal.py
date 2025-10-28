@@ -10,10 +10,10 @@ from urllib.parse import urlparse
 
 import cv2
 import numpy as np
+import numpy.typing as npt
 import PIL.Image
 import PIL.ImageOps
 import requests
-
 
 if TYPE_CHECKING:
     import av
@@ -32,7 +32,7 @@ GC_COLLECTION_INTERVAL = 10
 # ============================================================================
 
 
-def load_image_as_bgra(path_or_uri: str) -> np.ndarray:
+def load_image_as_bgra(path_or_uri: str) -> npt.NDArray[np.uint8]:
     """Load image from any source and return as BGRA numpy array.
 
     Args:
@@ -91,15 +91,16 @@ def _load_pil_image(
     return image
 
 
-def _pil_to_bgra_array(pil_image: PIL.Image.Image) -> np.ndarray:
+def _pil_to_bgra_array(pil_image: PIL.Image.Image) -> npt.NDArray[np.uint8]:
     """Convert PIL image to BGRA numpy array."""
     # Ensure image is in RGB mode
     if pil_image.mode != "RGB":
         pil_image = pil_image.convert("RGB")
 
     # Convert to numpy array and then to BGRA
-    rgb_array = np.array(pil_image)
-    return cv2.cvtColor(rgb_array, cv2.COLOR_RGB2BGRA)
+    rgb_array = np.array(pil_image, dtype=np.uint8)
+    bgra_array: npt.NDArray[np.uint8] = cv2.cvtColor(rgb_array, cv2.COLOR_RGB2BGRA)  # type: ignore[assignment]
+    return bgra_array
 
 
 # ============================================================================
@@ -112,7 +113,7 @@ def load_video_frame_as_bgra(
     pts_ns: int,
     *,
     keep_av_open: bool = False,
-) -> np.ndarray:
+) -> npt.NDArray[np.uint8]:
     """Load video frame and return as BGRA numpy array.
 
     Args:
@@ -149,7 +150,8 @@ def load_video_frame_as_bgra(
         try:
             frame = _read_frame_at_pts(container, pts_fraction)
             rgb_array = frame.to_ndarray(format="rgb24")
-            return cv2.cvtColor(rgb_array, cv2.COLOR_RGB2BGRA)
+            bgra_array: npt.NDArray[np.uint8] = cv2.cvtColor(rgb_array, cv2.COLOR_RGB2BGRA)  # type: ignore[assignment]
+            return bgra_array
         finally:
             if not keep_av_open:
                 container.close()
@@ -186,7 +188,7 @@ def _read_frame_at_pts(
 # ============================================================================
 
 
-def _load_from_data_uri(data_uri: str) -> np.ndarray:
+def _load_from_data_uri(data_uri: str) -> npt.NDArray[np.uint8]:
     """Load image from data URI."""
     parsed = urlparse(data_uri)
     if parsed.scheme != "data":
@@ -200,7 +202,7 @@ def _load_from_data_uri(data_uri: str) -> np.ndarray:
         raise ValueError(f"Invalid data URI format: {e}") from e
 
 
-def _decode_from_base64(data: str) -> np.ndarray:
+def _decode_from_base64(data: str) -> npt.NDArray[np.uint8]:
     """Decode base64 string to BGRA numpy array."""
     try:
         image_bytes = base64.b64decode(data)
@@ -210,7 +212,8 @@ def _decode_from_base64(data: str) -> np.ndarray:
         if bgr_array is None:
             raise ValueError("Failed to decode base64 image data")
 
-        return cv2.cvtColor(bgr_array, cv2.COLOR_BGR2BGRA)
+        bgra_array: npt.NDArray[np.uint8] = cv2.cvtColor(bgr_array, cv2.COLOR_BGR2BGRA)  # type: ignore[assignment]
+        return bgra_array
     except Exception as e:
         raise ValueError(f"Failed to decode base64 data: {e}") from e
 
@@ -221,7 +224,7 @@ def _decode_from_base64(data: str) -> np.ndarray:
 
 
 def encode_array_to_base64(
-    array: np.ndarray,
+    array: npt.NDArray[np.uint8],
     format: Literal["png", "jpeg", "bmp"],
     quality: Optional[int] = None,
 ) -> str:
