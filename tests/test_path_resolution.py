@@ -42,12 +42,22 @@ class TestResolveRelativePath:
         assert resolved.uri == "/base/data/recordings/videos/clip.mp4"
         assert resolved.pts_ns == 1_000_000_000
 
+    @pytest.mark.skipif(os.name == "nt", reason="POSIX absolute paths are relative on Windows")
     def test_resolve_absolute_path_unchanged(self):
-        """Test that absolute paths remain unchanged."""
+        """Test that absolute paths remain unchanged (POSIX only)."""
         ref = MediaRef(uri="/absolute/path/image.png")
         resolved = ref.resolve_relative_path("/data/recording.mcap")
 
         assert resolved.uri == "/absolute/path/image.png"
+        assert resolved is ref  # Should return same instance
+
+    @pytest.mark.skipif(os.name != "nt", reason="Windows-specific test")
+    def test_resolve_windows_absolute_path_unchanged(self):
+        """Test that Windows absolute paths remain unchanged (Windows only)."""
+        ref = MediaRef(uri="C:/absolute/path/image.png")
+        resolved = ref.resolve_relative_path("D:/data/recording.mcap")
+
+        assert resolved.uri == "C:/absolute/path/image.png"
         assert resolved is ref  # Should return same instance
 
     def test_resolve_returns_new_instance(self):

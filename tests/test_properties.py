@@ -3,6 +3,10 @@
 Tests all boolean properties: is_embedded, is_video, is_remote, is_local, is_relative_path.
 """
 
+import os
+
+import pytest
+
 from mediaref import MediaRef
 
 
@@ -200,10 +204,23 @@ class TestIsRelativePath:
         ref = MediaRef(uri="./images/test.jpg")
         assert ref.is_relative_path
 
+    @pytest.mark.skipif(os.name == "nt", reason="POSIX absolute paths are relative on Windows")
     def test_not_relative_path_absolute_posix(self):
-        """Test that absolute POSIX path is not relative."""
+        """Test that absolute POSIX path is not relative (POSIX only)."""
         ref = MediaRef(uri="/absolute/path/image.png")
         assert not ref.is_relative_path
+
+    @pytest.mark.skipif(os.name != "nt", reason="Windows-specific test")
+    def test_not_relative_path_absolute_windows(self):
+        """Test that absolute Windows path is not relative (Windows only)."""
+        ref = MediaRef(uri="C:/absolute/path/image.png")
+        assert not ref.is_relative_path
+
+    @pytest.mark.skipif(os.name != "nt", reason="Windows-specific test")
+    def test_posix_path_is_relative_on_windows(self):
+        """Test that POSIX absolute path is relative on Windows (no drive letter)."""
+        ref = MediaRef(uri="/absolute/path/image.png")
+        assert ref.is_relative_path
 
     def test_not_relative_path_http(self):
         """Test that HTTP URL is not relative path."""
@@ -269,9 +286,19 @@ class TestPropertyCombinations:
         assert not ref.is_local
         assert not ref.is_embedded
 
+    @pytest.mark.skipif(os.name == "nt", reason="POSIX absolute paths are relative on Windows")
     def test_absolute_path_is_local_not_relative(self):
-        """Test that absolute path is local but not relative."""
+        """Test that absolute path is local but not relative (POSIX only)."""
         ref = MediaRef(uri="/absolute/path/image.png")
+        assert ref.is_local
+        assert not ref.is_relative_path
+        assert not ref.is_remote
+        assert not ref.is_embedded
+
+    @pytest.mark.skipif(os.name != "nt", reason="Windows-specific test")
+    def test_windows_absolute_path_is_local_not_relative(self):
+        """Test that Windows absolute path is local but not relative (Windows only)."""
+        ref = MediaRef(uri="C:/absolute/path/image.png")
         assert ref.is_local
         assert not ref.is_relative_path
         assert not ref.is_remote

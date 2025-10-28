@@ -1,7 +1,7 @@
 """Core MediaRef class."""
 
 import warnings
-from pathlib import Path, PurePath
+from pathlib import Path
 from typing import Literal, Optional
 
 import cv2
@@ -71,15 +71,20 @@ class MediaRef(BaseModel):
 
     @property
     def is_relative_path(self) -> bool:
-        """True if this is a relative path (not absolute, not URI)."""
+        """True if this is a relative path (not absolute, not URI).
+
+        Uses platform-specific path semantics (behavior differs on Windows vs POSIX).
+        """
         if self.is_embedded or self.is_remote or self.uri.startswith("file://"):
             return False
-        return not PurePath(self.uri).is_absolute()
+        return not Path(self.uri).is_absolute()
 
     # ========== Path Utilities ==========
 
     def validate_uri(self) -> bool:
         """Validate that the URI exists (local files only).
+
+        Uses platform-specific path semantics (behavior differs on Windows vs POSIX).
 
         Returns:
             True if URI is valid/accessible
@@ -99,6 +104,8 @@ class MediaRef(BaseModel):
         allow_nonlocal: bool = False,
     ) -> "MediaRef":
         """Resolve relative path against a base path.
+
+        Uses platform-specific path semantics (behavior differs on Windows vs POSIX).
 
         Args:
             base_path: Base path (typically MCAP file path) to resolve against
