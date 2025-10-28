@@ -25,6 +25,9 @@ dev = [
     "pytest-cov>=4.0",
 ]
 
+[tool.ruff]
+line-length = 119
+
 [build-system]
 requires = ["hatchling"]
 build-backend = "hatchling.build"

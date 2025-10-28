@@ -7,9 +7,9 @@ __all__ = ["MediaRef"]
 
 # Optional loader module (requires extra dependencies)
 try:
-    from .loader import cleanup_cache, load_batch
-    from .video_decoder import BaseVideoDecoder, FrameBatch, PyAVVideoDecoder, TorchCodecVideoDecoder
-    from .video_decoder.types import BatchDecodingStrategy, VideoStreamMetadata
+    from .loader import cleanup_cache, load_batch  # noqa: F401
+    from .video_decoder import BaseVideoDecoder, FrameBatch, PyAVVideoDecoder, TorchCodecVideoDecoder  # noqa: F401
+    from .video_decoder.types import BatchDecodingStrategy, VideoStreamMetadata  # noqa: F401
 
     __all__.extend(
         [

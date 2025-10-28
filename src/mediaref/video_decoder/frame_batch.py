@@ -10,7 +10,7 @@ import numpy.typing as npt
 # Copied from https://github.com/pytorch/torchcodec/blob/main/src/torchcodec/_frame.py#L14-L27
 def _frame_repr(self):
     """Utility to replace __repr__ method of dataclasses.
-    
+
     This prints the shape of the .data tensor rather than printing the
     (potentially very long) data tensor itself.
     """
@@ -29,11 +29,11 @@ def _frame_repr(self):
 @dataclass
 class FrameBatch:
     """Batch of video frames with timing information in NCHW format.
-    
+
     This data structure is compatible with TorchCodec's frame batch format
     and provides a unified interface for batch frame data across different
     decoder implementations.
-    
+
     Attributes:
         data: Frame data in NCHW format (N, C, H, W) where:
             - N: Number of frames
@@ -42,7 +42,7 @@ class FrameBatch:
             - W: Frame width in pixels
         pts_seconds: Presentation timestamps in seconds for each frame (N,)
         duration_seconds: Duration of each frame in seconds (N,)
-    
+
     Examples:
         >>> import numpy as np
         >>> data = np.random.randint(0, 255, (10, 3, 720, 1280), dtype=np.uint8)
@@ -64,4 +64,3 @@ class FrameBatch:
 
 
 __all__ = ["FrameBatch"]
-

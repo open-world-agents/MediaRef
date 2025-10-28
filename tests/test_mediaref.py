@@ -1,7 +1,5 @@
 """Tests for MediaRef class."""
 
-from pathlib import Path
-
 import numpy as np
 import pytest
 

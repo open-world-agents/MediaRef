@@ -13,14 +13,14 @@ PTSUnit = Literal["pts", "sec"]
 @dataclass
 class VideoStreamMetadata:
     """Video stream metadata container.
-    
+
     Attributes:
         num_frames: Total number of frames in the video
         duration_seconds: Video duration in seconds (as Fraction for precision)
         average_rate: Average frame rate (as Fraction for precision)
         width: Frame width in pixels
         height: Frame height in pixels
-    
+
     Examples:
         >>> metadata = VideoStreamMetadata(
         ...     num_frames=300,
@@ -42,19 +42,19 @@ class VideoStreamMetadata:
 
 class BatchDecodingStrategy(str, enum.Enum):
     """Batch decoding strategy for video frames.
-    
+
     Different strategies optimize for different access patterns:
-    
+
     - SEPARATE: Decode each frame independently by seeking to each timestamp.
       Best for sparse queries (e.g., frames [0, 100, 200, 300]).
-      
+
     - SEQUENTIAL_PER_KEYFRAME_BLOCK: Decode frames in batches, one batch per
       keyframe interval. Balanced approach that works well for both sparse
       and dense queries.
-      
+
     - SEQUENTIAL: Decode all frames in one sequential pass from the first
       requested frame to the last. Best for dense queries (e.g., frames [0-100]).
-    
+
     Examples:
         >>> # Sparse query - use SEPARATE
         >>> decoder.get_frames_at([0, 100, 200], strategy=BatchDecodingStrategy.SEPARATE)
@@ -77,4 +77,3 @@ __all__ = [
     "VideoStreamMetadata",
     "BatchDecodingStrategy",
 ]
-
