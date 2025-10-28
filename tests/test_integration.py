@@ -132,7 +132,7 @@ class TestEndToEndWorkflows:
         base_path = tmp_path / "dataset.mcap"
         resolved_ref = relative_ref.resolve_relative_path(str(base_path))
         assert not resolved_ref.is_relative_path
-        assert str(tmp_path) in resolved_ref.uri
+        assert tmp_path.as_posix() in resolved_ref.uri
 
         # 4. Load from resolved ref
         rgb = resolved_ref.to_rgb_array()

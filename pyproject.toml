@@ -8,25 +8,25 @@ authors = [
 ]
 requires-python = ">=3.9"
 dependencies = [
-    "pydantic>=2.0",   # Data validation and serialization
-    "numpy",           # Array operations (core functionality)
-    "pillow",          # Image loading and processing
-    "opencv-python",   # Image processing (cv2.cvtColor, etc.)
-    "requests",        # Remote image/video loading
-    "loguru",          # Logging
+    "pydantic>=2.0",   # Pydantic v2 has breaking changes
+    "numpy", 
+    "Pillow>=9.4.0",   # When PIL.Image.ExifTags was introduced
+    "opencv-python",
+    "requests>=2.32.2",
+    "loguru",
 ]
 
 [project.optional-dependencies]
 video = [
-    "av>=15.0",        # Video frame extraction (PyAV)
+    "av>=15.0",
 ]
 
 [dependency-groups]
 dev = [
-    "ipython>=8.18.1",
-    "pytest>=8.4.2",
-    "pytest-cov>=7.0.0",
-    "ruff>=0.14.2",
+    "ipython",
+    "pytest",
+    "pytest-cov>",
+    "ruff>=0.3.0",
 ]
 
 [tool.ruff]
