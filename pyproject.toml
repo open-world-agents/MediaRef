@@ -6,10 +6,28 @@ readme = "README.md"
 authors = [
     { name = "Suhwan Choi", email = "milkclouds00@gmail.com" }
 ]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Intended Audience :: Developers",
+    "Intended Audience :: Science/Research",
+    "License :: OSI Approved :: MIT License",
+    "Operating System :: OS Independent",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.9",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Topic :: Multimedia :: Graphics",
+    "Topic :: Multimedia :: Video",
+    "Topic :: Scientific/Engineering",
+    "Topic :: Software Development :: Libraries :: Python Modules",
+    "Typing :: Typed",
+]
 requires-python = ">=3.9"
 dependencies = [
     "pydantic>=2.0",   # Pydantic v2 has breaking changes on APIs
-    "numpy", 
+    "numpy",
     "Pillow>=9.4.0",   # When PIL.Image.ExifTags was introduced
     "opencv-python",
     "requests>=2.32.2",
