@@ -16,13 +16,14 @@ loader = [
     "numpy",
     "opencv-python",
     "pillow",
-    "av",
+    "av>=15.0",
     "requests",
     "loguru",
 ]
 dev = [
     "pytest>=7.0",
     "pytest-cov>=4.0",
+    "ipython",
 ]
 
 [tool.ruff]

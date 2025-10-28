@@ -1,7 +1,7 @@
 """Batch loading utilities for MediaRef."""
 
 from collections import defaultdict
-from typing import TYPE_CHECKING, Literal
+from typing import TYPE_CHECKING, List, Literal, Optional, Type
 
 import numpy as np
 
@@ -18,7 +18,7 @@ NANOSECOND = 1_000_000_000  # 1 second in nanoseconds
 DecoderBackend = Literal["pyav", "torchcodec"]
 
 
-def _get_decoder_class(backend: DecoderBackend) -> type[BaseVideoDecoder]:
+def _get_decoder_class(backend: DecoderBackend) -> Type[BaseVideoDecoder]:
     """Get decoder class for the specified backend."""
     if backend == "pyav":
         return PyAVVideoDecoder
@@ -112,7 +112,7 @@ def load_batch(
             image_refs.append((i, ref))
 
     # Prepare results array
-    results: list[np.ndarray | None] = [None] * len(refs)
+    results: List[Optional[np.ndarray]] = [None] * len(refs)
 
     # Load images (no batching needed)
     for i, ref in image_refs:

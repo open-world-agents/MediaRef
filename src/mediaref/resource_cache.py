@@ -4,7 +4,7 @@ import os
 import sys
 import time
 from dataclasses import dataclass
-from typing import Callable, ContextManager, Generic, Optional, TypeVar
+from typing import Callable, ContextManager, Dict, Generic, Optional, TypeVar
 
 from loguru import logger
 
@@ -21,7 +21,7 @@ class CacheEntry(Generic[T]):
     refs: int = 0
 
 
-class ResourceCache(Generic[T], dict[str, CacheEntry[T]]):
+class ResourceCache(Generic[T], Dict[str, CacheEntry[T]]):
     """Reference-counted resource cache with LRU eviction and automatic cleanup."""
 
     def __init__(self, *args, max_size: int = 0, **kwargs):
@@ -57,7 +57,7 @@ class ResourceCache(Generic[T], dict[str, CacheEntry[T]]):
         logger.debug(f"Released entry: {key=}, {self[key].refs=}")
         self._cleanup_if_needed()
 
-    def pop(self, key: str, default: CacheEntry[T] | None = None) -> CacheEntry[T] | None:  # type: ignore[override]
+    def pop(self, key: str, default: Optional[CacheEntry[T]] = None) -> Optional[CacheEntry[T]]:  # type: ignore[override]
         """Remove and return cache entry with cleanup."""
         if key in self:
             self[key].cleanup_callback()

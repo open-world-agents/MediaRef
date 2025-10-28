@@ -1,4 +1,4 @@
-from typing import Any, Iterator, overload
+from typing import Any, Iterator, Optional, Union, overload
 
 import av.container
 from av.audio.frame import AudioFrame
@@ -28,7 +28,7 @@ class InputContainerMixin(ContainerMixin):
         return self._container.start_time
 
     @property
-    def duration(self) -> int | None:
+    def duration(self) -> Optional[int]:
         return self._container.duration
 
     @property
@@ -66,7 +66,7 @@ class InputContainerMixin(ContainerMixin):
     @overload
     def decode(self, *args: SubtitleStream) -> Iterator[SubtitleSet]: ...
 
-    def decode(self, *args: Any, **kwargs: Any) -> Iterator[VideoFrame | AudioFrame | SubtitleSet]:
+    def decode(self, *args: Any, **kwargs: Any) -> Iterator[Union[VideoFrame, AudioFrame, SubtitleSet]]:
         return self._container.decode(*args, **kwargs)
 
     def seek(
@@ -75,7 +75,7 @@ class InputContainerMixin(ContainerMixin):
         *,
         backward: bool = True,
         any_frame: bool = False,
-        stream: Stream | VideoStream | AudioStream | None = None,
+        stream: Optional[Union[Stream, VideoStream, AudioStream]] = None,
         unsupported_frame_offset: bool = False,
         unsupported_byte_offset: bool = False,
     ) -> None:

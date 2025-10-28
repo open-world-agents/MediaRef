@@ -1,12 +1,12 @@
 from fractions import Fraction
 from types import TracebackType
-from typing import Any, Type
+from typing import Any, Optional, Type, Union
 
 import av.container
 from av.container.streams import StreamContainer
 from av.format import ContainerFormat
 
-Real = int | float | Fraction
+Real = Union[int, float, Fraction]
 
 
 class ContainerMixin:
@@ -80,11 +80,11 @@ class ContainerMixin:
         return self._container.metadata
 
     @property
-    def open_timeout(self) -> Real | None:
+    def open_timeout(self) -> Optional[Real]:
         return self._container.open_timeout
 
     @property
-    def read_timeout(self) -> Real | None:
+    def read_timeout(self) -> Optional[Real]:
         return self._container.read_timeout
 
     @property
@@ -96,13 +96,13 @@ class ContainerMixin:
 
     def __exit__(
         self,
-        exc_type: Type[BaseException] | None,
-        exc_val: BaseException | None,
-        exc_tb: TracebackType | None,
+        exc_type: Optional[Type[BaseException]],
+        exc_val: Optional[BaseException],
+        exc_tb: Optional[TracebackType],
     ) -> bool:
         return self._container.__exit__(exc_type, exc_val, exc_tb)
 
-    def set_timeout(self, timeout: Real | None) -> None:
+    def set_timeout(self, timeout: Optional[Real]) -> None:
         return self._container.set_timeout(timeout)
 
     def start_timeout(self) -> None:
