@@ -34,7 +34,15 @@ jobs:
     - name: Setup environments
       run: |
         uv venv
-        uv pip install -e ".[loader,dev]"
+        uv sync --dev
+    
+    - name: Run tests
+      run: |
+        uv run pytest --cov=mediaref --cov-report=xml --cov-report=term
+    
+    - name: Setup environments with extras
+      run: 
+        uv sync --dev --all-extras
     
     - name: Run tests
       run: |
