@@ -2,7 +2,18 @@
 
 from .core import MediaRef
 
-__version__ = "0.1.0"
+# Version is managed by hatch-vcs from Git tags
+try:
+    from ._version import __version__
+except ImportError:
+    # Fallback for editable installs without build
+    try:
+        from importlib.metadata import version
+
+        __version__ = version("mediaref")
+    except Exception:
+        __version__ = "0.0.0.dev0"
+
 __all__ = ["MediaRef"]
 
 # Optional loader module (requires extra dependencies)
