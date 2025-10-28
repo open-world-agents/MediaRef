@@ -14,7 +14,6 @@ import PIL.Image
 import PIL.ImageOps
 import requests
 
-from ._features import require_video
 
 if TYPE_CHECKING:
     import av
