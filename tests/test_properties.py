@@ -3,7 +3,6 @@
 Tests all boolean properties: is_embedded, is_video, is_remote, is_local, is_relative_path.
 """
 
-
 from mediaref import MediaRef
 
 
