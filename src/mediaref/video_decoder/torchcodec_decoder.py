@@ -66,10 +66,3 @@ class TorchCodecVideoDecoder(VideoDecoder, BaseVideoDecoder):
         """
         if hasattr(self, "_cache_key"):
             self.cache.release_entry(self._cache_key)
-
-    def __enter__(self):
-        return self
-
-    def __exit__(self, exc_type, exc_value, traceback):
-        """Release cache reference when used as context manager."""
-        self.close()
