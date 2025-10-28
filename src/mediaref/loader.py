@@ -6,20 +6,29 @@ from typing import TYPE_CHECKING
 import numpy as np
 
 from . import cached_av
+from .video.reader import BatchDecodingStrategy, VideoReader
 
 if TYPE_CHECKING:
     from .core import MediaRef
 
+NANOSECOND = 1_000_000_000  # 1 second in nanoseconds
 
-def load_batch(refs: list["MediaRef"], **kwargs) -> list[np.ndarray]:
-    """Load multiple MediaRef objects efficiently with automatic caching.
 
-    This function groups MediaRefs by video file and loads frames in batches,
-    which is much more efficient than loading each frame separately.
+def load_batch(
+    refs: list["MediaRef"],
+    strategy: BatchDecodingStrategy = BatchDecodingStrategy.SEQUENTIAL_PER_KEYFRAME_BLOCK,
+    **kwargs,
+) -> list[np.ndarray]:
+    """Load multiple MediaRef objects efficiently using optimized batch decoding.
+
+    This function groups MediaRefs by video file and uses PyAV's batch decoding API
+    to decode multiple frames in one pass, which is much more efficient than loading
+    each frame separately.
 
     Args:
         refs: List of MediaRef objects to load
-        **kwargs: Additional options passed to to_rgb_array()
+        strategy: Batch decoding strategy (SEPARATE, SEQUENTIAL_PER_KEYFRAME_BLOCK, or SEQUENTIAL)
+        **kwargs: Additional options (currently unused, kept for backward compatibility)
 
     Returns:
         List of RGB numpy arrays in the same order as input refs
@@ -63,13 +72,20 @@ def load_batch(refs: list["MediaRef"], **kwargs) -> list[np.ndarray]:
     for i, ref in image_refs:
         results[i] = ref.to_rgb_array(**kwargs)
 
-    # Load video frames with caching enabled
+    # Load video frames using optimized batch decoding
     for uri, group in video_groups.items():
-        # Enable caching for batch loading
-        batch_kwargs = {**kwargs, "keep_av_open": True}
+        # Extract timestamps and original indices
+        indices = [i for i, _ in group]
+        pts_seconds = [ref.pts_ns / NANOSECOND for _, ref in group]
 
-        for i, ref in group:
-            results[i] = ref.to_rgb_array(**batch_kwargs)
+        # Use VideoReader for batch decoding
+        with VideoReader(uri, keep_av_open=True) as reader:
+            av_frames = reader.get_frames_played_at(pts_seconds, strategy=strategy)
+
+            # Convert AV frames to RGB arrays
+            for idx, av_frame in zip(indices, av_frames):
+                rgb_array = av_frame.to_ndarray(format="rgb24")
+                results[idx] = rgb_array
 
     return results
 
