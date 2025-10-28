@@ -14,25 +14,19 @@ jobs:
         os: [ubuntu-latest, macos-latest, windows-latest]
         python-version: ["3.9", "3.10", "3.11", "3.12", "3.13"]
 
-    defaults:
-      run:
-        shell: bash -el {0}
-
     steps:
     - uses: actions/checkout@v5
-      with:
-        fetch-depth: 0
-
-    - name: Setup uv
-      uses: ./.github/actions/setup-uv
+    - name: Install uv
+      uses: astral-sh/setup-uv@v7
       with:
         python-version: ${{ matrix.python-version }}
 
-    - name: Install dependencies
+    - name: Setup environments
       run: |
+        uv venv
         uv pip install -e ".[loader,dev]"
     
     - name: Run tests
       run: |
-        pytest --cov=mediaref --cov-report=xml --cov-report=term
+        uv run pytest --cov=mediaref --cov-report=xml --cov-report=term
 
