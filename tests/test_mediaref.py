@@ -4,6 +4,7 @@ from pathlib import Path
 
 import numpy as np
 import pytest
+
 from mediaref import MediaRef, cleanup_cache, load_batch
 
 
@@ -318,3 +319,31 @@ class TestBatchLoading:
 
         # Cleanup should not raise
         cleanup_cache()
+
+    def test_load_batch_with_pyav_decoder(self, sample_video):
+        """Test batch loading with explicit PyAV decoder."""
+        refs = [
+            MediaRef(uri=str(sample_video), pts_ns=0),
+            MediaRef(uri=str(sample_video), pts_ns=100_000_000),
+        ]
+        results = load_batch(refs, decoder="pyav")
+
+        assert len(results) == 2
+        for rgb in results:
+            assert isinstance(rgb, np.ndarray)
+            assert rgb.shape == (48, 64, 3)
+
+    def test_load_batch_with_torchcodec_decoder_not_installed(self, sample_video):
+        """Test that requesting TorchCodec when not installed raises ImportError."""
+        refs = [MediaRef(uri=str(sample_video), pts_ns=0)]
+
+        # TorchCodec is not installed in the test environment
+        with pytest.raises(ImportError, match="TorchCodec.*not.*install"):
+            load_batch(refs, decoder="torchcodec")
+
+    def test_load_batch_with_invalid_decoder(self, sample_video):
+        """Test that invalid decoder backend raises ValueError."""
+        refs = [MediaRef(uri=str(sample_video), pts_ns=0)]
+
+        with pytest.raises(ValueError, match="Unknown decoder backend"):
+            load_batch(refs, decoder="invalid")  # type: ignore

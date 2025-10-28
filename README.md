@@ -27,9 +27,12 @@ MediaRef(uri="data:image/png;base64,...")              # Embedded data URI
 ref.to_rgb_array()                                     # Returns (H, W, 3) numpy array
 ref.to_pil_image()                                     # Returns PIL.Image
 
-# Batch loading with automatic caching
+# Batch loading with automatic caching (default: PyAV decoder)
 refs = [MediaRef(uri="video.mp4", pts_ns=i*1e9) for i in range(10)]
 frames = load_batch(refs)                              # Reuses video container
+
+# Use TorchCodec decoder for GPU acceleration (requires torchcodec>=0.4.0)
+frames = load_batch(refs, decoder="torchcodec")
 
 # Embedding
 data_uri = ref.embed_as_data_uri(format="png")         # Encode to data URI
@@ -79,6 +82,10 @@ MediaRef.model_validate_json(json_str)                 # From JSON string
 - MCAP file path resolution: detects `.mcap` suffix and uses parent directory as base
 - Garbage collection triggered every 10 PyAV operations to handle reference cycles
 - Cache size configurable via `AV_CACHE_SIZE` environment variable
+
+## Acknowledgments
+
+The video decoder interface design references [TorchCodec](https://github.com/pytorch/torchcodec)'s API design.
 
 ## Dependencies
 

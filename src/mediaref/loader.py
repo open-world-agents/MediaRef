@@ -1,33 +1,57 @@
 """Batch loading utilities for MediaRef."""
 
 from collections import defaultdict
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Literal
 
 import numpy as np
 
 from . import cached_av
-from .video.reader import BatchDecodingStrategy, VideoReader
+from .video_decoder import BaseVideoDecoder, PyAVVideoDecoder
+from .video_decoder.types import BatchDecodingStrategy
 
 if TYPE_CHECKING:
     from .core import MediaRef
 
 NANOSECOND = 1_000_000_000  # 1 second in nanoseconds
 
+# Type alias for decoder backend selection
+DecoderBackend = Literal["pyav", "torchcodec"]
+
+
+def _get_decoder_class(backend: DecoderBackend) -> type[BaseVideoDecoder]:
+    """Get decoder class for the specified backend."""
+    if backend == "pyav":
+        return PyAVVideoDecoder
+    elif backend == "torchcodec":
+        try:
+            from .video_decoder import TorchCodecVideoDecoder
+
+            return TorchCodecVideoDecoder
+        except ImportError as e:
+            raise ImportError(
+                "TorchCodec decoder requested but torchcodec is not installed. "
+                "Install it with: pip install torchcodec>=0.4.0"
+            ) from e
+    else:
+        raise ValueError(f"Unknown decoder backend: {backend}. Must be 'pyav' or 'torchcodec'")
+
 
 def load_batch(
     refs: list["MediaRef"],
     strategy: BatchDecodingStrategy = BatchDecodingStrategy.SEQUENTIAL_PER_KEYFRAME_BLOCK,
+    decoder: DecoderBackend = "pyav",
     **kwargs,
 ) -> list[np.ndarray]:
     """Load multiple MediaRef objects efficiently using optimized batch decoding.
 
-    This function groups MediaRefs by video file and uses PyAV's batch decoding API
-    to decode multiple frames in one pass, which is much more efficient than loading
-    each frame separately.
+    This function groups MediaRefs by video file and uses the specified decoder's
+    batch decoding API to decode multiple frames in one pass, which is much more
+    efficient than loading each frame separately.
 
     Args:
         refs: List of MediaRef objects to load
         strategy: Batch decoding strategy (SEPARATE, SEQUENTIAL_PER_KEYFRAME_BLOCK, or SEQUENTIAL)
+        decoder: Video decoder backend to use ('pyav' or 'torchcodec'). Default: 'pyav'
         **kwargs: Additional options passed to to_rgb_array() for image loading
 
     Returns:
@@ -37,17 +61,21 @@ def load_batch(
         TypeError: If refs is not a list or contains invalid types
         ValueError: If refs contains None values or video refs missing pts_ns
         ValueError: If batch loading fails for any video
+        ImportError: If torchcodec decoder is requested but not installed
 
     Examples:
         >>> from mediaref import MediaRef, load_batch
         >>>
-        >>> # Load multiple frames from same video efficiently
+        >>> # Load multiple frames from same video efficiently (default PyAV decoder)
         >>> refs = [
         ...     MediaRef(uri="video.mp4", pts_ns=0),
         ...     MediaRef(uri="video.mp4", pts_ns=1_000_000_000),
         ...     MediaRef(uri="video.mp4", pts_ns=2_000_000_000),
         ... ]
         >>> frames = load_batch(refs)
+        >>>
+        >>> # Use TorchCodec decoder for GPU acceleration
+        >>> frames = load_batch(refs, decoder="torchcodec")
         >>>
         >>> # Also works with mixed images and videos
         >>> refs = [
@@ -69,6 +97,9 @@ def load_batch(
 
     if not isinstance(strategy, BatchDecodingStrategy):
         raise TypeError(f"strategy must be BatchDecodingStrategy, got {type(strategy).__name__}")
+
+    # Get the decoder class for the specified backend
+    decoder_class = _get_decoder_class(decoder)
 
     # Group refs by video file for efficient batch loading
     video_groups = defaultdict(list)
@@ -99,15 +130,20 @@ def load_batch(
                 raise ValueError(f"Video reference missing pts_ns: {ref.uri}")
             pts_seconds.append(ref.pts_ns / NANOSECOND)
 
-        # Use VideoReader for batch decoding
+        # Use selected decoder for batch decoding
         try:
-            with VideoReader(uri, keep_av_open=True) as reader:
-                av_frames = reader.get_frames_played_at(pts_seconds, strategy=strategy)
+            with decoder_class(uri) as video_decoder:
+                # Get frames as FrameBatch
+                batch = video_decoder.get_frames_played_at(pts_seconds, strategy=strategy)
 
-                # Convert AV frames to RGB arrays
-                for idx, av_frame in zip(indices, av_frames):
-                    rgb_array = av_frame.to_ndarray(format="rgb24")
+                # Convert from NCHW to HWC format
+                for idx, frame_nchw in zip(indices, batch.data):
+                    # Transpose from (C, H, W) to (H, W, C)
+                    rgb_array = np.transpose(frame_nchw, (1, 2, 0))
                     results[idx] = rgb_array
+        except ImportError:
+            # Re-raise ImportError for missing decoder dependencies
+            raise
         except Exception as e:
             raise ValueError(f"Failed to load batch from '{uri}': {e}") from e
 
