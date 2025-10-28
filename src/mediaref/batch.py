@@ -5,8 +5,6 @@ from typing import TYPE_CHECKING, List, Literal, Optional, Type
 
 import numpy as np
 
-from ._features import require_video
-
 if TYPE_CHECKING:
     from .core import MediaRef
     from .video_decoder import BaseVideoDecoder
@@ -20,8 +18,6 @@ DecoderBackend = Literal["pyav", "torchcodec"]
 
 def _get_decoder_class(backend: DecoderBackend) -> Type["BaseVideoDecoder"]:
     """Get decoder class for the specified backend."""
-    require_video()
-
     if backend == "pyav":
         from .video_decoder import PyAVVideoDecoder
 
@@ -179,7 +175,6 @@ def cleanup_cache():
         >>> # Clean up when done
         >>> cleanup_cache()
     """
-    require_video()
     from . import cached_av
 
     cached_av.cleanup_cache()

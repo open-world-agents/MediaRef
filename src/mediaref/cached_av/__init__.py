@@ -4,9 +4,13 @@ from typing import Literal, overload
 import av
 import av.container
 
+from .._features import require_video
 from .._typing import PathLike
 from ..resource_cache import ResourceCache
 from .input_container_mixin import InputContainerMixin
+
+# Ensure video dependencies are available
+require_video()
 
 DEFAULT_CACHE_SIZE = int(os.environ.get("AV_CACHE_SIZE", 10))
 

@@ -129,9 +129,6 @@ def load_video_frame_as_bgra(
         ValueError: If loading fails
         FileNotFoundError: If local file doesn't exist
     """
-    require_video()
-
-    # Import video dependencies (only after require_video check)
     from . import cached_av
 
     global _CALLED_TIMES

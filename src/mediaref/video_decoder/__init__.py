@@ -22,11 +22,15 @@ Examples:
     ...     batch = decoder.get_frames_played_at([0.0, 1.0, 2.0])
 """
 
+from .._features import require_video
 from .._typing import PathLike
 from .base import BaseVideoDecoder
 from .frame_batch import FrameBatch
 from .pyav_decoder import PyAVVideoDecoder
 from .types import BatchDecodingStrategy, VideoStreamMetadata
+
+# Ensure video dependencies are available
+require_video()
 
 # Conditional import with graceful fallback for optional dependency
 try:
