@@ -12,9 +12,12 @@ cd mediaref
 
 2. Install in development mode with all dependencies:
 ```bash
-pip install -e ".[video,dev]"
-# or with uv:
-uv sync --all-extras
+# With uv (recommended):
+uv sync --all-extras --all-groups
+
+# Or with pip:
+pip install -e ".[video]"
+pip install ipython pytest pytest-cov ruff
 ```
 
 ## Running Tests
@@ -27,7 +30,7 @@ pytest
 pytest --cov=mediaref --cov-report=html
 
 # Run specific test
-pytest tests/test_mediaref.py::TestMediaRefLoading::test_to_rgb_array
+pytest tests/test_loading.py::TestToRgbArrayImage::test_to_rgb_array_from_file
 ```
 
 ## Code Style
