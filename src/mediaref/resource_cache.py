@@ -4,7 +4,7 @@ import os
 import sys
 import time
 from dataclasses import dataclass
-from typing import Callable, ContextManager, Generic, TypeVar
+from typing import Callable, ContextManager, Generic, Optional, TypeVar
 
 from loguru import logger
 
@@ -35,7 +35,7 @@ class ResourceCache(Generic[T], dict[str, CacheEntry[T]]):
             os.register_at_fork(before=lambda: (self.clear(), gc.collect()))
         atexit.register(self.clear)
 
-    def add_entry(self, key: str, obj: T, cleanup_callback: Callable | None = None):
+    def add_entry(self, key: str, obj: T, cleanup_callback: Optional[Callable] = None):
         """Add or update a cached resource with reference counting."""
         if cleanup_callback is None:
             # Default to context manager cleanup
