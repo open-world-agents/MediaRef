@@ -21,13 +21,11 @@ jobs:
       uses: astral-sh/setup-uv@v6
 
     - name: Install Python
-      run: uv python install ${{ matrix.python-version }}
+      run: uv python install ${{ matrix.python-version }} --default
     
     - name: Install dependencies
       run: |
         uv pip install -e ".[loader,dev]"
-      env:
-        UV_SYSTEM_PYTHON: 1
     
     - name: Run tests
       run: |
