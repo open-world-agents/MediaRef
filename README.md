@@ -1,5 +1,15 @@
 # MediaRef
 
+[![CI](https://img.shields.io/github/actions/workflow/status/pydantic/pydantic/ci.yml?branch=main&logo=github&label=CI)](https://github.com/pydantic/pydantic/actions?query=event%3Apush+branch%3Amain+workflow%3ACI)
+[![Coverage](https://coverage-badge.samuelcolvin.workers.dev/pydantic/pydantic.svg)](https://coverage-badge.samuelcolvin.workers.dev/redirect/pydantic/pydantic)
+[![pypi](https://img.shields.io/pypi/v/pydantic.svg)](https://pypi.python.org/pypi/pydantic)
+[![CondaForge](https://img.shields.io/conda/v/conda-forge/pydantic.svg)](https://anaconda.org/conda-forge/pydantic)
+[![downloads](https://static.pepy.tech/badge/pydantic/month)](https://pepy.tech/project/pydantic)
+[![versions](https://img.shields.io/pypi/pyversions/pydantic.svg)](https://github.com/pydantic/pydantic)
+[![license](https://img.shields.io/github/license/pydantic/pydantic.svg)](https://github.com/pydantic/pydantic/blob/main/LICENSE)
+[![Pydantic v2](https://img.shields.io/endpoint?url=https://raw.githubusercontent.com/pydantic/pydantic/main/docs/badge/v2.json)](https://docs.pydantic.dev/latest/contributing/#badges)
+[![llms.txt](https://img.shields.io/badge/llms.txt-green)](https://docs.pydantic.dev/latest/llms.txt)
+
 Pydantic-based media reference for images and video frames. Supports file paths, URLs, data URIs, and video timestamps. Designed for dataset metadata and lazy loading.
 
 ## Installation
@@ -73,8 +83,18 @@ MediaRef.model_validate_json(json_str)                 # From JSON string
 
 ### Video Decoders (requires `[video]` extra)
 
-- `PyAVVideoDecoder(video_path)` - PyAV-based decoder with TorchCodec-compatible interface
-- `TorchCodecVideoDecoder(video_path)` - TorchCodec-based decoder (requires `torchcodec>=0.4.0`)
+- `PyAVVideoDecoder(video_path)` - PyAV-based decoder with batch decoding strategies
+- `TorchCodecVideoDecoder(video_path)` - TorchCodec-based decoder for GPU acceleration (requires `torchcodec>=0.4.0`)
+
+**Decoder Comparison:**
+
+| Feature | PyAVVideoDecoder | TorchCodecVideoDecoder |
+|---------|------------------|------------------------|
+| Batch decoding strategies | ✅ Full support (SEPARATE, SEQUENTIAL, SEQUENTIAL_PER_KEYFRAME_BLOCK) | ❌ Not supported |
+| GPU acceleration | ❌ CPU only | ✅ CUDA support |
+| Backend | PyAV (FFmpeg) | TorchCodec (FFmpeg) |
+
+Use `PyAVVideoDecoder` when you need fine-grained control over batch decoding strategies. Use `TorchCodecVideoDecoder` for GPU-accelerated decoding.
 
 ## Design Notes
 

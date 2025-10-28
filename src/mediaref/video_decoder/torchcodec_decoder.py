@@ -1,10 +1,13 @@
-from typing import ClassVar
+import warnings
+from typing import ClassVar, List, Optional
 
 from torchcodec.decoders import VideoDecoder
 
 from .._typing import PathLike
 from ..resource_cache import ResourceCache
 from .base import BaseVideoDecoder
+from .frame_batch import FrameBatch
+from .types import BatchDecodingStrategy
 
 
 class TorchCodecVideoDecoder(VideoDecoder, BaseVideoDecoder):
@@ -17,6 +20,12 @@ class TorchCodecVideoDecoder(VideoDecoder, BaseVideoDecoder):
     The decoder inherits from both TorchCodec's VideoDecoder (for functionality)
     and BaseVideoDecoder (for interface compatibility), ensuring it works
     seamlessly with the MediaRef ecosystem.
+
+    Note:
+        TorchCodec does not implement batch decoding strategies (SEPARATE,
+        SEQUENTIAL, SEQUENTIAL_PER_KEYFRAME_BLOCK). The strategy parameter
+        is accepted for API compatibility but ignored. For batch decoding
+        strategy support, use PyAVVideoDecoder instead.
 
     Args:
         source: Path to video file or URL
@@ -66,3 +75,65 @@ class TorchCodecVideoDecoder(VideoDecoder, BaseVideoDecoder):
         """
         if hasattr(self, "_cache_key"):
             self.cache.release_entry(self._cache_key)
+
+    def get_frames_at(
+        self,
+        indices: List[int],
+        *,
+        strategy: Optional[BatchDecodingStrategy] = None,
+    ) -> FrameBatch:
+        """Retrieve frames at specific frame indices.
+
+        Note:
+            TorchCodec does not implement batch decoding strategies. The strategy
+            parameter is accepted for API compatibility but is ignored. If a
+            strategy is explicitly specified, a warning will be issued.
+
+        Args:
+            indices: List of frame indices to retrieve
+            strategy: Batch decoding strategy (ignored by TorchCodec, only supported by PyAV)
+
+        Returns:
+            FrameBatch containing frame data and timing information
+        """
+        if strategy is not None:
+            warnings.warn(
+                f"TorchCodec decoder does not support batch decoding strategies. "
+                f"The '{strategy.value}' strategy is ignored. "
+                f"Use PyAVVideoDecoder for batch decoding strategy support.",
+                UserWarning,
+                stacklevel=2,
+            )
+        # Call parent's get_frames_at without strategy parameter
+        return super().get_frames_at(indices)
+
+    def get_frames_played_at(
+        self,
+        seconds: List[float],
+        *,
+        strategy: Optional[BatchDecodingStrategy] = None,
+    ) -> FrameBatch:
+        """Retrieve frames at specific timestamps.
+
+        Note:
+            TorchCodec does not implement batch decoding strategies. The strategy
+            parameter is accepted for API compatibility but is ignored. If a
+            strategy is explicitly specified, a warning will be issued.
+
+        Args:
+            seconds: List of timestamps in seconds to retrieve frames at
+            strategy: Batch decoding strategy (ignored by TorchCodec, only supported by PyAV)
+
+        Returns:
+            FrameBatch containing frame data and timing information
+        """
+        if strategy is not None:
+            warnings.warn(
+                f"TorchCodec decoder does not support batch decoding strategies. "
+                f"The '{strategy.value}' strategy is ignored. "
+                f"Use PyAVVideoDecoder for batch decoding strategy support.",
+                UserWarning,
+                stacklevel=2,
+            )
+        # Call parent's get_frames_played_at without strategy parameter
+        return super().get_frames_played_at(seconds)

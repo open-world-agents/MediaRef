@@ -1,7 +1,7 @@
 """Base interface for video decoders."""
 
 from abc import ABC, abstractmethod
-from typing import List, Union
+from typing import List, Optional, Union
 
 import numpy.typing as npt
 
@@ -96,16 +96,17 @@ class BaseVideoDecoder(ABC):
         self,
         indices: List[int],
         *,
-        strategy: BatchDecodingStrategy = BatchDecodingStrategy.SEQUENTIAL_PER_KEYFRAME_BLOCK,
+        strategy: Optional[BatchDecodingStrategy] = None,
     ) -> FrameBatch:
         """Retrieve frames at specific frame indices.
 
         Args:
             indices: List of frame indices to retrieve
-            strategy: Batch decoding strategy:
+            strategy: Batch decoding strategy (optional, only supported on some decoders):
                 - SEPARATE: Decode each frame separately (best for sparse queries)
                 - SEQUENTIAL_PER_KEYFRAME_BLOCK: Decode in batches per keyframe block (balanced)
                 - SEQUENTIAL: Decode all frames in one pass (best for dense queries)
+                - None: Use decoder's default strategy
 
         Returns:
             FrameBatch containing:
@@ -126,13 +127,13 @@ class BaseVideoDecoder(ABC):
         self,
         seconds: List[float],
         *,
-        strategy: BatchDecodingStrategy = BatchDecodingStrategy.SEQUENTIAL_PER_KEYFRAME_BLOCK,
+        strategy: Optional[BatchDecodingStrategy] = None,
     ) -> FrameBatch:
         """Retrieve frames at specific timestamps.
 
         Args:
             seconds: List of timestamps in seconds to retrieve frames at
-            strategy: Batch decoding strategy (see get_frames_at for details)
+            strategy: Batch decoding strategy (optional, see get_frames_at for details)
 
         Returns:
             FrameBatch containing frame data and timing information

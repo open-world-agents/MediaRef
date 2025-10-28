@@ -126,9 +126,13 @@ class PyAVVideoDecoder(BaseVideoDecoder):
         self,
         indices: List[int],
         *,
-        strategy: BatchDecodingStrategy = BatchDecodingStrategy.SEQUENTIAL_PER_KEYFRAME_BLOCK,
+        strategy: Optional[BatchDecodingStrategy] = None,
     ) -> FrameBatch:
         """Retrieve frames at specific frame indices."""
+        # Default to SEQUENTIAL_PER_KEYFRAME_BLOCK if not specified
+        if strategy is None:
+            strategy = BatchDecodingStrategy.SEQUENTIAL_PER_KEYFRAME_BLOCK
+
         indices = [index % self.metadata.num_frames for index in indices]
         pts = [float(idx / self.metadata.average_rate) for idx in indices]
         return self.get_frames_played_at(seconds=pts, strategy=strategy)
@@ -137,13 +141,14 @@ class PyAVVideoDecoder(BaseVideoDecoder):
         self,
         seconds: List[float],
         *,
-        strategy: BatchDecodingStrategy = BatchDecodingStrategy.SEQUENTIAL_PER_KEYFRAME_BLOCK,
+        strategy: Optional[BatchDecodingStrategy] = None,
     ) -> FrameBatch:
         """Retrieve frames at specific timestamps.
 
         Args:
             seconds: List of timestamps in seconds to retrieve frames at
-            strategy: Decoding strategy (SEPARATE, SEQUENTIAL_PER_KEYFRAME_BLOCK, or SEQUENTIAL)
+            strategy: Decoding strategy (SEPARATE, SEQUENTIAL_PER_KEYFRAME_BLOCK, or SEQUENTIAL).
+                Defaults to SEQUENTIAL_PER_KEYFRAME_BLOCK if not specified.
 
         Returns:
             FrameBatch containing frame data and timing information
@@ -151,6 +156,10 @@ class PyAVVideoDecoder(BaseVideoDecoder):
         Raises:
             ValueError: If any timestamp exceeds video duration or frames cannot be found
         """
+        # Default to SEQUENTIAL_PER_KEYFRAME_BLOCK if not specified
+        if strategy is None:
+            strategy = BatchDecodingStrategy.SEQUENTIAL_PER_KEYFRAME_BLOCK
+
         if not seconds:
             return FrameBatch(
                 data=np.empty((0, 3, self.metadata.height, self.metadata.width), dtype=np.uint8),

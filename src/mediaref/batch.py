@@ -57,7 +57,8 @@ def batch_decode(
 
     Args:
         refs: List of MediaRef objects to load
-        strategy: Batch decoding strategy (SEPARATE, SEQUENTIAL_PER_KEYFRAME_BLOCK, or SEQUENTIAL)
+        strategy: Batch decoding strategy (SEPARATE, SEQUENTIAL_PER_KEYFRAME_BLOCK, or SEQUENTIAL).
+            Only supported by PyAV decoder. TorchCodec decoder ignores this parameter.
         decoder: Video decoder backend to use ('pyav' or 'torchcodec'). Default: 'pyav'
         **kwargs: Additional options passed to to_rgb_array() for image loading
 
@@ -72,6 +73,7 @@ def batch_decode(
 
     Examples:
         >>> from mediaref import MediaRef, batch_decode
+        >>> from mediaref.video_decoder import BatchDecodingStrategy
         >>>
         >>> # Decode multiple frames from same video efficiently (default PyAV decoder)
         >>> refs = [
@@ -81,7 +83,10 @@ def batch_decode(
         ... ]
         >>> frames = batch_decode(refs)
         >>>
-        >>> # Use TorchCodec decoder for GPU acceleration
+        >>> # Use batch decoding strategy (PyAV only)
+        >>> frames = batch_decode(refs, strategy=BatchDecodingStrategy.SEQUENTIAL)
+        >>>
+        >>> # Use TorchCodec decoder for GPU acceleration (strategy ignored)
         >>> frames = batch_decode(refs, decoder="torchcodec")
         >>>
         >>> # Also works with mixed images and videos
@@ -102,18 +107,12 @@ def batch_decode(
     if any(ref is None for ref in refs):
         raise ValueError("refs list contains None values")
 
-    # Set default strategy if not provided
-    if strategy is None:
-        from .video_decoder.types import BatchDecodingStrategy
-
-        strategy = BatchDecodingStrategy.SEQUENTIAL_PER_KEYFRAME_BLOCK
-
     # Get the decoder class for the specified backend
     decoder_class = _get_decoder_class(decoder)
 
     # Group refs by video file for efficient batch loading
     video_groups = defaultdict(list)
-    image_refs = []
+    image_refs: list[tuple[int, "MediaRef"]] = []
 
     for i, ref in enumerate(refs):
         if ref.is_video:
@@ -144,7 +143,11 @@ def batch_decode(
         try:
             with decoder_class(uri) as video_decoder:
                 # Get frames as FrameBatch
-                batch = video_decoder.get_frames_played_at(pts_seconds, strategy=strategy)
+                # Pass strategy only if explicitly provided
+                if strategy is not None:
+                    batch = video_decoder.get_frames_played_at(pts_seconds, strategy=strategy)
+                else:
+                    batch = video_decoder.get_frames_played_at(pts_seconds)
 
                 # Convert from NCHW to HWC format
                 for idx, frame_nchw in zip(indices, batch.data):
