@@ -27,7 +27,9 @@ class VideoStreamMetadata:
     height: int
 
 
-class BatchDecodingStrategy(enum.StrEnum):
+class BatchDecodingStrategy(str, enum.Enum):
+    """Batch decoding strategy for video frames."""
+
     SEPARATE = "separate"  # Decode each frame separately. Best at sparse query.
     SEQUENTIAL_PER_KEYFRAME_BLOCK = "sequential_per_keyframe_block"  # Decode frames in batches per keyframe block. Better at dense query then separate, better at sparse query then sequential.
     SEQUENTIAL = "sequential"  # Decode frames in batches. Best at dense query.
