@@ -36,16 +36,6 @@ def __getattr__(name: str):
         from .batch import cleanup_cache
 
         return cleanup_cache
-    elif name == "load_batch":
-        # Backward compatibility alias
-        from .batch import batch_decode
-
-        return batch_decode
-    elif name == "load_media":
-        # Backward compatibility alias
-        from .batch import batch_decode
-
-        return batch_decode
     raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
 
 
