@@ -15,6 +15,7 @@ import requests
 
 if TYPE_CHECKING:
     import av
+    import av.container
 
 # Constants
 REQUEST_TIMEOUT = 60  # HTTP request timeout in seconds
