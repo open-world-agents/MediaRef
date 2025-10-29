@@ -2,7 +2,7 @@
 
 import warnings
 from pathlib import Path
-from typing import Annotated, Literal, Optional
+from typing import TYPE_CHECKING, Annotated, Literal, Optional, Union
 
 import cv2
 import numpy as np
@@ -10,8 +10,11 @@ import numpy.typing as npt
 import PIL.Image
 from pydantic import BaseModel, BeforeValidator, Field
 
+if TYPE_CHECKING:
+    from .data_uri import DataURI
 
-def _convert_datauri_to_str(v) -> str:
+
+def _convert_datauri_to_str(v: Union[str, "DataURI"]) -> str:
     """Convert DataURI object to string if provided."""
     from .data_uri import DataURI  # noqa: E402
 
@@ -57,6 +60,16 @@ class MediaRef(BaseModel):
         default=None,
         description="Video frame timestamp in nanoseconds",
     )
+
+    def __init__(self, *, uri: Union[str, "DataURI"], pts_ns: Optional[int] = None, **kwargs) -> None:
+        """Initialize MediaRef with URI and optional timestamp.
+
+        Args:
+            uri: URI string or DataURI object
+            pts_ns: Optional video frame timestamp in nanoseconds
+            **kwargs: Additional fields (for internal use)
+        """
+        super().__init__(uri=uri, pts_ns=pts_ns, **kwargs)
 
     # ========== Properties ==========
 
