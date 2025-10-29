@@ -20,7 +20,7 @@ jobs:
         with:
           fetch-depth: 0  # Fetch all history for version detection
       - name: Install uv
-        uses: astral-sh/setup-uv@v6
+        uses: astral-sh/setup-uv@v7
       - name: Install Python 3.13
         run: uv python install 3.13
       - name: Build
