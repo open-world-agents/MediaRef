@@ -87,5 +87,5 @@ ax2.text(
 plt.tight_layout()
 
 # Save figure
-plt.savefig("assets/decoding_benchmark.png", dpi=150, bbox_inches="tight")
-print("Figure saved to assets/decoding_benchmark.png")
+plt.savefig(".github/assets/decoding_benchmark.png", dpi=150, bbox_inches="tight")
+print("Figure saved to .github/assets/decoding_benchmark.png")

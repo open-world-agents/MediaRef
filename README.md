@@ -50,7 +50,7 @@ frames = batch_decode(refs)                            # Much faster than loadin
 When loading multiple frames from the same video, `batch_decode()` opens the video file once and reuses the handle, achieving **4.9× faster throughput** and **41× better I/O efficiency** compared to existing methods.
 
 <p align="center">
-  <img src="assets/decoding_benchmark.png" alt="Decoding Benchmark" width="800">
+  <img src=".github/assets/decoding_benchmark.png" alt="Decoding Benchmark" width="800">
 </p>
 
 > **Benchmark details**: Measured on real ML dataloader workloads (Minecraft dataset: 64×5 min episodes, 640×360 @ 20Hz, FSLDataset with 4096 token sequences) vs baseline and TorchCodec v0.6.0. See [D2E paper](https://worv-ai.github.io/d2e/) Section 3 and Appendix A for full methodology.
