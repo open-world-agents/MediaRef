@@ -46,11 +46,11 @@ def open(file: PathLike, mode: Literal["r", "w"], *, keep_av_open: bool = False,
         # Use cached container when keep_av_open=True
         cache_key = str(file)
         if cache_key not in _container_cache:
+            # Create new cached container
             return MockedInputContainer(file, **kwargs)
-
-        # Increment reference count when reusing cached container
-        _container_cache.add_entry(cache_key, _container_cache[cache_key].obj)
-        return _container_cache[cache_key].obj
+        else:
+            # Reuse existing cached container and increment reference count
+            return _container_cache.acquire_entry(cache_key)
     else:
         return av.open(file, mode, **kwargs)
 
