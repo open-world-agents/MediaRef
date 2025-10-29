@@ -2,13 +2,22 @@
 
 import warnings
 from pathlib import Path
-from typing import Literal, Optional
+from typing import Annotated, Optional
 
 import cv2
 import numpy as np
 import numpy.typing as npt
 import PIL.Image
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, BeforeValidator, Field
+
+
+def _convert_datauri_to_str(v) -> str:
+    """Convert DataURI object to string if provided."""
+    from .data_uri import DataURI  # noqa: E402
+
+    if isinstance(v, DataURI):
+        return v.uri
+    return v
 
 
 class MediaRef(BaseModel):
@@ -34,12 +43,13 @@ class MediaRef(BaseModel):
         >>> ref = MediaRef(uri="https://example.com/image.jpg")
         >>> pil_img = ref.to_pil_image()
         >>>
-        >>> # Embedded data URI
-        >>> data_uri = ref.embed_as_data_uri(format="png")
-        >>> embedded_ref = MediaRef(uri=data_uri)
+        >>> # Embedded data URI (from file or array)
+        >>> from mediaref import DataURI
+        >>> data_uri = DataURI.from_file("image.png")  # or DataURI.from_image(array)
+        >>> ref = MediaRef(uri=data_uri)  # Can pass DataURI directly
     """
 
-    uri: str = Field(
+    uri: Annotated[str, BeforeValidator(_convert_datauri_to_str)] = Field(
         ...,
         description="URI (data:image/png;base64,... | file:///path | http[s]://...) or posix file path (/absolute/path | relative/path)",
     )
@@ -180,36 +190,6 @@ class MediaRef(BaseModel):
         """
         rgb_array = self.to_rgb_array(**kwargs)
         return PIL.Image.fromarray(rgb_array)
-
-    def embed_as_data_uri(
-        self,
-        format: Literal["png", "jpeg", "bmp"] = "png",
-        quality: Optional[int] = None,
-    ) -> str:
-        """Load media and encode as data URI.
-
-        Args:
-            format: Image format ('png', 'jpeg', 'bmp')
-            quality: JPEG quality (1-100), ignored for PNG/BMP
-
-        Returns:
-            Data URI string
-
-        Raises:
-            ImportError: If video dependencies are not installed (for video frames)
-
-        Examples:
-            >>> ref = MediaRef(uri="image.png")
-            >>> data_uri = ref.embed_as_data_uri(format="png")
-            >>> embedded_ref = MediaRef(uri=data_uri)
-            >>> embedded_ref.is_embedded
-            True
-        """
-        from ._internal import encode_array_to_base64
-
-        bgra = self._load_as_bgra()
-        base64_data = encode_array_to_base64(bgra, format, quality)
-        return f"data:image/{format};base64,{base64_data}"
 
     # ========== Internal ==========
 

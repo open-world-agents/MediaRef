@@ -2,12 +2,15 @@
 
 Public API:
     - MediaRef: Core class for media references
+    - DataURI: Data URI encoding and decoding
     - batch_decode: Efficient batch decoding of multiple media references
+    - cleanup_cache: Clear video container cache
 """
 
 from loguru import logger
 
 from .core import MediaRef
+from .data_uri import DataURI
 
 # Disable logging by default, which is best practice for library code
 logger.disable("mediaref")
@@ -39,4 +42,4 @@ def __getattr__(name: str):
     raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
 
 
-__all__ = ["MediaRef", "batch_decode", "cleanup_cache"]
+__all__ = ["MediaRef", "DataURI", "batch_decode", "cleanup_cache"]
