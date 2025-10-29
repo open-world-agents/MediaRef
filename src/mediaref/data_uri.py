@@ -4,7 +4,7 @@ import base64
 import mimetypes
 from pathlib import Path
 from typing import Literal, Optional, Union
-from urllib.parse import quote, urlparse
+from urllib.parse import quote, unquote, urlparse
 
 import cv2
 import numpy as np
@@ -119,12 +119,21 @@ class DataURI(BaseModel):
         except UnicodeDecodeError as e:
             raise ValueError(f"Non-base64 data must be valid UTF-8 text: {e}") from e
 
-        # Check if data is already quoted by comparing with quoted version
-        if text_data != quote(text_data, safe=""):
-            raise ValueError(
-                "Non-base64 data URI contains unquoted characters. "
-                "Data should be URL-encoded before creating DataURI, or use base64 encoding."
-            )
+        # Check if data is properly URL-encoded by:
+        # 1. Unquote it to get the original data
+        # 2. Re-quote it and compare with the input
+        # This ensures the data is already properly encoded
+        try:
+            unquoted = unquote(text_data)
+            requoted = quote(unquoted, safe="")
+            if text_data != requoted:
+                raise ValueError(
+                    "Non-base64 data URI contains unquoted characters. "
+                    "Data should be URL-encoded before creating DataURI, or use base64 encoding."
+                )
+        except Exception as e:
+            raise ValueError(f"Invalid URL encoding in non-base64 data: {e}") from e
+
         return self
 
     # ========== Properties ==========

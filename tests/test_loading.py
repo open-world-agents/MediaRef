@@ -1,4 +1,4 @@
-"""Tests for MediaRef loading methods (to_rgb_array, to_pil_image, embed_as_data_uri).
+"""Tests for MediaRef loading methods (to_rgb_array, to_pil_image) and DataURI.
 
 These tests require the [loader] extra to be installed.
 """
@@ -9,7 +9,7 @@ import numpy as np
 import pytest
 from PIL import Image
 
-from mediaref import MediaRef
+from mediaref import DataURI, MediaRef
 
 
 class TestToRgbArrayImage:
@@ -173,100 +173,269 @@ class TestToPilImage:
         assert pil_img.mode == "RGB"
 
 
-class TestEmbedAsDataUri:
-    """Test embed_as_data_uri method."""
+class TestDataURICreation:
+    """Test DataURI creation from various sources."""
 
-    def test_embed_as_data_uri_png(self, sample_image_file: Path):
-        """Test embedding as PNG data URI."""
-        ref = MediaRef(uri=str(sample_image_file))
-        data_uri = ref.embed_as_data_uri(format="png")
+    def test_from_file(self, sample_image_file: Path):
+        """Test creating DataURI from file."""
+        data_uri = DataURI.from_file(sample_image_file)
 
-        assert data_uri.startswith("data:image/png;base64,")
-        assert len(data_uri) > 100  # Should have substantial base64 data
+        assert data_uri.mimetype == "image/png"
+        assert data_uri.is_base64
+        assert data_uri.is_image
+        assert data_uri.uri.startswith("data:image/png;base64,")
+        assert len(data_uri) > 0
 
-    def test_embed_as_data_uri_jpeg(self, sample_image_file: Path):
-        """Test embedding as JPEG data URI."""
-        ref = MediaRef(uri=str(sample_image_file))
-        data_uri = ref.embed_as_data_uri(format="jpeg")
+    def test_from_image_numpy_array(self, sample_image_file: Path):
+        """Test creating DataURI from numpy array."""
+        rgb = MediaRef(uri=str(sample_image_file)).to_rgb_array()
+        data_uri = DataURI.from_image(rgb, format="png")
 
-        assert data_uri.startswith("data:image/jpeg;base64,")
-        assert len(data_uri) > 100
+        assert data_uri.mimetype == "image/png"
+        assert data_uri.is_base64
+        assert data_uri.uri.startswith("data:image/png;base64,")
 
-    def test_embed_as_data_uri_bmp(self, sample_image_file: Path):
-        """Test embedding as BMP data URI."""
-        ref = MediaRef(uri=str(sample_image_file))
-        data_uri = ref.embed_as_data_uri(format="bmp")
+    def test_from_image_pil_image(self, sample_image_file: Path):
+        """Test creating DataURI from PIL Image."""
+        pil_img = MediaRef(uri=str(sample_image_file)).to_pil_image()
+        data_uri = DataURI.from_image(pil_img, format="png")
 
-        assert data_uri.startswith("data:image/bmp;base64,")
-        assert len(data_uri) > 100
+        assert data_uri.mimetype == "image/png"
+        assert data_uri.is_base64
+        assert data_uri.uri.startswith("data:image/png;base64,")
 
-    def test_embed_as_data_uri_jpeg_quality(self, sample_image_file: Path):
-        """Test embedding as JPEG with quality parameter."""
-        ref = MediaRef(uri=str(sample_image_file))
+    def test_from_uri_string(self, sample_image_file: Path):
+        """Test parsing DataURI from string."""
+        original = DataURI.from_file(sample_image_file)
+        parsed = DataURI.from_uri(original.uri)
 
-        high_quality = ref.embed_as_data_uri(format="jpeg", quality=95)
-        low_quality = ref.embed_as_data_uri(format="jpeg", quality=10)
-
-        # High quality should generally produce larger files
-        assert len(high_quality) >= len(low_quality)
-
-    def test_embed_as_data_uri_can_be_loaded(self, sample_image_file: Path):
-        """Test that embedded data URI can be loaded back."""
-        ref = MediaRef(uri=str(sample_image_file))
-        data_uri = ref.embed_as_data_uri(format="png")
-
-        # Create new ref from data URI
-        embedded_ref = MediaRef(uri=data_uri)
-        assert embedded_ref.is_embedded
-
-        # Should be able to load from embedded ref
-        rgb = embedded_ref.to_rgb_array()
-        assert isinstance(rgb, np.ndarray)
-        assert rgb.shape == (48, 64, 3)
+        assert parsed.mimetype == original.mimetype
+        assert parsed.is_base64 == original.is_base64
+        assert parsed.data == original.data
 
     @pytest.mark.video
-    def test_embed_as_data_uri_from_video(self, sample_video_file: tuple[Path, list[int]]):
-        """Test embedding video frame as data URI."""
+    def test_from_video_frame(self, sample_video_file: tuple[Path, list[int]]):
+        """Test creating DataURI from video frame."""
         video_path, timestamps = sample_video_file
-        pts_ns = timestamps[1]  # Already in nanoseconds
+        rgb = MediaRef(uri=str(video_path), pts_ns=timestamps[1]).to_rgb_array()
+        data_uri = DataURI.from_image(rgb, format="png")
 
-        ref = MediaRef(uri=str(video_path), pts_ns=pts_ns)
-        data_uri = ref.embed_as_data_uri(format="png")
+        assert data_uri.mimetype == "image/png"
+        assert data_uri.uri.startswith("data:image/png;base64,")
 
-        assert data_uri.startswith("data:image/png;base64,")
+    def test_data_stored_as_is_base64(self, sample_image_file: Path):
+        """Test that base64 data is stored as-is (base64 string as bytes)."""
+        import base64
 
-        # Should be loadable
-        embedded_ref = MediaRef(uri=data_uri)
-        rgb = embedded_ref.to_rgb_array()
+        data_uri = DataURI.from_file(sample_image_file)
+
+        # data field should store base64 string as bytes
+        assert isinstance(data_uri.data, bytes)
+        assert data_uri.is_base64
+
+        # data should be the base64 string (as bytes), not decoded
+        base64_str = data_uri.data.decode("utf-8")
+        # Should be valid base64
+        decoded = base64.b64decode(base64_str)
+        assert len(decoded) > 0
+
+        # uri should contain the same base64 string
+        assert base64_str in data_uri.uri
+
+    def test_data_stored_as_is_non_base64(self):
+        """Test that non-base64 data is stored as-is (URL-encoded text as bytes)."""
+        # Create a non-base64 data URI with URL-encoded text
+        uri_str = "data:text/plain,Hello%20World"
+        data_uri = DataURI.from_uri(uri_str)
+
+        # data field should store URL-encoded text as bytes
+        assert isinstance(data_uri.data, bytes)
+        assert not data_uri.is_base64
+        assert data_uri.data == b"Hello%20World"
+
+        # uri should reconstruct correctly
+        assert data_uri.uri == uri_str
+
+    def test_quote_validation_accepts_quoted_data(self):
+        """Test that properly URL-encoded data is accepted."""
+        # Properly quoted data should be accepted
+        uri_str = "data:text/plain,Hello%20World%21"
+        data_uri = DataURI.from_uri(uri_str)
+
+        assert data_uri.mimetype == "text/plain"
+        assert not data_uri.is_base64
+        assert data_uri.uri == uri_str
+
+    def test_quote_validation_rejects_unquoted_data(self):
+        """Test that unquoted data is rejected."""
+        from pydantic import ValidationError
+
+        # Unquoted space should be rejected
+        with pytest.raises(ValidationError, match="unquoted characters"):
+            DataURI(mimetype="text/plain", is_base64=False, data=b"Hello World")
+
+        # Unquoted newline should be rejected
+        with pytest.raises(ValidationError, match="unquoted characters"):
+            DataURI(mimetype="text/plain", is_base64=False, data=b"Hello\nWorld")
+
+        # Unquoted special characters should be rejected
+        with pytest.raises(ValidationError, match="unquoted characters"):
+            DataURI(mimetype="text/plain", is_base64=False, data=b"Hello&World")
+
+    def test_base64_data_does_not_need_url_encoding(self):
+        """Test that base64 data is accepted without URL encoding validation."""
+        import base64
+
+        # Base64 data can contain characters that would need quoting in non-base64
+        # This should be accepted because is_base64=True
+        base64_data = base64.b64encode(b"Hello World!").decode("utf-8")
+        data_uri = DataURI(mimetype="text/plain", is_base64=True, data=base64_data.encode("utf-8"))
+
+        assert data_uri.is_base64
+        assert data_uri.decoded_data == b"Hello World!"
+
+
+class TestDataURIFormats:
+    """Test different image formats for DataURI."""
+
+    @pytest.fixture
+    def sample_rgb(self, sample_image_file: Path) -> np.ndarray:
+        """Provide sample RGB array."""
+        return MediaRef(uri=str(sample_image_file)).to_rgb_array()
+
+    def test_format_png(self, sample_rgb: np.ndarray):
+        """Test PNG format."""
+        data_uri = DataURI.from_image(sample_rgb, format="png")
+        assert data_uri.mimetype == "image/png"
+        assert data_uri.uri.startswith("data:image/png;base64,")
+
+    def test_format_jpeg(self, sample_rgb: np.ndarray):
+        """Test JPEG format."""
+        data_uri = DataURI.from_image(sample_rgb, format="jpeg")
+        assert data_uri.mimetype == "image/jpeg"
+        assert data_uri.uri.startswith("data:image/jpeg;base64,")
+
+    def test_format_bmp(self, sample_rgb: np.ndarray):
+        """Test BMP format."""
+        data_uri = DataURI.from_image(sample_rgb, format="bmp")
+        assert data_uri.mimetype == "image/bmp"
+        assert data_uri.uri.startswith("data:image/bmp;base64,")
+
+    def test_jpeg_quality_parameter(self, sample_rgb: np.ndarray):
+        """Test JPEG quality affects output size."""
+        high_quality = DataURI.from_image(sample_rgb, format="jpeg", quality=95)
+        low_quality = DataURI.from_image(sample_rgb, format="jpeg", quality=10)
+
+        assert len(high_quality) > len(low_quality)
+
+
+class TestDataURIConversion:
+    """Test DataURI conversion methods."""
+
+    @pytest.fixture
+    def sample_data_uri(self, sample_image_file: Path) -> DataURI:
+        """Provide sample DataURI."""
+        return DataURI.from_file(sample_image_file)
+
+    def test_to_rgb_array(self, sample_data_uri: DataURI):
+        """Test converting DataURI to RGB array."""
+        rgb = sample_data_uri.to_rgb_array()
+
+        assert isinstance(rgb, np.ndarray)
         assert rgb.shape == (48, 64, 3)
+        assert rgb.dtype == np.uint8
 
-    def test_embed_as_data_uri_roundtrip_lossless(self, sample_image_file: Path):
-        """Test that PNG embedding is lossless."""
-        ref = MediaRef(uri=str(sample_image_file))
-        original_rgb = ref.to_rgb_array()
+    def test_to_pil_image(self, sample_data_uri: DataURI):
+        """Test converting DataURI to PIL Image."""
+        pil_img = sample_data_uri.to_pil_image()
 
-        # Embed and load back
-        data_uri = ref.embed_as_data_uri(format="png")
-        embedded_ref = MediaRef(uri=data_uri)
-        restored_rgb = embedded_ref.to_rgb_array()
+        assert isinstance(pil_img, Image.Image)
+        assert pil_img.size == (64, 48)  # PIL uses (width, height)
+        assert pil_img.mode == "RGB"
 
-        # PNG is lossless, so should be identical
-        assert np.array_equal(original_rgb, restored_rgb)
+    def test_str_conversion(self, sample_data_uri: DataURI):
+        """Test __str__ returns URI string."""
+        uri_str = str(sample_data_uri)
 
-    def test_embed_as_data_uri_roundtrip_lossy(self, sample_image_file: Path):
-        """Test that JPEG embedding is lossy but close."""
-        ref = MediaRef(uri=str(sample_image_file))
-        original_rgb = ref.to_rgb_array()
+        assert uri_str == sample_data_uri.uri
+        assert uri_str.startswith("data:image/png;base64,")
 
-        # Embed and load back
-        data_uri = ref.embed_as_data_uri(format="jpeg", quality=85)
-        embedded_ref = MediaRef(uri=data_uri)
-        restored_rgb = embedded_ref.to_rgb_array()
 
-        # JPEG is lossy, but should be close
-        assert original_rgb.shape == restored_rgb.shape
-        # Allow some difference due to JPEG compression
-        assert np.allclose(original_rgb, restored_rgb, atol=30)
+class TestDataURIRoundtrip:
+    """Test DataURI encoding/decoding roundtrips."""
+
+    @pytest.fixture
+    def sample_rgb(self, sample_image_file: Path) -> np.ndarray:
+        """Provide sample RGB array."""
+        return MediaRef(uri=str(sample_image_file)).to_rgb_array()
+
+    def test_png_lossless_roundtrip(self, sample_rgb: np.ndarray):
+        """Test PNG encoding is lossless."""
+        data_uri = DataURI.from_image(sample_rgb, format="png")
+        restored_rgb = data_uri.to_rgb_array()
+
+        assert np.array_equal(sample_rgb, restored_rgb)
+
+    def test_bmp_lossless_roundtrip(self, sample_rgb: np.ndarray):
+        """Test BMP encoding is lossless."""
+        data_uri = DataURI.from_image(sample_rgb, format="bmp")
+        restored_rgb = data_uri.to_rgb_array()
+
+        assert np.array_equal(sample_rgb, restored_rgb)
+
+    def test_jpeg_lossy_roundtrip(self, sample_rgb: np.ndarray):
+        """Test JPEG encoding is lossy but close."""
+        data_uri = DataURI.from_image(sample_rgb, format="jpeg", quality=85)
+        restored_rgb = data_uri.to_rgb_array()
+
+        assert sample_rgb.shape == restored_rgb.shape
+        assert np.allclose(sample_rgb, restored_rgb, atol=30)
+
+    def test_uri_string_roundtrip(self, sample_rgb: np.ndarray):
+        """Test parsing DataURI from string preserves data."""
+        original = DataURI.from_image(sample_rgb, format="png")
+        parsed = DataURI.from_uri(original.uri)
+
+        assert parsed.mimetype == original.mimetype
+        assert parsed.is_base64 == original.is_base64
+        assert np.array_equal(parsed.to_rgb_array(), original.to_rgb_array())
+
+
+class TestDataURIWithMediaRef:
+    """Test DataURI integration with MediaRef."""
+
+    @pytest.fixture
+    def sample_rgb(self, sample_image_file: Path) -> np.ndarray:
+        """Provide sample RGB array."""
+        return MediaRef(uri=str(sample_image_file)).to_rgb_array()
+
+    def test_mediaref_accepts_datauri_object(self, sample_rgb: np.ndarray):
+        """Test MediaRef accepts DataURI object directly."""
+        data_uri = DataURI.from_image(sample_rgb, format="png")
+        ref = MediaRef(uri=data_uri)  # type: ignore[arg-type]
+
+        assert ref.is_embedded
+        assert np.array_equal(ref.to_rgb_array(), sample_rgb)
+
+    def test_mediaref_accepts_datauri_string(self, sample_rgb: np.ndarray):
+        """Test MediaRef accepts DataURI string."""
+        data_uri = DataURI.from_image(sample_rgb, format="png")
+        ref = MediaRef(uri=str(data_uri))
+
+        assert ref.is_embedded
+        assert np.array_equal(ref.to_rgb_array(), sample_rgb)
+
+    @pytest.mark.video
+    def test_video_frame_to_datauri(self, sample_video_file: tuple[Path, list[int]]):
+        """Test creating DataURI from video frame."""
+        video_path, timestamps = sample_video_file
+        original_rgb = MediaRef(uri=str(video_path), pts_ns=timestamps[1]).to_rgb_array()
+
+        data_uri = DataURI.from_image(original_rgb, format="png")
+        ref = MediaRef(uri=data_uri)  # type: ignore[arg-type]
+
+        assert ref.is_embedded
+        assert np.array_equal(ref.to_rgb_array(), original_rgb)
 
 
 class TestLoadingErrorHandling:
@@ -289,9 +458,10 @@ class TestLoadingErrorHandling:
         with pytest.raises(Exception):  # Should raise ValueError
             ref.to_rgb_array()
 
-    def test_load_unsupported_format(self):
-        """Test that unsupported format in embed raises error."""
-        ref = MediaRef(uri="image.png")
+    def test_load_unsupported_format(self, sample_image_file: Path):
+        """Test that unsupported format in DataURI raises error."""
+        ref = MediaRef(uri=str(sample_image_file))
+        rgb = ref.to_rgb_array()
 
         with pytest.raises(Exception):  # Should raise ValueError
-            ref.embed_as_data_uri(format="invalid")  # type: ignore
+            DataURI.from_image(rgb, format="invalid")  # type: ignore

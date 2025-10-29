@@ -1,9 +1,9 @@
 """Tests for internal utility functions.
 
-These tests cover unique internal functionality not fully tested by public API tests:
-- Encoding/decoding roundtrip quality (lossless vs lossy)
+These tests verify internal implementation details not exposed by the public API:
+- Internal BGRA format handling (load_image_as_bgra)
+- Video frame caching behavior (keep_av_open parameter)
 - Color conversion correctness (BGRA <-> RGB)
-- Video frame caching (keep_av_open parameter)
 """
 
 from pathlib import Path
@@ -12,61 +12,61 @@ import cv2
 import numpy as np
 import pytest
 
-from mediaref._internal import (
-    encode_array_to_base64,
-    load_image_as_bgra,
-)
+from mediaref._internal import load_image_as_bgra
+from mediaref.data_uri import DataURI
 
 
-class TestEncodingRoundtrip:
-    """Test encoding and decoding roundtrip."""
+class TestInternalBGRAHandling:
+    """Test internal BGRA format handling.
 
-    def test_roundtrip_png(self, sample_bgra_array: np.ndarray):
-        """Test PNG encoding and decoding roundtrip."""
-        # Encode
-        base64_data = encode_array_to_base64(sample_bgra_array, format="png")
-        data_uri = f"data:image/png;base64,{base64_data}"
+    These tests verify that load_image_as_bgra() correctly handles different
+    image formats and maintains data integrity through encode/decode cycles.
+    """
 
-        # Decode
-        decoded_array = load_image_as_bgra(data_uri)
+    def test_load_png_as_bgra_lossless(self, sample_bgra_array: np.ndarray):
+        """Test that PNG encoding/decoding via load_image_as_bgra is lossless."""
+        # Create data URI from BGRA array
+        rgb_array = cv2.cvtColor(sample_bgra_array, cv2.COLOR_BGRA2RGB)
+        data_uri = DataURI.from_image(rgb_array, format="png").uri
 
-        # PNG is lossless, so arrays should be identical
-        assert decoded_array.shape == sample_bgra_array.shape
-        assert decoded_array.dtype == sample_bgra_array.dtype
-        np.testing.assert_array_equal(decoded_array, sample_bgra_array)
+        # Decode using internal function
+        decoded_bgra = load_image_as_bgra(data_uri)
 
-    def test_roundtrip_bmp(self, sample_bgra_array: np.ndarray):
-        """Test BMP encoding and decoding roundtrip."""
-        # Encode
-        base64_data = encode_array_to_base64(sample_bgra_array, format="bmp")
-        data_uri = f"data:image/bmp;base64,{base64_data}"
+        # Verify lossless roundtrip
+        assert decoded_bgra.shape == sample_bgra_array.shape
+        assert decoded_bgra.dtype == sample_bgra_array.dtype
+        np.testing.assert_array_equal(decoded_bgra, sample_bgra_array)
 
-        # Decode
-        decoded_array = load_image_as_bgra(data_uri)
+    def test_load_bmp_as_bgra_lossless(self, sample_bgra_array: np.ndarray):
+        """Test that BMP encoding/decoding via load_image_as_bgra is lossless."""
+        # Create data URI from BGRA array
+        rgb_array = cv2.cvtColor(sample_bgra_array, cv2.COLOR_BGRA2RGB)
+        data_uri = DataURI.from_image(rgb_array, format="bmp").uri
 
-        # BMP is lossless, so arrays should be identical
-        assert decoded_array.shape == sample_bgra_array.shape
-        assert decoded_array.dtype == sample_bgra_array.dtype
-        np.testing.assert_array_equal(decoded_array, sample_bgra_array)
+        # Decode using internal function
+        decoded_bgra = load_image_as_bgra(data_uri)
 
-    def test_roundtrip_jpeg_lossy(self, sample_rgb_array: np.ndarray):
-        """Test JPEG encoding and decoding roundtrip (lossy)."""
-        # Convert RGB to BGRA for encoding
-        bgra_array = cv2.cvtColor(sample_rgb_array, cv2.COLOR_RGB2BGRA)
+        # Verify lossless roundtrip
+        assert decoded_bgra.shape == sample_bgra_array.shape
+        assert decoded_bgra.dtype == sample_bgra_array.dtype
+        np.testing.assert_array_equal(decoded_bgra, sample_bgra_array)
 
-        # Encode
-        base64_data = encode_array_to_base64(bgra_array, format="jpeg", quality=85)
-        data_uri = f"data:image/jpeg;base64,{base64_data}"
+    def test_load_jpeg_as_bgra_lossy(self, sample_bgra_array: np.ndarray):
+        """Test that JPEG encoding/decoding via load_image_as_bgra handles lossy compression."""
+        # Create data URI from BGRA array
+        rgb_array = cv2.cvtColor(sample_bgra_array, cv2.COLOR_BGRA2RGB)
+        data_uri = DataURI.from_image(rgb_array, format="jpeg", quality=85).uri
 
-        # Decode
-        decoded_array = load_image_as_bgra(data_uri)
+        # Decode using internal function
+        decoded_bgra = load_image_as_bgra(data_uri)
 
-        # JPEG is lossy, but should be close
-        assert decoded_array.shape == bgra_array.shape
-        assert decoded_array.dtype == bgra_array.dtype
-        # Allow significant difference due to JPEG compression (especially for small test images)
-        # Just verify the arrays are similar in magnitude
-        assert np.abs(decoded_array.astype(float) - bgra_array.astype(float)).mean() < 50
+        # Verify shape and dtype
+        assert decoded_bgra.shape == sample_bgra_array.shape
+        assert decoded_bgra.dtype == sample_bgra_array.dtype
+
+        # JPEG is lossy - verify arrays are similar but not identical
+        assert not np.array_equal(decoded_bgra, sample_bgra_array)
+        assert np.abs(decoded_bgra.astype(float) - sample_bgra_array.astype(float)).mean() < 50
 
 
 @pytest.mark.video
@@ -76,21 +76,52 @@ class TestVideoFrameCaching:
     This tests internal caching behavior not exposed by the public API.
     """
 
-    def test_load_video_frame_keep_av_open(self, sample_video_file: tuple[Path, list[int]]):
-        """Test that keep_av_open parameter caches video containers for performance."""
+    def test_keep_av_open_caches_container(self, sample_video_file: tuple[Path, list[int]]):
+        """Test that keep_av_open=True caches video containers and increments refs."""
+        from mediaref import cached_av
         from mediaref._internal import load_video_frame_as_bgra
 
         video_path, timestamps = sample_video_file
-        pts_ns = timestamps[1]  # Already in nanoseconds
+        cache_key = str(video_path)
 
-        # Load with keep_av_open=True (should cache the container)
-        bgra1 = load_video_frame_as_bgra(str(video_path), pts_ns, keep_av_open=True)
+        # Clear cache first
+        cached_av.cleanup_cache()
+        assert cache_key not in cached_av._container_cache
 
-        # Load again (should use cached container for better performance)
-        bgra2 = load_video_frame_as_bgra(str(video_path), pts_ns, keep_av_open=True)
+        # First load with keep_av_open=True (should add to cache with refs=1)
+        bgra1 = load_video_frame_as_bgra(str(video_path), timestamps[1], keep_av_open=True)
+        assert cache_key in cached_av._container_cache
+        assert cached_av._container_cache[cache_key].refs == 1
 
-        # Results should be identical
-        assert np.array_equal(bgra1, bgra2)
+        # Second load (should reuse cached container and increment refs to 2)
+        bgra2 = load_video_frame_as_bgra(str(video_path), timestamps[2], keep_av_open=True)
+        assert cache_key in cached_av._container_cache
+        assert cached_av._container_cache[cache_key].refs == 2
+
+        # Results should be valid BGRA arrays
+        assert bgra1.shape[2] == 4  # BGRA
+        assert bgra2.shape[2] == 4  # BGRA
+        assert bgra1.dtype == np.uint8
+        assert bgra2.dtype == np.uint8
+
+    def test_keep_av_open_false_does_not_cache(self, sample_video_file: tuple[Path, list[int]]):
+        """Test that keep_av_open=False does not cache containers."""
+        from mediaref import cached_av
+        from mediaref._internal import load_video_frame_as_bgra
+
+        video_path, timestamps = sample_video_file
+        cache_key = str(video_path)
+
+        # Clear cache first
+        cached_av.cleanup_cache()
+        assert cache_key not in cached_av._container_cache
+
+        # Load with keep_av_open=False (should NOT cache)
+        bgra = load_video_frame_as_bgra(str(video_path), timestamps[1], keep_av_open=False)
+
+        # Verify container is NOT in cache
+        assert cache_key not in cached_av._container_cache
+        assert bgra.shape[2] == 4  # BGRA
 
 
 class TestColorConversion:

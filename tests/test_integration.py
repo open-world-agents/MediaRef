@@ -8,7 +8,7 @@ from pathlib import Path
 import numpy as np
 import pytest
 
-from mediaref import MediaRef, batch_decode, cleanup_cache
+from mediaref import DataURI, MediaRef, batch_decode, cleanup_cache
 
 
 @pytest.mark.integration
@@ -26,19 +26,15 @@ class TestEndToEndWorkflows:
         rgb = ref.to_rgb_array()
         assert rgb.shape == (48, 64, 3)
 
-        # 3. Embed as data URI
-        data_uri = ref.embed_as_data_uri(format="png")
-        assert data_uri.startswith("data:image/png;base64,")
-
-        # 4. Create new MediaRef from data URI
-        embedded_ref = MediaRef(uri=data_uri)
+        # 3. Create DataURI and MediaRef in one step
+        embedded_ref = MediaRef(uri=DataURI.from_image(rgb, format="png"))
         assert embedded_ref.is_embedded
         assert not embedded_ref.is_local
 
-        # 5. Load from embedded ref
+        # 4. Load from embedded ref
         embedded_rgb = embedded_ref.to_rgb_array()
 
-        # 6. Verify data is identical (PNG is lossless)
+        # 5. Verify data is identical (PNG is lossless)
         assert np.array_equal(rgb, embedded_rgb)
 
     @pytest.mark.video
@@ -144,23 +140,17 @@ class TestDataURIIntegration:
     """Test data URI integration across components."""
 
     def test_data_uri_creation_and_loading(self, sample_image_file: Path):
-        """Test creating and loading data URIs."""
-        # Create from file
-        ref = MediaRef(uri=str(sample_image_file))
-        original_rgb = ref.to_rgb_array()
+        """Test creating and loading data URIs with different formats."""
+        original_rgb = MediaRef(uri=str(sample_image_file)).to_rgb_array()
 
-        # Embed as PNG
-        png_uri = ref.embed_as_data_uri(format="png")
-        png_ref = MediaRef(uri=png_uri)
-        png_rgb = png_ref.to_rgb_array()
-        assert np.array_equal(original_rgb, png_rgb)
+        # Test PNG (lossless)
+        png_ref = MediaRef(uri=DataURI.from_image(original_rgb, format="png"))
+        assert np.array_equal(original_rgb, png_ref.to_rgb_array())
 
-        # Embed as JPEG
-        jpeg_uri = ref.embed_as_data_uri(format="jpeg", quality=90)
-        jpeg_ref = MediaRef(uri=jpeg_uri)
+        # Test JPEG (lossy)
+        jpeg_ref = MediaRef(uri=DataURI.from_image(original_rgb, format="jpeg", quality=90))
         jpeg_rgb = jpeg_ref.to_rgb_array()
         assert jpeg_rgb.shape == original_rgb.shape
-        # JPEG is lossy but should be close
         assert np.allclose(original_rgb, jpeg_rgb, atol=30)
 
     def test_data_uri_serialization(self, sample_data_uri: str):
@@ -188,19 +178,12 @@ class TestDataURIIntegration:
         """Test converting video frame to data URI."""
         video_path, timestamps = sample_video_file
 
-        # Load video frame (timestamps already in nanoseconds)
-        ref = MediaRef(uri=str(video_path), pts_ns=timestamps[1])
-        original_rgb = ref.to_rgb_array()
+        # Load video frame and convert to DataURI
+        original_rgb = MediaRef(uri=str(video_path), pts_ns=timestamps[1]).to_rgb_array()
+        embedded_ref = MediaRef(uri=DataURI.from_image(original_rgb, format="png"))
 
-        # Embed as data URI
-        data_uri = ref.embed_as_data_uri(format="png")
-
-        # Load from data URI
-        embedded_ref = MediaRef(uri=data_uri)
-        embedded_rgb = embedded_ref.to_rgb_array()
-
-        # Verify
-        assert np.array_equal(original_rgb, embedded_rgb)
+        # Verify roundtrip
+        assert np.array_equal(original_rgb, embedded_ref.to_rgb_array())
 
 
 @pytest.mark.integration
@@ -234,18 +217,11 @@ class TestRemoteURLIntegration:
 
     def test_remote_url_embedding(self, remote_test_image_url: str):
         """Test embedding remote URL as data URI."""
-        ref = MediaRef(uri=remote_test_image_url)
-        original_rgb = ref.to_rgb_array()
+        original_rgb = MediaRef(uri=remote_test_image_url).to_rgb_array()
+        embedded_ref = MediaRef(uri=DataURI.from_image(original_rgb, format="png"))
 
-        # Embed
-        data_uri = ref.embed_as_data_uri(format="png")
-
-        # Load from embedded
-        embedded_ref = MediaRef(uri=data_uri)
-        embedded_rgb = embedded_ref.to_rgb_array()
-
-        # Verify
-        assert np.array_equal(original_rgb, embedded_rgb)
+        # Verify roundtrip
+        assert np.array_equal(original_rgb, embedded_ref.to_rgb_array())
 
 
 @pytest.mark.integration
