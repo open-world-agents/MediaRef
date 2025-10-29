@@ -64,8 +64,11 @@ refs = [MediaRef(uri="video.mp4", pts_ns=int(i*1e9)) for i in range(10)]
 frames = batch_decode(
     refs,
     decoder="pyav",  # Our optimized implementation based on PyAV
-    strategy=BatchDecodingStrategy.SEQUENTIAL_PER_KEYFRAME_BLOCK  # Adaptive strategy for best performance
+    strategy=BatchDecodingStrategy.SEQUENTIAL_PER_KEYFRAME_BLOCK  # Our adaptive strategy for optimal performance
 )
+
+# Or use TorchCodec for GPU-accelerated decoding
+frames = batch_decode(refs, decoder="torchcodec")  # Requires: pip install torchcodec>=0.4.0
 ```
 
 ### Embedding Media Directly in MediaRef
@@ -103,6 +106,8 @@ print(data_uri.is_image)                               # True for image/* types
 ```
 
 ### Path Resolution & Serialization
+
+Resolve relative paths and serialize MediaRef objects for dataset metadata and storage.
 
 ```python
 # Resolve relative paths (useful for MCAP/rosbag datasets)
