@@ -137,45 +137,6 @@ class TestIsRemote:
         assert not ref.is_remote
 
 
-class TestIsLocal:
-    """Test is_local property."""
-
-    def test_is_local_relative_path(self):
-        """Test that relative path is detected as local."""
-        ref = MediaRef(uri="image.png")
-        assert ref.is_local
-
-    def test_is_local_absolute_path(self):
-        """Test that absolute path is detected as local."""
-        ref = MediaRef(uri="/path/to/image.png")
-        assert ref.is_local
-
-    def test_is_local_file_uri(self):
-        """Test that file:// URI is detected as local."""
-        ref = MediaRef(uri="file:///path/to/image.png")
-        assert ref.is_local
-
-    def test_is_local_relative_video(self):
-        """Test that relative video path is detected as local."""
-        ref = MediaRef(uri="video.mp4", pts_ns=1_000_000_000)
-        assert ref.is_local
-
-    def test_not_local_http_url(self):
-        """Test that HTTP URL is not local."""
-        ref = MediaRef(uri="http://example.com/image.jpg")
-        assert not ref.is_local
-
-    def test_not_local_https_url(self):
-        """Test that HTTPS URL is not local."""
-        ref = MediaRef(uri="https://example.com/image.jpg")
-        assert not ref.is_local
-
-    def test_not_local_data_uri(self):
-        """Test that data URI is not local."""
-        ref = MediaRef(uri="data:image/png;base64,...")
-        assert not ref.is_local
-
-
 class TestIsRelativePath:
     """Test is_relative_path property."""
 
@@ -246,35 +207,31 @@ class TestIsRelativePath:
 class TestPropertyCombinations:
     """Test combinations of properties."""
 
-    def test_embedded_not_local_not_remote(self):
-        """Test that embedded URI is neither local nor remote."""
+    def test_embedded_not_remote(self):
+        """Test that embedded URI is not remote."""
         ref = MediaRef(uri="data:image/png;base64,...")
         assert ref.is_embedded
-        assert not ref.is_local
         assert not ref.is_remote
         assert not ref.is_relative_path
 
-    def test_local_not_embedded_not_remote(self):
+    def test_local_file_not_embedded_not_remote(self):
         """Test that local file is not embedded or remote."""
         ref = MediaRef(uri="image.png")
-        assert ref.is_local
         assert not ref.is_embedded
         assert not ref.is_remote
         assert ref.is_relative_path
 
-    def test_remote_not_embedded_not_local(self):
-        """Test that remote URL is not embedded or local."""
+    def test_remote_not_embedded(self):
+        """Test that remote URL is not embedded."""
         ref = MediaRef(uri="https://example.com/image.jpg")
         assert ref.is_remote
         assert not ref.is_embedded
-        assert not ref.is_local
         assert not ref.is_relative_path
 
-    def test_video_can_be_local(self):
-        """Test that video can be local."""
+    def test_video_can_be_local_file(self):
+        """Test that video can be a local file."""
         ref = MediaRef(uri="video.mp4", pts_ns=1_000_000_000)
         assert ref.is_video
-        assert ref.is_local
         assert not ref.is_remote
         assert not ref.is_embedded
 
@@ -283,23 +240,20 @@ class TestPropertyCombinations:
         ref = MediaRef(uri="https://example.com/video.mp4", pts_ns=1_000_000_000)
         assert ref.is_video
         assert ref.is_remote
-        assert not ref.is_local
         assert not ref.is_embedded
 
     @pytest.mark.skipif(os.name == "nt", reason="POSIX absolute paths are relative on Windows")
-    def test_absolute_path_is_local_not_relative(self):
-        """Test that absolute path is local but not relative (POSIX only)."""
+    def test_absolute_path_not_relative(self):
+        """Test that absolute path is not relative (POSIX only)."""
         ref = MediaRef(uri="/absolute/path/image.png")
-        assert ref.is_local
         assert not ref.is_relative_path
         assert not ref.is_remote
         assert not ref.is_embedded
 
     @pytest.mark.skipif(os.name != "nt", reason="Windows-specific test")
-    def test_windows_absolute_path_is_local_not_relative(self):
-        """Test that Windows absolute path is local but not relative (Windows only)."""
+    def test_windows_absolute_path_not_relative(self):
+        """Test that Windows absolute path is not relative (Windows only)."""
         ref = MediaRef(uri="C:/absolute/path/image.png")
-        assert ref.is_local
         assert not ref.is_relative_path
         assert not ref.is_remote
         assert not ref.is_embedded

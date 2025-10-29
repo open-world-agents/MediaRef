@@ -116,6 +116,10 @@ Resolve relative paths and serialize MediaRef objects for dataset metadata and s
 ref = MediaRef(uri="relative/video.mkv", pts_ns=123456)
 resolved = ref.resolve_relative_path("/data/recording.mcap")
 
+# Handle unresolvable URIs (embedded/remote)
+remote = MediaRef(uri="https://example.com/image.jpg")
+resolved = remote.resolve_relative_path("/data/base.mcap", on_unresolvable="ignore")  # No warning
+
 # Serialization (Pydantic-based)
 data = ref.model_dump()                                # {'uri': '...', 'pts_ns': ...}
 json_str = ref.model_dump_json()                       # JSON string
@@ -127,12 +131,13 @@ ref = MediaRef.model_validate_json(json_str)           # From JSON
 
 ### MediaRef(uri: str | DataURI, pts_ns: int | None = None)
 
-**Properties:** `is_embedded`, `is_video`, `is_remote`, `is_local`, `is_relative_path`
+**Properties:** `is_embedded`, `is_video`, `is_remote`, `is_relative_path`
 
 **Methods:**
 - `to_rgb_array(**kwargs) -> np.ndarray` - Load as RGB array (H, W, 3)
 - `to_pil_image(**kwargs) -> PIL.Image` - Load as PIL Image
-- `resolve_relative_path(base_path, allow_nonlocal=False) -> MediaRef` - Resolve relative paths
+- `resolve_relative_path(base_path, on_unresolvable="warn") -> MediaRef` - Resolve relative paths
+  - `on_unresolvable`: How to handle embedded/remote URIs: `"error"`, `"warn"` (default), or `"ignore"`
 - `validate_uri() -> bool` - Check if URI exists (local files only)
 - `model_dump() -> dict` - Serialize to dict
 - `model_dump_json() -> str` - Serialize to JSON

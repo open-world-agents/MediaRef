@@ -87,47 +87,61 @@ class TestResolveRelativePath:
 
 
 class TestResolveRelativePathWarnings:
-    """Test warnings for non-local paths."""
+    """Test handling of unresolvable paths."""
 
     def test_resolve_remote_path_warns(self):
-        """Test that resolving remote path generates warning."""
+        """Test that resolving remote path generates warning by default."""
         ref = MediaRef(uri="https://example.com/image.jpg")
 
-        with pytest.warns(UserWarning, match="Cannot resolve non-local path"):
+        with pytest.warns(UserWarning, match="Cannot resolve unresolvable URI"):
             resolved = ref.resolve_relative_path("/data/recording.mcap")
 
         assert resolved.uri == "https://example.com/image.jpg"
         assert resolved is ref
 
     def test_resolve_embedded_path_warns(self):
-        """Test that resolving embedded path generates warning."""
+        """Test that resolving embedded path generates warning by default."""
         ref = MediaRef(uri="data:image/png;base64,...")
 
-        with pytest.warns(UserWarning, match="Cannot resolve non-local path"):
+        with pytest.warns(UserWarning, match="Cannot resolve unresolvable URI"):
             resolved = ref.resolve_relative_path("/data/recording.mcap")
 
         assert resolved.uri == "data:image/png;base64,..."
         assert resolved is ref
 
-    def test_resolve_remote_with_allow_nonlocal(self):
-        """Test that allow_nonlocal suppresses warning for remote paths."""
+    def test_resolve_remote_with_ignore(self):
+        """Test that on_unresolvable='ignore' suppresses warning for remote paths."""
         ref = MediaRef(uri="https://example.com/image.jpg")
 
-        # Should not warn when allow_nonlocal=True
-        resolved = ref.resolve_relative_path("/data/recording.mcap", allow_nonlocal=True)
+        # Should not warn when on_unresolvable="ignore"
+        resolved = ref.resolve_relative_path("/data/recording.mcap", on_unresolvable="ignore")
 
         assert resolved.uri == "https://example.com/image.jpg"
         assert resolved is ref
 
-    def test_resolve_embedded_with_allow_nonlocal(self):
-        """Test that allow_nonlocal suppresses warning for embedded paths."""
+    def test_resolve_embedded_with_ignore(self):
+        """Test that on_unresolvable='ignore' suppresses warning for embedded paths."""
         ref = MediaRef(uri="data:image/png;base64,...")
 
-        # Should not warn when allow_nonlocal=True
-        resolved = ref.resolve_relative_path("/data/recording.mcap", allow_nonlocal=True)
+        # Should not warn when on_unresolvable="ignore"
+        resolved = ref.resolve_relative_path("/data/recording.mcap", on_unresolvable="ignore")
 
         assert resolved.uri == "data:image/png;base64,..."
         assert resolved is ref
+
+    def test_resolve_remote_with_error(self):
+        """Test that on_unresolvable='error' raises ValueError for remote paths."""
+        ref = MediaRef(uri="https://example.com/image.jpg")
+
+        with pytest.raises(ValueError, match="Cannot resolve unresolvable URI"):
+            ref.resolve_relative_path("/data/recording.mcap", on_unresolvable="error")
+
+    def test_resolve_embedded_with_error(self):
+        """Test that on_unresolvable='error' raises ValueError for embedded paths."""
+        ref = MediaRef(uri="data:image/png;base64,...")
+
+        with pytest.raises(ValueError, match="Cannot resolve unresolvable URI"):
+            ref.resolve_relative_path("/data/recording.mcap", on_unresolvable="error")
 
 
 class TestResolveRelativePathCrossPlatform:

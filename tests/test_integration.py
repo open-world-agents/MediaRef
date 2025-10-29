@@ -19,8 +19,8 @@ class TestEndToEndWorkflows:
         """Test complete workflow: load image -> convert -> embed -> load again."""
         # 1. Create MediaRef from file
         ref = MediaRef(uri=str(sample_image_file))
-        assert ref.is_local
         assert not ref.is_embedded
+        assert not ref.is_remote
 
         # 2. Load as RGB array
         rgb = ref.to_rgb_array()
@@ -29,7 +29,7 @@ class TestEndToEndWorkflows:
         # 3. Create DataURI and MediaRef in one step
         embedded_ref = MediaRef(uri=DataURI.from_image(rgb, format="png"))
         assert embedded_ref.is_embedded
-        assert not embedded_ref.is_local
+        assert not ref.is_embedded
 
         # 4. Load from embedded ref
         embedded_rgb = embedded_ref.to_rgb_array()
@@ -48,7 +48,8 @@ class TestEndToEndWorkflows:
         # 2. Verify all are video references
         for ref in refs:
             assert ref.is_video
-            assert ref.is_local
+            assert not ref.is_remote
+            assert not ref.is_embedded
 
         # 3. Batch decode
         frames = batch_decode(refs)
@@ -196,7 +197,6 @@ class TestRemoteURLIntegration:
         ref = MediaRef(uri=remote_test_image_url)
 
         assert ref.is_remote
-        assert not ref.is_local
         assert not ref.is_embedded
 
         # Load image
@@ -232,20 +232,17 @@ class TestPropertyInteractions:
         """Test that certain properties are mutually exclusive."""
         # Local file
         local_ref = MediaRef(uri=str(sample_image_file))
-        assert local_ref.is_local
         assert not local_ref.is_remote
         assert not local_ref.is_embedded
 
         # Embedded
         embedded_ref = MediaRef(uri=sample_data_uri)
         assert embedded_ref.is_embedded
-        assert not embedded_ref.is_local
         assert not embedded_ref.is_remote
 
         # Remote
         remote_ref = MediaRef(uri="https://example.com/image.jpg")
         assert remote_ref.is_remote
-        assert not remote_ref.is_local
         assert not remote_ref.is_embedded
 
     @pytest.mark.video
@@ -253,17 +250,17 @@ class TestPropertyInteractions:
         """Test video property combinations."""
         video_path, timestamps = sample_video_file
 
-        # Video frame (local + video) - timestamps already in nanoseconds
+        # Video frame (local file + video) - timestamps already in nanoseconds
         video_ref = MediaRef(uri=str(video_path), pts_ns=timestamps[0])
         assert video_ref.is_video
-        assert video_ref.is_local
         assert not video_ref.is_remote
         assert not video_ref.is_embedded
 
-        # Image from same file (local but not video)
+        # Image from same file (local file but not video)
         image_ref = MediaRef(uri=str(video_path))
         assert not image_ref.is_video
-        assert image_ref.is_local
+        assert not image_ref.is_remote
+        assert not image_ref.is_embedded
 
 
 @pytest.mark.integration

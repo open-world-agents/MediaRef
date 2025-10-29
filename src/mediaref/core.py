@@ -2,7 +2,7 @@
 
 import warnings
 from pathlib import Path
-from typing import Annotated, Optional
+from typing import Annotated, Literal, Optional
 
 import cv2
 import numpy as np
@@ -76,11 +76,6 @@ class MediaRef(BaseModel):
         return self.uri.startswith(("http://", "https://"))
 
     @property
-    def is_local(self) -> bool:
-        """True if this references a local file path (not embedded or remote)."""
-        return not self.is_embedded and not self.is_remote
-
-    @property
     def is_relative_path(self) -> bool:
         """True if this is a relative path (not absolute, not URI).
 
@@ -112,7 +107,7 @@ class MediaRef(BaseModel):
     def resolve_relative_path(
         self,
         base_path: str,
-        allow_nonlocal: bool = False,
+        on_unresolvable: Literal["error", "warn", "ignore"] = "warn",
     ) -> "MediaRef":
         """Resolve relative path against a base path.
 
@@ -120,21 +115,32 @@ class MediaRef(BaseModel):
 
         Args:
             base_path: Base path (typically MCAP file path) to resolve against
-            allow_nonlocal: Allow non-local paths (embedded, remote) to be resolved
+            on_unresolvable: How to handle unresolvable URIs (embedded/remote):
+                - "error": Raise ValueError
+                - "warn": Issue warning and return unchanged (default)
+                - "ignore": Silently return unchanged
 
         Returns:
             New MediaRef with resolved absolute path
+
+        Raises:
+            ValueError: If URI is unresolvable and on_unresolvable="error"
 
         Examples:
             >>> ref = MediaRef(uri="relative/video.mkv", pts_ns=123456)
             >>> ref_resolved = ref.resolve_relative_path("/data/recording.mcap")
             >>> # ref_resolved.uri == "/data/relative/video.mkv"
+            >>>
+            >>> # Handle unresolvable URIs
+            >>> remote = MediaRef(uri="https://example.com/image.jpg")
+            >>> remote.resolve_relative_path("/data/base.mcap", on_unresolvable="ignore")
         """
-        if not self.is_local:
-            if allow_nonlocal:
-                return self
-            warnings.warn(f"Cannot resolve non-local path: {self.uri}")
-            return self  # Nothing to resolve for non-local paths
+        if self.is_embedded or self.is_remote:
+            if on_unresolvable == "error":
+                raise ValueError(f"Cannot resolve unresolvable URI (embedded or remote): {self.uri}")
+            elif on_unresolvable == "warn":
+                warnings.warn(f"Cannot resolve unresolvable URI (embedded or remote): {self.uri}")
+            return self  # Nothing to resolve for embedded/remote URIs
 
         if not self.is_relative_path:
             return self  # Already absolute or not a local path
