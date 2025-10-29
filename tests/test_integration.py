@@ -3,6 +3,7 @@
 These tests verify end-to-end workflows and interactions between components.
 """
 
+import warnings
 from pathlib import Path
 
 import numpy as np
@@ -78,7 +79,9 @@ class TestEndToEndWorkflows:
         ]
 
         # 2. Batch decode all
-        results = batch_decode(refs)
+        with warnings.catch_warnings():
+            warnings.filterwarnings("ignore", message="batch_decode.*received.*image")
+            results = batch_decode(refs)
         assert len(results) == 4
 
         # 3. Verify all have same shape

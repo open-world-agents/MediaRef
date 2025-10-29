@@ -4,6 +4,7 @@ These tests require the [loader] extra to be installed.
 """
 
 import time
+import warnings
 from pathlib import Path
 
 import numpy as np
@@ -19,7 +20,9 @@ class TestBatchDecodeImages:
     def test_batch_decode_single_image(self, sample_image_files: list[Path]):
         """Test batch decoding with single image."""
         refs = [MediaRef(uri=str(sample_image_files[0]))]
-        results = batch_decode(refs)
+        with warnings.catch_warnings():
+            warnings.filterwarnings("ignore", message="batch_decode.*received.*image")
+            results = batch_decode(refs)
 
         assert len(results) == 1
         assert isinstance(results[0], np.ndarray)
@@ -28,7 +31,9 @@ class TestBatchDecodeImages:
     def test_batch_decode_multiple_images(self, sample_image_files: list[Path]):
         """Test batch decoding with multiple images."""
         refs = [MediaRef(uri=str(img)) for img in sample_image_files]
-        results = batch_decode(refs)
+        with warnings.catch_warnings():
+            warnings.filterwarnings("ignore", message="batch_decode.*received.*image")
+            results = batch_decode(refs)
 
         assert len(results) == 3
         for rgb in results:
@@ -39,7 +44,9 @@ class TestBatchDecodeImages:
     def test_batch_decode_images_different_content(self, sample_image_files: list[Path]):
         """Test that different images have different content."""
         refs = [MediaRef(uri=str(img)) for img in sample_image_files]
-        results = batch_decode(refs)
+        with warnings.catch_warnings():
+            warnings.filterwarnings("ignore", message="batch_decode.*received.*image")
+            results = batch_decode(refs)
 
         # Images should be different (different intensities)
         assert not np.array_equal(results[0], results[1])
@@ -53,7 +60,9 @@ class TestBatchDecodeImages:
     def test_batch_decode_preserves_order(self, sample_image_files: list[Path]):
         """Test that batch_decode preserves input order."""
         refs = [MediaRef(uri=str(img)) for img in sample_image_files]
-        results = batch_decode(refs)
+        with warnings.catch_warnings():
+            warnings.filterwarnings("ignore", message="batch_decode.*received.*image")
+            results = batch_decode(refs)
 
         # Verify order by checking individual loads
         for ref, result in zip(refs, results):
@@ -125,7 +134,9 @@ class TestBatchDecodeMixed:
             MediaRef(uri=str(sample_image_files[1])),
             MediaRef(uri=str(video_path), pts_ns=timestamps[1]),  # Already in nanoseconds
         ]
-        results = batch_decode(refs)
+        with warnings.catch_warnings():
+            warnings.filterwarnings("ignore", message="batch_decode.*received.*image")
+            results = batch_decode(refs)
 
         assert len(results) == 4
         for rgb in results:
@@ -143,7 +154,9 @@ class TestBatchDecodeMixed:
             MediaRef(uri=str(video_path), pts_ns=timestamps[0]),  # Already in nanoseconds
             MediaRef(uri=str(sample_image_files[1])),
         ]
-        results = batch_decode(refs)
+        with warnings.catch_warnings():
+            warnings.filterwarnings("ignore", message="batch_decode.*received.*image")
+            results = batch_decode(refs)
 
         # Verify order
         for ref, result in zip(refs, results):
@@ -308,4 +321,6 @@ class TestBatchDecodeErrorHandling:
         ]
 
         with pytest.raises(Exception):
-            batch_decode(refs)
+            with warnings.catch_warnings():
+                warnings.filterwarnings("ignore", message="batch_decode.*received.*image")
+                batch_decode(refs)
