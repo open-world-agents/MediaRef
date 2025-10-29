@@ -66,11 +66,22 @@ def _load_pil_image(
     if isinstance(image, str):
         if image.startswith("http://") or image.startswith("https://"):
             image = PIL.Image.open(requests.get(image, stream=True, timeout=REQUEST_TIMEOUT).raw)
+        elif image.startswith("file://"):
+            # Convert file:// URI to local path
+            from urllib.request import url2pathname
+
+            # Remove 'file://' prefix and convert to local path
+            # url2pathname handles URL decoding (unquote) internally
+            file_path = url2pathname(image[7:])
+            if os.path.isfile(file_path):
+                image = PIL.Image.open(file_path)
+            else:
+                raise FileNotFoundError(f"File not found: {file_path} (from URI: {image})")
         elif os.path.isfile(image):
             image = PIL.Image.open(image)
         else:
             raise ValueError(
-                f"Incorrect path or URL. URLs must start with `http://` or `https://`, "
+                f"Incorrect path or URL. URLs must start with `http://`, `https://`, or `file://`, "
                 f"and {image} is not a valid path."
             )
     elif isinstance(image, PIL.Image.Image):
@@ -135,16 +146,24 @@ def load_video_frame_as_bgra(
         gc.collect()
 
     try:
+        # Convert file:// URI to local path if needed
+        actual_path = path_or_url
+        if path_or_url.startswith("file://"):
+            from urllib.request import url2pathname
+
+            # url2pathname handles URL decoding (unquote) internally
+            actual_path = url2pathname(path_or_url[7:])
+
         # Validate local file exists
         if not path_or_url.startswith(("http://", "https://")):
-            if not Path(path_or_url).exists():
-                raise FileNotFoundError(f"Video file not found: {path_or_url}")
+            if not Path(actual_path).exists():
+                raise FileNotFoundError(f"Video file not found: {actual_path}")
 
         # Convert nanoseconds to fraction
         pts_fraction = Fraction(pts_ns, NANOSECOND)
 
         # Open video and read frame
-        container = cached_av.open(path_or_url, "r", keep_av_open=keep_av_open)
+        container = cached_av.open(actual_path, "r", keep_av_open=keep_av_open)
         try:
             frame = _read_frame_at_pts(container, pts_fraction)
             rgb_array = frame.to_ndarray(format="rgb24")

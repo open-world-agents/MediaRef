@@ -55,6 +55,16 @@ class TestToRgbArrayImage:
         assert rgb.shape[2] == 3
         assert rgb.dtype == np.uint8
 
+    def test_to_rgb_array_from_file_uri(self, sample_image_file: Path):
+        """Test loading RGB array from file:// URI."""
+        file_uri = f"file://{sample_image_file.as_posix()}"
+        ref = MediaRef(uri=file_uri)
+        rgb = ref.to_rgb_array()
+
+        assert isinstance(rgb, np.ndarray)
+        assert rgb.shape == (48, 64, 3)
+        assert rgb.dtype == np.uint8
+
     def test_to_rgb_array_nonexistent_file(self):
         """Test that loading from nonexistent file raises error."""
         ref = MediaRef(uri="/nonexistent/file.png")
@@ -108,6 +118,19 @@ class TestToRgbArrayVideo:
 
         with pytest.raises(Exception):  # Should raise FileNotFoundError
             ref.to_rgb_array()
+
+    def test_to_rgb_array_from_video_file_uri(self, sample_video_file: tuple[Path, list[int]]):
+        """Test loading RGB array from video frame using file:// URI."""
+        video_path, timestamps = sample_video_file
+        file_uri = f"file://{video_path.as_posix()}"
+        pts_ns = timestamps[1]
+
+        ref = MediaRef(uri=file_uri, pts_ns=pts_ns)
+        rgb = ref.to_rgb_array()
+
+        assert isinstance(rgb, np.ndarray)
+        assert rgb.shape == (48, 64, 3)
+        assert rgb.dtype == np.uint8
 
     def test_to_rgb_array_video_without_pts_ns_raises_error(self):
         """Test that loading video without pts_ns raises ImportError."""
@@ -170,6 +193,16 @@ class TestToPilImage:
         pil_img = ref.to_pil_image()
 
         assert isinstance(pil_img, Image.Image)
+        assert pil_img.mode == "RGB"
+
+    def test_to_pil_image_from_file_uri(self, sample_image_file: Path):
+        """Test loading PIL Image from file:// URI."""
+        file_uri = f"file://{sample_image_file.as_posix()}"
+        ref = MediaRef(uri=file_uri)
+        pil_img = ref.to_pil_image()
+
+        assert isinstance(pil_img, Image.Image)
+        assert pil_img.size == (64, 48)
         assert pil_img.mode == "RGB"
 
 

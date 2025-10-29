@@ -148,7 +148,7 @@ class MediaRef(BaseModel):
         return MediaRef(uri=resolved_path, pts_ns=self.pts_ns)
 
     # ========== Loading Methods ==========
-
+    # TODO: non-rgb support
     def to_rgb_array(self, **kwargs) -> npt.NDArray[np.uint8]:
         """Load and return media as RGB numpy array.
 
