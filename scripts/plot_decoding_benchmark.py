@@ -2,7 +2,6 @@
 """Generate benchmark comparison figure for README."""
 
 import matplotlib.pyplot as plt
-import numpy as np
 
 # Benchmark data
 configurations = ["Baseline", "TorchCodec\n(batch)", "MediaRef\n(adaptive batch)"]
@@ -39,12 +38,8 @@ for bar, val in zip(bars1, throughput):
     )
 
 # Add speedup annotations
-ax1.text(
-    1, throughput[1] * 0.5, "3.3×", ha="center", va="center", fontsize=10, color="white", fontweight="bold"
-)
-ax1.text(
-    2, throughput[2] * 0.5, "4.9×", ha="center", va="center", fontsize=10, color="white", fontweight="bold"
-)
+ax1.text(1, throughput[1] * 0.5, "3.3×", ha="center", va="center", fontsize=10, color="white", fontweight="bold")
+ax1.text(2, throughput[2] * 0.5, "4.9×", ha="center", va="center", fontsize=10, color="white", fontweight="bold")
 
 # Plot 2: I/O Efficiency (inverted to img/KB)
 bars2 = ax2.bar(configurations, io_efficiency_inverted, color=colors, alpha=0.8, edgecolor="black", linewidth=1.2)
@@ -94,4 +89,3 @@ plt.tight_layout()
 # Save figure
 plt.savefig("assets/decoding_benchmark.png", dpi=150, bbox_inches="tight")
 print("Figure saved to assets/decoding_benchmark.png")
-

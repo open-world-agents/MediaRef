@@ -47,7 +47,7 @@ frames = batch_decode(refs)                            # Much faster than loadin
 
 ### Batch Decoding - Optimized Video Frame Loading
 
-When loading multiple frames from the same video, `batch_decode()` opens the video file once and reuses the handle, achieving **4.9× faster throughput** and **41× better I/O efficiency** compared to existing methods. This implementation is part of the [D2E framework](https://worv-ai.github.io/d2e/).
+When loading multiple frames from the same video, `batch_decode()` opens the video file once and reuses the handle, achieving **4.9× faster throughput** and **41× better I/O efficiency** compared to existing methods.
 
 <p align="center">
   <img src="assets/decoding_benchmark.png" alt="Decoding Benchmark" width="800">
