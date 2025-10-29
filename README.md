@@ -45,6 +45,51 @@ refs = [MediaRef(uri="video.mp4", pts_ns=int(i*1e9)) for i in range(10)]
 frames = batch_decode(refs)                            # Much faster than loading individually
 ```
 
+### Batch Decoding - Optimized Video Frame Loading
+
+MediaRef's adaptive batch decoding achieves **4.9× throughput improvement** over baseline while maintaining **2.2× better I/O efficiency** compared to baseline and **41× better I/O efficiency** compared to TorchCodec.
+
+**Benchmark Results** (Minecraft, 64×5 min episodes, 640×360 @ 20Hz, using SEQUENTIAL_PER_KEYFRAME_BLOCK strategy):
+
+| Configuration | Throughput (img/s) | Avg. Disk Read (KB/img) | vs Baseline |
+|---------------|-------------------:|------------------------:|-------------|
+| **Baseline** | 24.25 | 41.69 | 1.0× |
+| **TorchCodec** (batch) | 79.73 | 770.39 | 3.3× |
+| **MediaRef** (adaptive batch) | **119.16** | **18.73** | **4.9×** |
+
+**Key advantages:**
+- **4.9× faster** than baseline with **2.2× better I/O efficiency** (18.73 KB/img vs 41.69 KB/img)
+- **1.5× faster** than TorchCodec with **41× better I/O efficiency** (18.73 KB/img vs 770.39 KB/img)
+
+When loading multiple frames from the same video, `batch_decode()` opens the video file once and reuses the handle, avoiding repeated file I/O overhead.
+
+**Decoding Strategies (PyAV only):**
+
+- **SEQUENTIAL_PER_KEYFRAME_BLOCK** (default) - Decodes frames in batches, restarting at each keyframe to balance seeking vs decoding overhead. Best for mixed access patterns.
+- **SEQUENTIAL** - Decodes all frames in one pass from first to last requested timestamp. Best for dense queries but may decode unnecessary frames.
+- **SEPARATE** - Seeks and decodes each frame independently. Best for very sparse queries where frames are far apart.
+
+```python
+from mediaref import MediaRef, batch_decode
+from mediaref.video_decoder import BatchDecodingStrategy
+
+# Default: SEQUENTIAL_PER_KEYFRAME_BLOCK (works well for most cases)
+refs = [MediaRef(uri="video.mp4", pts_ns=int(i*1e9)) for i in range(10)]
+frames = batch_decode(refs)                            # Frames at 0s, 1s, 2s, ..., 9s
+
+# Dense queries: Use SEQUENTIAL for maximum speed
+refs = [MediaRef(uri="video.mp4", pts_ns=int(i*1e9)) for i in range(100)]
+frames = batch_decode(refs, strategy=BatchDecodingStrategy.SEQUENTIAL)
+
+# Sparse queries: Use SEPARATE to avoid decoding unnecessary frames
+timestamps = [0, 100_000_000_000, 500_000_000_000, 1000_000_000_000]  # 0s, 100s, 500s, 1000s
+refs = [MediaRef(uri="video.mp4", pts_ns=t) for t in timestamps]
+frames = batch_decode(refs, strategy=BatchDecodingStrategy.SEPARATE)
+
+# Use TorchCodec for GPU acceleration (strategy parameter ignored)
+frames = batch_decode(refs, decoder="torchcodec")
+```
+
 ### Embedding Media Directly in MediaRef
 
 You can embed image data directly into `MediaRef` objects, making them self-contained and portable (useful for serialization, caching, or sharing).
@@ -77,52 +122,6 @@ restored = MediaRef.model_validate_json(serialized)    # No external file needed
 print(data_uri.mimetype)                               # "image/png"
 print(len(data_uri))                                   # URI length in bytes
 print(data_uri.is_image)                               # True for image/* types
-```
-
-### Batch Decoding - Optimized Video Frame Loading
-
-When loading multiple frames from the same video, `batch_decode()` opens the video file once and reuses the handle, avoiding repeated file I/O overhead.
-
-**Decoding Strategies (PyAV only):**
-
-MediaRef provides three strategies optimized for different access patterns:
-
-- **SEQUENTIAL_PER_KEYFRAME_BLOCK** (default)
-  - Decodes frames in batches, restarting at each keyframe interval
-  - **Best for:** Mixed queries (both sparse and dense)
-  - **Performance:** Balanced approach, ~X times faster than individual loading (TODO: benchmark)
-
-- **SEQUENTIAL**
-  - Decodes all frames in one sequential pass from first to last requested frame
-  - **Best for:** Dense queries where frames are close together (e.g., every 1 second for 10 seconds)
-  - **Performance:** Fastest for dense queries, ~X times faster (TODO: benchmark)
-  - **Trade-off:** May decode unnecessary frames between sparse timestamps
-
-- **SEPARATE**
-  - Seeks and decodes each frame independently
-  - **Best for:** Very sparse queries (e.g., frames at 0s, 100s, 500s, 1000s)
-  - **Performance:** ~X times faster than individual loading (TODO: benchmark)
-  - **Trade-off:** More seeking overhead than sequential strategies
-
-```python
-from mediaref import MediaRef, batch_decode
-from mediaref.video_decoder import BatchDecodingStrategy
-
-# Default: SEQUENTIAL_PER_KEYFRAME_BLOCK (works well for most cases)
-refs = [MediaRef(uri="video.mp4", pts_ns=int(i*1e9)) for i in range(10)]
-frames = batch_decode(refs)                            # Frames at 0s, 1s, 2s, ..., 9s
-
-# Dense queries: Use SEQUENTIAL for maximum speed
-refs = [MediaRef(uri="video.mp4", pts_ns=int(i*1e9)) for i in range(100)]
-frames = batch_decode(refs, strategy=BatchDecodingStrategy.SEQUENTIAL)
-
-# Sparse queries: Use SEPARATE to avoid decoding unnecessary frames
-timestamps = [0, 100_000_000_000, 500_000_000_000, 1000_000_000_000]  # 0s, 100s, 500s, 1000s
-refs = [MediaRef(uri="video.mp4", pts_ns=t) for t in timestamps]
-frames = batch_decode(refs, strategy=BatchDecodingStrategy.SEPARATE)
-
-# Use TorchCodec for GPU acceleration (strategy parameter ignored)
-frames = batch_decode(refs, decoder="torchcodec")
 ```
 
 ### Path Resolution & Serialization
