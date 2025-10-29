@@ -45,33 +45,33 @@ refs = [MediaRef(uri="video.mp4", pts_ns=int(i*1e9)) for i in range(10)]
 frames = batch_decode(refs)                            # Much faster than loading individually
 ```
 
-### DataURI - Embed Media as Base64
+### Embedding Media Directly in MediaRef
 
-DataURI allows you to encode images as self-contained data URIs (base64-encoded).
+You can embed image data directly into `MediaRef` objects, making them self-contained and portable (useful for serialization, caching, or sharing).
 
 ```python
-from mediaref import DataURI
+from mediaref import MediaRef, DataURI
 import numpy as np
 
-# Create from numpy array
+# Create embedded MediaRef from numpy array
 rgb = np.random.randint(0, 255, (100, 100, 3), dtype=np.uint8)
-data_uri = DataURI.from_image(rgb, format="png")      # Supports: png, jpeg, bmp
+embedded_ref = MediaRef(uri=DataURI.from_image(rgb, format="png"))
 
-# Create from file
-data_uri = DataURI.from_file("image.png")
+# Or from file
+embedded_ref = MediaRef(uri=DataURI.from_file("image.png"))
 
-# Create from PIL Image
+# Or from PIL Image
 from PIL import Image
 pil_img = Image.open("image.png")
-data_uri = DataURI.from_image(pil_img, format="jpeg", quality=90)
+embedded_ref = MediaRef(uri=DataURI.from_image(pil_img, format="jpeg", quality=90))
 
-# Use with MediaRef
-ref = MediaRef(uri=data_uri)                           # Accepts DataURI object
-ref = MediaRef(uri=str(data_uri))                      # Or string
+# Use just like any other MediaRef
+rgb = embedded_ref.to_rgb_array()                      # (H, W, 3) numpy array
+pil = embedded_ref.to_pil_image()                      # PIL Image
 
-# Convert back to image
-rgb = data_uri.to_rgb_array()                          # (H, W, 3) numpy array
-pil = data_uri.to_pil_image()                          # PIL Image
+# Serialize with embedded data
+serialized = embedded_ref.model_dump_json()            # Contains image data
+restored = MediaRef.model_validate_json(serialized)    # No external file needed!
 
 # Properties
 print(data_uri.mimetype)                               # "image/png"
@@ -155,28 +155,20 @@ ref = MediaRef.model_validate_json(json_str)           # From JSON
 - `model_validate(data) -> MediaRef` - Deserialize from dict
 - `model_validate_json(json_str) -> MediaRef` - Deserialize from JSON
 
-### DataURI
+### DataURI (for embedding media)
 
-**Fields:**
-- `mimetype: str` - MIME type (e.g., "image/png")
-- `is_base64: bool` - Whether data is base64 encoded
-- `data: bytes` - Data payload (base64 string as bytes if is_base64=True)
+**Class Methods:**
+- `from_image(image: np.ndarray | PIL.Image, format="png", quality=None) -> DataURI` - Create from image
+- `from_file(path: str | Path, format=None) -> DataURI` - Create from file
+- `from_uri(uri: str) -> DataURI` - Parse data URI string
+
+**Methods:**
+- `to_rgb_array() -> np.ndarray` - Convert to RGB array (H, W, 3)
+- `to_pil_image() -> PIL.Image` - Convert to PIL Image
 
 **Properties:**
 - `uri: str` - Full data URI string
-- `decoded_data: bytes` - Decoded data payload (handles base64 decoding)
 - `is_image: bool` - True if MIME type is image/*
-
-**Class Methods:**
-- `from_uri(uri: str) -> DataURI` - Parse data URI string
-- `from_image(image: np.ndarray | PIL.Image, format="png", quality=None) -> DataURI` - Create from image
-- `from_file(path: str | Path, format=None) -> DataURI` - Create from file
-
-**Methods:**
-- `to_pil_image() -> PIL.Image` - Convert to PIL Image
-- `to_rgb_array() -> np.ndarray` - Convert to RGB array (H, W, 3)
-- `__str__() -> str` - Return data URI string
-- `__len__() -> int` - Return URI length in bytes
 
 ### Functions
 
