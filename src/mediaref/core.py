@@ -140,7 +140,7 @@ class MediaRef(BaseModel):
             return self  # Already absolute or not a local path
 
         base_path_obj = Path(base_path)
-        # If base path is an MCAP file, use its parent directory
+        # If base path is an MCAP file, use its parent directory. TODO: remove this
         if base_path_obj.suffix == ".mcap":
             base_path_obj = base_path_obj.parent
 

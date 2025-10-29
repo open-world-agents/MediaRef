@@ -1,12 +1,10 @@
 """Internal loading and encoding utilities."""
 
-import base64
 import gc
 import os
 from fractions import Fraction
 from pathlib import Path
-from typing import TYPE_CHECKING, Literal, Optional, Union
-from urllib.parse import urlparse
+from typing import TYPE_CHECKING, Union
 
 import cv2
 import numpy as np
@@ -189,73 +187,11 @@ def _read_frame_at_pts(
 
 
 def _load_from_data_uri(data_uri: str) -> npt.NDArray[np.uint8]:
-    """Load image from data URI."""
-    parsed = urlparse(data_uri)
-    if parsed.scheme != "data":
-        raise ValueError(f"Invalid data URI scheme: {parsed.scheme}")
+    """Load image from data URI and return as BGRA array."""
+    from .data_uri import DataURI
 
-    try:
-        # Extract base64 data from data URI
-        data_part = parsed.path.split(",", 1)[1]
-        return _decode_from_base64(data_part)
-    except (IndexError, ValueError) as e:
-        raise ValueError(f"Invalid data URI format: {e}") from e
-
-
-def _decode_from_base64(data: str) -> npt.NDArray[np.uint8]:
-    """Decode base64 string to BGRA numpy array."""
-    try:
-        image_bytes = base64.b64decode(data)
-        nparr = np.frombuffer(image_bytes, np.uint8)
-        bgr_array = cv2.imdecode(nparr, cv2.IMREAD_COLOR)
-
-        if bgr_array is None:
-            raise ValueError("Failed to decode base64 image data")
-
-        bgra_array: npt.NDArray[np.uint8] = cv2.cvtColor(bgr_array, cv2.COLOR_BGR2BGRA)  # type: ignore[assignment]
-        return bgra_array
-    except Exception as e:
-        raise ValueError(f"Failed to decode base64 data: {e}") from e
-
-
-# ============================================================================
-# Encoding
-# ============================================================================
-
-
-def encode_array_to_base64(
-    array: npt.NDArray[np.uint8],
-    format: Literal["png", "jpeg", "bmp"],
-    quality: Optional[int] = None,
-) -> str:
-    """Encode BGRA numpy array to base64 string.
-
-    Args:
-        array: BGRA numpy array
-        format: Output format ('png', 'jpeg', or 'bmp')
-        quality: JPEG quality (1-100), ignored for PNG and BMP
-
-    Returns:
-        Base64 encoded string
-    """
-    # Convert BGRA to BGR for cv2 encoding
-    bgr_array = cv2.cvtColor(array, cv2.COLOR_BGRA2BGR)
-
-    # Encode based on format
-    if format == "png":
-        success, encoded = cv2.imencode(".png", bgr_array)
-    elif format == "jpeg":
-        if quality is None:
-            quality = 85
-        if not (1 <= quality <= 100):
-            raise ValueError("JPEG quality must be between 1 and 100")
-        success, encoded = cv2.imencode(".jpg", bgr_array, [cv2.IMWRITE_JPEG_QUALITY, quality])
-    elif format == "bmp":
-        success, encoded = cv2.imencode(".bmp", bgr_array)
-    else:
-        raise ValueError(f"Unsupported format: {format}")
-
-    if not success:
-        raise ValueError(f"Failed to encode image as {format}")
-
-    return base64.b64encode(encoded.tobytes()).decode("utf-8")
+    data_uri_obj = DataURI.from_uri(data_uri)
+    # DataURI.to_rgb_array() returns RGB, convert to BGRA
+    rgb_array = data_uri_obj.to_rgb_array()
+    bgra_array: npt.NDArray[np.uint8] = cv2.cvtColor(rgb_array, cv2.COLOR_RGB2BGRA)  # type: ignore[assignment]
+    return bgra_array

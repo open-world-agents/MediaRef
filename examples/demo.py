@@ -8,6 +8,7 @@ from pathlib import Path
 import av
 import cv2
 import numpy as np
+
 from mediaref import MediaRef, load_batch
 
 # ============================================================
@@ -85,8 +86,11 @@ print(f"   Loaded {len(frames)} frames: {frames[0].shape}")
 # ============================================================
 print("\n4. Embed as data URI")
 
+from mediaref import DataURI  # noqa: E402
+
 # Convert image to self-contained data URI (base64 encoded)
-data_uri = ref_image.embed_as_data_uri(format="png")
+rgb = ref_image.to_rgb_array()
+data_uri = DataURI.from_image(rgb, format="png")
 
 # Create a new reference from the data URI
 embedded = MediaRef(uri=data_uri)
