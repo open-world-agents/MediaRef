@@ -127,7 +127,7 @@ class MediaRef(BaseModel):
         Uses platform-specific path semantics (behavior differs on Windows vs POSIX).
 
         Args:
-            base_path: Base path (typically MCAP file path) to resolve against
+            base_path: Base path to resolve against
             on_unresolvable: How to handle unresolvable URIs (embedded/remote):
                 - "error": Raise ValueError
                 - "warn": Issue warning and return unchanged (default)
@@ -141,12 +141,12 @@ class MediaRef(BaseModel):
 
         Examples:
             >>> ref = MediaRef(uri="relative/video.mkv", pts_ns=123456)
-            >>> ref_resolved = ref.resolve_relative_path("/data/recording.mcap")
-            >>> # ref_resolved.uri == "/data/relative/video.mkv"
+            >>> ref_resolved = ref.resolve_relative_path("/data/recordings")
+            >>> # ref_resolved.uri == "/data/recordings/relative/video.mkv"
             >>>
             >>> # Handle unresolvable URIs
             >>> remote = MediaRef(uri="https://example.com/image.jpg")
-            >>> remote.resolve_relative_path("/data/base.mcap", on_unresolvable="ignore")
+            >>> remote.resolve_relative_path("/data/recordings", on_unresolvable="ignore")
         """
         if self.is_embedded or self.is_remote:
             if on_unresolvable == "error":

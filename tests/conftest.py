@@ -195,22 +195,6 @@ def sample_data_uri(sample_bgra_array: np.ndarray) -> str:
 
 
 @pytest.fixture
-def sample_data_uri_jpeg(sample_bgra_array: np.ndarray) -> str:
-    """Create a valid JPEG data URI from BGRA array.
-
-    Returns:
-        Data URI string (JPEG format).
-    """
-    bgr_array = cv2.cvtColor(sample_bgra_array, cv2.COLOR_BGRA2BGR)
-    success, encoded = cv2.imencode(".jpg", bgr_array, [cv2.IMWRITE_JPEG_QUALITY, 85])
-    if not success:
-        raise ValueError("Failed to encode image")
-
-    base64_data = base64.b64encode(encoded.tobytes()).decode("utf-8")
-    return f"data:image/jpeg;base64,{base64_data}"
-
-
-@pytest.fixture
 def remote_test_image_url() -> str:
     """Return a reliable remote test image URL.
 
@@ -218,41 +202,6 @@ def remote_test_image_url() -> str:
         URL to a test image (httpbingo.org).
     """
     return "https://httpbingo.org/image/png"
-
-
-@pytest.fixture
-def remote_test_video_url() -> str:
-    """Return a reliable remote test video URL.
-
-    Returns:
-        URL to a test video (Hugging Face dataset).
-    """
-    return "https://huggingface.co/datasets/open-world-agents/example_dataset/resolve/main/example.mkv"
-
-
-# ============================================================================
-# Path Fixtures
-# ============================================================================
-
-
-@pytest.fixture
-def temp_directory(tmp_path: Path) -> Path:
-    """Create a temporary directory structure for path testing.
-
-    Returns:
-        Path to temporary directory.
-    """
-    # Create nested directory structure
-    (tmp_path / "data" / "recordings").mkdir(parents=True)
-    (tmp_path / "data" / "images").mkdir(parents=True)
-    (tmp_path / "data" / "videos").mkdir(parents=True)
-
-    # Create some dummy files
-    (tmp_path / "data" / "recording.mcap").touch()
-    (tmp_path / "data" / "images" / "frame.png").touch()
-    (tmp_path / "data" / "videos" / "clip.mp4").touch()
-
-    return tmp_path
 
 
 # ============================================================================
