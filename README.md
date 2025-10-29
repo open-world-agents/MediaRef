@@ -47,47 +47,25 @@ frames = batch_decode(refs)                            # Much faster than loadin
 
 ### Batch Decoding - Optimized Video Frame Loading
 
-MediaRef's adaptive batch decoding achieves **4.9× throughput improvement** over baseline while maintaining **2.2× better I/O efficiency** compared to baseline and **41× better I/O efficiency** compared to TorchCodec.
+When loading multiple frames from the same video, `batch_decode()` opens the video file once and reuses the handle, achieving **4.9× faster throughput** and **41× better I/O efficiency** compared to existing methods. This implementation is part of the [D2E framework](https://worv-ai.github.io/d2e/).
 
-**Benchmark Results** (Minecraft, 64×5 min episodes, 640×360 @ 20Hz, using SEQUENTIAL_PER_KEYFRAME_BLOCK strategy):
+<p align="center">
+  <img src="assets/decoding_benchmark.png" alt="Decoding Benchmark" width="800">
+</p>
 
-| Configuration | Throughput (img/s) | Avg. Disk Read (KB/img) | vs Baseline |
-|---------------|-------------------:|------------------------:|-------------|
-| **Baseline** | 24.25 | 41.69 | 1.0× |
-| **TorchCodec** (batch) | 79.73 | 770.39 | 3.3× |
-| **MediaRef** (adaptive batch) | **119.16** | **18.73** | **4.9×** |
-
-**Key advantages:**
-- **4.9× faster** than baseline with **2.2× better I/O efficiency** (18.73 KB/img vs 41.69 KB/img)
-- **1.5× faster** than TorchCodec with **41× better I/O efficiency** (18.73 KB/img vs 770.39 KB/img)
-
-When loading multiple frames from the same video, `batch_decode()` opens the video file once and reuses the handle, avoiding repeated file I/O overhead.
-
-**Decoding Strategies (PyAV only):**
-
-- **SEQUENTIAL_PER_KEYFRAME_BLOCK** (default) - Decodes frames in batches, restarting at each keyframe to balance seeking vs decoding overhead. Best for mixed access patterns.
-- **SEQUENTIAL** - Decodes all frames in one pass from first to last requested timestamp. Best for dense queries but may decode unnecessary frames.
-- **SEPARATE** - Seeks and decodes each frame independently. Best for very sparse queries where frames are far apart.
+> **Benchmark details**: Measured on real ML dataloader workloads (Minecraft dataset: 64×5 min episodes, 640×360 @ 20Hz, FSLDataset with 4096 token sequences) vs baseline and TorchCodec v0.6.0. See [D2E paper](https://worv-ai.github.io/d2e/) Section 3 and Appendix A for full methodology.
 
 ```python
 from mediaref import MediaRef, batch_decode
 from mediaref.video_decoder import BatchDecodingStrategy
 
-# Default: SEQUENTIAL_PER_KEYFRAME_BLOCK (works well for most cases)
+# Use optimized batch decoding with adaptive strategy (default, recommended)
 refs = [MediaRef(uri="video.mp4", pts_ns=int(i*1e9)) for i in range(10)]
-frames = batch_decode(refs)                            # Frames at 0s, 1s, 2s, ..., 9s
-
-# Dense queries: Use SEQUENTIAL for maximum speed
-refs = [MediaRef(uri="video.mp4", pts_ns=int(i*1e9)) for i in range(100)]
-frames = batch_decode(refs, strategy=BatchDecodingStrategy.SEQUENTIAL)
-
-# Sparse queries: Use SEPARATE to avoid decoding unnecessary frames
-timestamps = [0, 100_000_000_000, 500_000_000_000, 1000_000_000_000]  # 0s, 100s, 500s, 1000s
-refs = [MediaRef(uri="video.mp4", pts_ns=t) for t in timestamps]
-frames = batch_decode(refs, strategy=BatchDecodingStrategy.SEPARATE)
-
-# Use TorchCodec for GPU acceleration (strategy parameter ignored)
-frames = batch_decode(refs, decoder="torchcodec")
+frames = batch_decode(
+    refs,
+    decoder="pyav",
+    strategy=BatchDecodingStrategy.SEQUENTIAL_PER_KEYFRAME_BLOCK
+)
 ```
 
 ### Embedding Media Directly in MediaRef
