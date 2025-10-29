@@ -132,13 +132,17 @@ class TestToRgbArrayVideo:
         assert rgb.shape == (48, 64, 3)
         assert rgb.dtype == np.uint8
 
-    def test_to_rgb_array_video_without_pts_ns_raises_error(self):
-        """Test that loading video without pts_ns raises ImportError."""
-        ref = MediaRef(uri="video.mp4")  # No pts_ns
+    def test_to_rgb_array_video_without_pts_ns_raises_error(self, sample_video_file: tuple[Path, list[int]]):
+        """Test that loading video file without pts_ns raises ValueError.
 
-        # Should raise ImportError because it tries to load as image
-        # but video files need pts_ns
-        with pytest.raises(Exception):
+        When pts_ns is not provided, MediaRef treats the file as an image.
+        Trying to load a video file as an image fails with ValueError.
+        """
+        video_path, _ = sample_video_file
+        ref = MediaRef(uri=str(video_path))  # No pts_ns, so is_video=False
+
+        # Should raise ValueError because it tries to load video file as image
+        with pytest.raises(ValueError, match="Failed to load image"):
             ref.to_rgb_array()
 
 

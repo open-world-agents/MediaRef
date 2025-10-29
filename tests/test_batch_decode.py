@@ -3,9 +3,11 @@
 These tests require the [loader] extra to be installed.
 """
 
+import sys
 import time
 import warnings
 from pathlib import Path
+from unittest.mock import patch
 
 import numpy as np
 import pytest
@@ -195,6 +197,28 @@ class TestBatchDecodeDecoders:
         # TorchCodec is not installed in test environment
         with pytest.raises(ImportError, match="TorchCodec.*not.*install"):
             batch_decode(refs, decoder="torchcodec")
+
+    def test_batch_decode_without_video_extra_shows_helpful_error(self, sample_video_file: tuple[Path, list[int]]):
+        """Test that batch_decode shows helpful error when [video] extra is not installed.
+
+        This test simulates the scenario where someone tries to use batch_decode
+        without installing the [video] extra.
+        """
+        video_path, timestamps = sample_video_file
+        refs = [MediaRef(uri=str(video_path), pts_ns=timestamps[0])]
+
+        # Mock HAS_VIDEO to simulate [video] extra not being installed
+        with patch("mediaref._features.HAS_VIDEO", False):
+            with patch("mediaref._features.VIDEO_ERROR", "No module named 'av'"):
+                # Clear the module cache to force re-import with mocked values
+                if "mediaref.video_decoder" in sys.modules:
+                    del sys.modules["mediaref.video_decoder"]
+                if "mediaref.video_decoder.pyav_decoder" in sys.modules:
+                    del sys.modules["mediaref.video_decoder.pyav_decoder"]
+
+                # Now trying to use batch_decode should raise ImportError with helpful message
+                with pytest.raises(ImportError, match="Video frame extraction requires.*video.*extra"):
+                    batch_decode(refs, decoder="pyav")
 
 
 class TestBatchDecodeCache:
