@@ -1,154 +1,182 @@
 #!/usr/bin/env python3
-"""MediaRef usage demonstration - shows all features from README."""
+"""MediaRef usage demonstration - follows README structure exactly.
 
-import json
+This demo shows the actual code usage, not output formatting.
+Run this file to see MediaRef in action.
+"""
+
+import shutil
 import tempfile
+import time
 from pathlib import Path
 
-import av
 import cv2
 import numpy as np
+from PIL import Image
 
-from mediaref import MediaRef, load_batch
+from mediaref import DataURI, MediaRef, batch_decode
 
-# ============================================================
-# Setup: Create test files for demonstration
-# ============================================================
+# ============================================================================
+# Setup: Create test files
+# ============================================================================
+
 tmp = Path(tempfile.mkdtemp())
-image_path = tmp / "test.png"
-video_path = tmp / "test.mp4"
+image_path = tmp / "image.png"
+video_path = tmp / "video.mp4"
 
-# Create a simple test image (100x150 pixels, BGR color)
-cv2.imwrite(str(image_path), np.full((100, 150, 3), [50, 100, 150], dtype=np.uint8))
+# Create test image
+test_image = np.zeros((48, 64, 3), dtype=np.uint8)
+test_image[:, :, 0] = 255
+cv2.imwrite(str(image_path), test_image)
 
-# Create a test video with 30 frames (1 second at 30fps)
-# Each frame gets progressively brighter
-container = av.open(str(video_path), "w")
-stream = container.add_stream("h264", rate=30)
-stream.width, stream.height, stream.pix_fmt = 150, 100, "yuv420p"
-for i in range(30):
-    arr = np.full((100, 150, 3), i * 8, dtype=np.uint8)
-    for packet in stream.encode(av.VideoFrame.from_ndarray(arr, format="rgb24")):
+# Create test video (if video support available)
+video_available = False
+try:
+    import av
+
+    video_available = True
+    container = av.open(str(video_path), "w")
+    stream = container.add_stream("h264", rate=30)
+    stream.width, stream.height, stream.pix_fmt = 64, 48, "yuv420p"
+    for i in range(30):
+        arr = np.full((48, 64, 3), min(i * 8, 255), dtype=np.uint8)
+        frame = av.VideoFrame.from_ndarray(arr, format="rgb24")
+        for packet in stream.encode(frame):
+            container.mux(packet)
+    for packet in stream.encode():
         container.mux(packet)
-for packet in stream.encode():
-    container.mux(packet)
-container.close()
+    container.close()
+except ImportError:
+    print("⚠️  Video support not available (install: pip install mediaref[video])\n")
 
-print("MediaRef Demo\n" + "=" * 60)
+# ============================================================================
+# Basic Usage
+# ============================================================================
 
-# ============================================================
-# 1. Reference Creation - Lightweight, no loading yet
-# ============================================================
-print("\n1. Create references (no loading yet)")
+print("\n1. Create references (lightweight, no loading yet)")
+ref = MediaRef(uri=str(image_path))  # Local file
+ref = MediaRef(uri="https://example.com/image.jpg")  # Remote URL
+ref = MediaRef(uri=str(video_path), pts_ns=1_000_000_000)  # Video frame at 1.0s
+print(f"   ✓ Created refs: local, remote (is_remote={ref.is_remote}), video (is_video={ref.is_video})")
 
-# Reference to a local image file
-ref_image = MediaRef(uri=str(image_path))
-
-# Reference to a specific video frame (at 0.5 seconds)
-ref_video = MediaRef(uri=str(video_path), pts_ns=500_000_000)
-
-# Reference to a remote URL (not fetched until loaded)
-ref_url = MediaRef(uri="https://example.com/image.jpg")
-
-print(f"   Image:  {ref_image.is_local=}, {ref_image.is_video=}")
-print(f"   Video:  {ref_video.is_video=}, pts_ns={ref_video.pts_ns}")
-print(f"   URL:    {ref_url.is_remote=}")
-
-# ============================================================
-# 2. Loading - Convert references to actual image data
-# ============================================================
 print("\n2. Load media")
+ref = MediaRef(uri=str(image_path))
+rgb = ref.to_rgb_array()  # Returns (H, W, 3) numpy array
+pil = ref.to_pil_image()  # Returns PIL.Image
+print(f"   ✓ Loaded: rgb={rgb.shape}, pil={pil.size}")
 
-# Load as NumPy array (RGB format, uint8)
-rgb = ref_image.to_rgb_array()
+print("\n3. Embed as data URI")
+data_uri = DataURI.from_image(rgb, format="png")  # e.g., "data:image/png;base64,iVBORw0KG..."
+ref = MediaRef(uri=data_uri)  # Self-contained reference
+print(f"   ✓ Embedded: is_embedded={ref.is_embedded}, can load back: {ref.to_rgb_array().shape}")
 
-# Load as PIL Image object
-pil = ref_image.to_pil_image()
+# 4. Batch decode video frames (opens video once, reuses handle)
+if video_available:
+    print("\n4. Batch decode video frames - Performance comparison")
+    refs = [MediaRef(uri=str(video_path), pts_ns=int(i * 0.1e9)) for i in range(10)]
 
-print(f"   to_rgb_array():   {rgb.shape}, {rgb.dtype}")
-print(f"   to_pil_image():   {pil.size}, {pil.mode}")
+    # Individual loading (naive approach)
+    start = time.perf_counter()
+    frames_individual = [ref.to_rgb_array() for ref in refs]
+    time_individual = time.perf_counter() - start
 
-# ============================================================
-# 3. Batch Loading - Efficient loading with automatic caching
-# ============================================================
-print("\n3. Batch load video frames (with caching)")
+    # Batch loading (optimized)
+    start = time.perf_counter()
+    frames_batch = batch_decode(refs)
+    time_batch = time.perf_counter() - start
 
-# Create 10 references to different frames in the same video
-refs = [MediaRef(uri=str(video_path), pts_ns=int(i * 0.1e9)) for i in range(10)]
+    speedup = time_individual / time_batch
+    print(f"   ✓ Individual: {time_individual * 1000:.1f}ms, Batch: {time_batch * 1000:.1f}ms → {speedup:.1f}x faster")
 
-# load_batch() opens the video container once and reuses it
-frames = load_batch(refs)
+# ============================================================================
+# Batch Decoding - Optimized Video Frame Loading
+# ============================================================================
 
-print(f"   Loaded {len(frames)} frames: {frames[0].shape}")
+if video_available:
+    print("\n5. Batch decoding strategies - Performance comparison")
+    from mediaref.video_decoder import BatchDecodingStrategy
 
-# ============================================================
-# 4. Embedding - Encode media as base64 data URIs
-# ============================================================
-print("\n4. Embed as data URI")
+    refs = [MediaRef(uri=str(video_path), pts_ns=int(i * 0.1e9)) for i in range(10)]
 
-from mediaref import DataURI  # noqa: E402
+    # Strategy 1: SEQUENTIAL (simple, always works)
+    start = time.perf_counter()
+    frames = batch_decode(refs, decoder="pyav", strategy=BatchDecodingStrategy.SEQUENTIAL)
+    time_sequential = time.perf_counter() - start
 
-# Convert image to self-contained data URI (base64 encoded)
-rgb = ref_image.to_rgb_array()
+    # Strategy 2: SEQUENTIAL_PER_KEYFRAME_BLOCK (adaptive, recommended)
+    start = time.perf_counter()
+    frames = batch_decode(refs, decoder="pyav", strategy=BatchDecodingStrategy.SEQUENTIAL_PER_KEYFRAME_BLOCK)
+    time_adaptive = time.perf_counter() - start
+
+    print(f"   ✓ SEQUENTIAL: {time_sequential * 1000:.1f}ms")
+    print(f"   ✓ SEQUENTIAL_PER_KEYFRAME_BLOCK: {time_adaptive * 1000:.1f}ms (adaptive, recommended)")
+
+    # Or use TorchCodec for GPU-accelerated decoding
+    # frames = batch_decode(refs, decoder="torchcodec")  # Requires: pip install torchcodec>=0.4.0
+
+# ============================================================================
+# Embedding Media Directly in MediaRef
+# ============================================================================
+
+print("\n6. Embedding media")
+# Create embedded MediaRef from numpy array
+rgb = np.random.randint(0, 255, (100, 100, 3), dtype=np.uint8)
+embedded_ref = MediaRef(uri=DataURI.from_image(rgb, format="png"))
+
+# Or from file
+embedded_ref = MediaRef(uri=DataURI.from_file(str(image_path)))
+
+# Or from PIL Image
+pil_img = Image.open(str(image_path))
+embedded_ref = MediaRef(uri=DataURI.from_image(pil_img, format="jpeg", quality=90))
+print("   ✓ Created embedded refs from: numpy, file, PIL Image")
+
+# Use just like any other MediaRef
+rgb = embedded_ref.to_rgb_array()  # (H, W, 3) numpy array
+pil = embedded_ref.to_pil_image()  # PIL Image
+
+# Serialize with embedded data
+serialized = embedded_ref.model_dump_json()  # Contains image data
+restored = MediaRef.model_validate_json(serialized)  # No external file needed!
+print(f"   ✓ Serialized: {len(serialized)} bytes, restored: {restored.to_rgb_array().shape}")
+
+# Properties
 data_uri = DataURI.from_image(rgb, format="png")
+print(f"   ✓ DataURI: mimetype={data_uri.mimetype}, length={len(data_uri)}, is_image={data_uri.is_image}")
 
-# Create a new reference from the data URI
-embedded = MediaRef(uri=data_uri)
+# ============================================================================
+# Path Resolution & Serialization
+# ============================================================================
 
-print(f"   Data URI length: {len(data_uri)}")
-print(f"   {embedded.is_embedded=}")
-print(f"   Can load: {embedded.to_rgb_array().shape}")
+print("\n7. Path resolution")
+# Resolve relative paths
+ref = MediaRef(uri="relative/video.mkv", pts_ns=123456)
+resolved = ref.resolve_relative_path(str(tmp / "recordings"))
+print(
+    f"   ✓ Resolved: is_relative {ref.is_relative_path} → {resolved.is_relative_path}, pts_ns preserved={resolved.pts_ns == 123456}"
+)
 
-# ============================================================
-# 5. Path Resolution - Handle relative paths in datasets
-# ============================================================
-print("\n5. Path resolution (for MCAP/rosbag)")
+# Handle unresolvable URIs (embedded/remote)
+remote = MediaRef(uri="https://example.com/image.jpg")
+resolved = remote.resolve_relative_path(str(tmp), on_unresolvable="ignore")  # No warning
+print(f"   ✓ Unresolvable URI unchanged: {resolved.uri == remote.uri}")
 
-# Simulate MCAP file structure with relative video paths
-mcap_path = tmp / "recording.mcap"
-mcap_path.touch()
-(tmp / "videos").mkdir()
+print("\n8. Serialization (Pydantic-based)")
+# Serialization (Pydantic-based)
+ref = MediaRef(uri=str(image_path))
+data = ref.model_dump()  # {'uri': '...', 'pts_ns': ...}
+json_str = ref.model_dump_json()  # JSON string
+ref = MediaRef.model_validate(data)  # From dict
+ref = MediaRef.model_validate_json(json_str)  # From JSON
+print("   ✓ Serialized and restored from dict and JSON")
 
-# Create reference with relative path
-rel_ref = MediaRef(uri="videos/clip.mp4", pts_ns=123)
+# ============================================================================
+# Cleanup
+# ============================================================================
 
-# Resolve relative path against MCAP file location
-resolved = rel_ref.resolve_relative_path(str(mcap_path))
+try:
+    shutil.rmtree(tmp)
+except Exception:
+    pass
 
-print(f"   Original:  '{rel_ref.uri}' ({rel_ref.is_relative_path=})")
-print(f"   Resolved:  '{resolved.uri}' ({resolved.is_relative_path=})")
-
-# ============================================================
-# 6. Serialization - Save/load references as JSON
-# ============================================================
-print("\n6. Serialization (Pydantic)")
-
-# Serialize to Python dict
-data = ref_video.model_dump()
-
-# Serialize to JSON string
-json_str = ref_video.model_dump_json()
-
-print(f"   model_dump():      {data}")
-print(f"   model_dump_json(): {json_str}")
-
-# Deserialize from JSON string (round-trip)
-restored = MediaRef.model_validate_json(json_str)
-print(f"   Restored: {restored.uri}, pts_ns={restored.pts_ns}")
-
-# Practical example: Save dataset metadata to JSON file
-dataset = {
-    "frames": [
-        MediaRef(uri=str(video_path), pts_ns=0).model_dump(),
-        MediaRef(uri=str(image_path)).model_dump(),
-    ]
-}
-json_path = tmp / "dataset.json"
-json.dump(dataset, open(json_path, "w"))
-
-# Load dataset metadata from JSON file
-loaded = [MediaRef.model_validate(f) for f in json.load(open(json_path))["frames"]]
-print(f"   Saved & loaded {len(loaded)} refs from JSON")
-
-print("\n" + "=" * 60)
-print("All features demonstrated successfully")
+print("✅ Demo completed successfully!")
