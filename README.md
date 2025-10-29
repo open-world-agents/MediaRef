@@ -63,8 +63,8 @@ from mediaref.video_decoder import BatchDecodingStrategy
 refs = [MediaRef(uri="video.mp4", pts_ns=int(i*1e9)) for i in range(10)]
 frames = batch_decode(
     refs,
-    decoder="pyav",
-    strategy=BatchDecodingStrategy.SEQUENTIAL_PER_KEYFRAME_BLOCK
+    decoder="pyav",  # Our optimized implementation based on PyAV
+    strategy=BatchDecodingStrategy.SEQUENTIAL_PER_KEYFRAME_BLOCK  # Adaptive strategy for best performance
 )
 ```
 
