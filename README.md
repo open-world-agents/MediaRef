@@ -37,7 +37,7 @@ rgb = ref.to_rgb_array()                               # Returns (H, W, 3) numpy
 pil = ref.to_pil_image()                               # Returns PIL.Image
 
 # 3. Embed as data URI
-data_uri = DataURI.from_image(rgb, format="png")
+data_uri = DataURI.from_image(rgb, format="png")       # e.g., "data:image/png;base64,iVBORw0KG..."
 ref = MediaRef(uri=data_uri)                           # Self-contained reference
 
 # 4. Batch decode video frames (opens video once, reuses handle)
