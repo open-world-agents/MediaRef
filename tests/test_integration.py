@@ -126,8 +126,7 @@ class TestEndToEndWorkflows:
         assert relative_ref.is_relative_path
 
         # 3. Resolve against base path
-        base_path = tmp_path / "dataset.mcap"
-        resolved_ref = relative_ref.resolve_relative_path(str(base_path))
+        resolved_ref = relative_ref.resolve_relative_path(str(tmp_path))
         assert not resolved_ref.is_relative_path
         assert tmp_path.as_posix() in resolved_ref.uri
 

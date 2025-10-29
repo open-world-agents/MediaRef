@@ -146,10 +146,6 @@ class MediaRef(BaseModel):
             return self  # Already absolute or not a local path
 
         base_path_obj = Path(base_path)
-        # If base path is an MCAP file, use its parent directory. TODO: remove this
-        if base_path_obj.suffix == ".mcap":
-            base_path_obj = base_path_obj.parent
-
         resolved_path = (base_path_obj / self.uri).as_posix()
         return MediaRef(uri=resolved_path, pts_ns=self.pts_ns)
 

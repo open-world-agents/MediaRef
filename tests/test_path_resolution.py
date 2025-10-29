@@ -1,6 +1,7 @@
 """Tests for MediaRef path resolution and validation."""
 
 import os
+import warnings
 from pathlib import Path
 
 import pytest
@@ -11,10 +12,10 @@ from mediaref import MediaRef
 class TestResolveRelativePath:
     """Test resolve_relative_path method."""
 
-    def test_resolve_relative_path_with_mcap_file(self):
-        """Test resolving relative path against MCAP file."""
+    def test_resolve_relative_path_with_base_path(self):
+        """Test resolving relative path against base path."""
         ref = MediaRef(uri="relative/video.mkv", pts_ns=123456)
-        resolved = ref.resolve_relative_path("/data/recording.mcap")
+        resolved = ref.resolve_relative_path("/data")
 
         assert resolved.uri == "/data/relative/video.mkv"
         assert resolved.pts_ns == 123456
@@ -37,7 +38,7 @@ class TestResolveRelativePath:
     def test_resolve_nested_relative_path(self):
         """Test resolving deeply nested relative path."""
         ref = MediaRef(uri="data/recordings/videos/clip.mp4", pts_ns=1_000_000_000)
-        resolved = ref.resolve_relative_path("/base/path.mcap")
+        resolved = ref.resolve_relative_path("/base")
 
         assert resolved.uri == "/base/data/recordings/videos/clip.mp4"
         assert resolved.pts_ns == 1_000_000_000
@@ -46,7 +47,7 @@ class TestResolveRelativePath:
     def test_resolve_absolute_path_unchanged(self):
         """Test that absolute paths remain unchanged (POSIX only)."""
         ref = MediaRef(uri="/absolute/path/image.png")
-        resolved = ref.resolve_relative_path("/data/recording.mcap")
+        resolved = ref.resolve_relative_path("/data")
 
         assert resolved.uri == "/absolute/path/image.png"
         assert resolved is ref  # Should return same instance
@@ -55,7 +56,7 @@ class TestResolveRelativePath:
     def test_resolve_windows_absolute_path_unchanged(self):
         """Test that Windows absolute paths remain unchanged (Windows only)."""
         ref = MediaRef(uri="C:/absolute/path/image.png")
-        resolved = ref.resolve_relative_path("D:/data/recording.mcap")
+        resolved = ref.resolve_relative_path("D:/data")
 
         assert resolved.uri == "C:/absolute/path/image.png"
         assert resolved is ref  # Should return same instance
@@ -63,27 +64,11 @@ class TestResolveRelativePath:
     def test_resolve_returns_new_instance(self):
         """Test that resolve_relative_path returns new instance for relative paths."""
         ref = MediaRef(uri="relative/path.jpg")
-        resolved = ref.resolve_relative_path("/base/path.mcap")
+        resolved = ref.resolve_relative_path("/base")
 
         assert resolved is not ref
         assert ref.uri == "relative/path.jpg"  # Original unchanged
         assert resolved.uri == "/base/relative/path.jpg"
-
-    def test_resolve_with_mcap_uses_parent_directory(self):
-        """Test that .mcap files use parent directory as base."""
-        ref = MediaRef(uri="videos/clip.mp4", pts_ns=0)
-        resolved = ref.resolve_relative_path("/data/recordings/session.mcap")
-
-        # Should use /data/recordings/ as base, not /data/recordings/session.mcap
-        assert resolved.uri == "/data/recordings/videos/clip.mp4"
-
-    def test_resolve_with_non_mcap_file_uses_path_directly(self):
-        """Test that non-MCAP files use the path directly as base."""
-        ref = MediaRef(uri="images/frame.png")
-        resolved = ref.resolve_relative_path("/data/dataset")
-
-        # Should use /data/dataset directly as base (not parent)
-        assert resolved.uri == "/data/dataset/images/frame.png"
 
 
 class TestResolveRelativePathWarnings:
@@ -94,7 +79,7 @@ class TestResolveRelativePathWarnings:
         ref = MediaRef(uri="https://example.com/image.jpg")
 
         with pytest.warns(UserWarning, match="Cannot resolve unresolvable URI"):
-            resolved = ref.resolve_relative_path("/data/recording.mcap")
+            resolved = ref.resolve_relative_path("/data")
 
         assert resolved.uri == "https://example.com/image.jpg"
         assert resolved is ref
@@ -104,7 +89,7 @@ class TestResolveRelativePathWarnings:
         ref = MediaRef(uri="data:image/png;base64,...")
 
         with pytest.warns(UserWarning, match="Cannot resolve unresolvable URI"):
-            resolved = ref.resolve_relative_path("/data/recording.mcap")
+            resolved = ref.resolve_relative_path("/data")
 
         assert resolved.uri == "data:image/png;base64,..."
         assert resolved is ref
@@ -114,7 +99,9 @@ class TestResolveRelativePathWarnings:
         ref = MediaRef(uri="https://example.com/image.jpg")
 
         # Should not warn when on_unresolvable="ignore"
-        resolved = ref.resolve_relative_path("/data/recording.mcap", on_unresolvable="ignore")
+        with warnings.catch_warnings():
+            warnings.simplefilter("error")
+            resolved = ref.resolve_relative_path("/data", on_unresolvable="ignore")
 
         assert resolved.uri == "https://example.com/image.jpg"
         assert resolved is ref
@@ -124,7 +111,9 @@ class TestResolveRelativePathWarnings:
         ref = MediaRef(uri="data:image/png;base64,...")
 
         # Should not warn when on_unresolvable="ignore"
-        resolved = ref.resolve_relative_path("/data/recording.mcap", on_unresolvable="ignore")
+        with warnings.catch_warnings():
+            warnings.simplefilter("error")
+            resolved = ref.resolve_relative_path("/data", on_unresolvable="ignore")
 
         assert resolved.uri == "data:image/png;base64,..."
         assert resolved is ref
@@ -134,14 +123,14 @@ class TestResolveRelativePathWarnings:
         ref = MediaRef(uri="https://example.com/image.jpg")
 
         with pytest.raises(ValueError, match="Cannot resolve unresolvable URI"):
-            ref.resolve_relative_path("/data/recording.mcap", on_unresolvable="error")
+            ref.resolve_relative_path("/data", on_unresolvable="error")
 
     def test_resolve_embedded_with_error(self):
         """Test that on_unresolvable='error' raises ValueError for embedded paths."""
         ref = MediaRef(uri="data:image/png;base64,...")
 
         with pytest.raises(ValueError, match="Cannot resolve unresolvable URI"):
-            ref.resolve_relative_path("/data/recording.mcap", on_unresolvable="error")
+            ref.resolve_relative_path("/data", on_unresolvable="error")
 
 
 class TestResolveRelativePathCrossPlatform:
@@ -151,7 +140,7 @@ class TestResolveRelativePathCrossPlatform:
     def test_resolve_posix_path(self):
         """Test resolving POSIX paths."""
         ref = MediaRef(uri="images/test.jpg")
-        resolved = ref.resolve_relative_path("/data/recordings/session.mcap")
+        resolved = ref.resolve_relative_path("/data/recordings")
 
         assert resolved.uri == "/data/recordings/images/test.jpg"
 
@@ -159,7 +148,7 @@ class TestResolveRelativePathCrossPlatform:
     def test_resolve_windows_path(self):
         """Test resolving Windows paths."""
         ref = MediaRef(uri="images/test.jpg")
-        resolved = ref.resolve_relative_path("C:/data/recordings/session.mcap")
+        resolved = ref.resolve_relative_path("C:/data/recordings")
 
         # Should use forward slashes (as_posix())
         assert resolved.uri == "C:/data/recordings/images/test.jpg"
@@ -168,7 +157,7 @@ class TestResolveRelativePathCrossPlatform:
     def test_resolve_windows_backslash_path(self):
         """Test resolving Windows paths with backslashes."""
         ref = MediaRef(uri="images/test.jpg")
-        resolved = ref.resolve_relative_path(r"C:\data\recordings\session.mcap")
+        resolved = ref.resolve_relative_path(r"C:\data\recordings")
 
         # Should convert to forward slashes
         assert resolved.uri == "C:/data/recordings/images/test.jpg"
@@ -177,7 +166,7 @@ class TestResolveRelativePathCrossPlatform:
     def test_windows_absolute_path_unchanged(self):
         """Test that Windows absolute paths remain unchanged."""
         ref = MediaRef(uri="C:/absolute/path/image.png")
-        resolved = ref.resolve_relative_path("D:/data/recording.mcap")
+        resolved = ref.resolve_relative_path("D:/data")
 
         assert resolved.uri == "C:/absolute/path/image.png"
         assert resolved is ref
@@ -226,7 +215,7 @@ class TestPathEdgeCases:
     def test_resolve_empty_relative_path(self):
         """Test resolving empty relative path."""
         ref = MediaRef(uri="")
-        resolved = ref.resolve_relative_path("/base/path.mcap")
+        resolved = ref.resolve_relative_path("/base")
 
         # Empty string is relative, so should be resolved
         assert resolved.uri == "/base"
@@ -234,14 +223,14 @@ class TestPathEdgeCases:
     def test_resolve_dot_relative_path(self):
         """Test resolving . (current directory) relative path."""
         ref = MediaRef(uri=".")
-        resolved = ref.resolve_relative_path("/base/path.mcap")
+        resolved = ref.resolve_relative_path("/base")
 
         assert "/base" in resolved.uri
 
     def test_resolve_dotdot_relative_path(self):
         """Test resolving .. (parent directory) relative path."""
         ref = MediaRef(uri="../images/test.jpg")
-        resolved = ref.resolve_relative_path("/data/recordings/session.mcap")
+        resolved = ref.resolve_relative_path("/data/recordings")
 
         # Should resolve .. correctly
         assert "images/test.jpg" in resolved.uri
@@ -249,14 +238,14 @@ class TestPathEdgeCases:
     def test_resolve_with_special_characters(self):
         """Test resolving paths with special characters."""
         ref = MediaRef(uri="images/test image (1).jpg")
-        resolved = ref.resolve_relative_path("/data/recordings/session.mcap")
+        resolved = ref.resolve_relative_path("/data/recordings")
 
         assert resolved.uri == "/data/recordings/images/test image (1).jpg"
 
     def test_resolve_with_unicode_characters(self):
         """Test resolving paths with Unicode characters."""
         ref = MediaRef(uri="images/测试图片.jpg")
-        resolved = ref.resolve_relative_path("/data/recordings/session.mcap")
+        resolved = ref.resolve_relative_path("/data/recordings")
 
         assert "测试图片.jpg" in resolved.uri
 

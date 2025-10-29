@@ -112,13 +112,13 @@ print(data_uri.is_image)                               # True for image/* types
 Resolve relative paths and serialize MediaRef objects for dataset metadata and storage.
 
 ```python
-# Resolve relative paths (useful for MCAP/rosbag datasets)
+# Resolve relative paths
 ref = MediaRef(uri="relative/video.mkv", pts_ns=123456)
-resolved = ref.resolve_relative_path("/data/recording.mcap")
+resolved = ref.resolve_relative_path("/data/recordings")
 
 # Handle unresolvable URIs (embedded/remote)
 remote = MediaRef(uri="https://example.com/image.jpg")
-resolved = remote.resolve_relative_path("/data/base.mcap", on_unresolvable="ignore")  # No warning
+resolved = remote.resolve_relative_path("/data", on_unresolvable="ignore")  # No warning
 
 # Serialization (Pydantic-based)
 data = ref.model_dump()                                # {'uri': '...', 'pts_ns': ...}
@@ -194,7 +194,6 @@ ref = MediaRef.model_validate_json(json_str)           # From JSON
 ## Design Notes
 
 - **Video container caching**: Uses reference counting with LRU eviction (default: 10 containers)
-- **MCAP file path resolution**: Detects `.mcap` suffix and uses parent directory as base path
 - **Garbage collection**: Triggered every 10 PyAV operations to handle FFmpeg reference cycles
 - **Cache size**: Configurable via `AV_CACHE_SIZE` environment variable
 - **Lazy loading**: Video dependencies only imported when needed (not at module import time)
