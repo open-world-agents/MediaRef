@@ -9,8 +9,44 @@
 
 Pydantic media reference for images and video frames (with timestamp support) from data URIs, HTTP URLs, file URIs, and local paths. Features lazy loading and optimized batch video decoding.
 
+## Why MediaRef?
+
+**1. Separate heavy media from lightweight metadata**
+
+Store 1TB of videos separately while keeping only 1MB of references in your dataset tables. Break free from rigid structures where media must be embedded inside tables—MediaRef enables flexible, decoupled storage architectures for any format that stores strings.
+
+```python
+# Store lightweight references in your dataset, not heavy media
+import pandas as pd
+
+# Image references: 37 bytes vs entire embedded image(>100KB)
+df_images = pd.DataFrame([
+    {"action": [0.1, 0.2], "observation": MediaRef(uri="frame_001.png").model_dump()},
+    {"action": [0.3, 0.4], "observation": MediaRef(uri="frame_002.png").model_dump()},
+])
+
+# Video frame references: 35-42 bytes vs entire video file embedded(several GBs)
+df_video = pd.DataFrame([
+    {"action": [0.1, 0.2], "observation": MediaRef(uri="episode_01.mp4", pts_ns=0).model_dump()},
+    {"action": [0.3, 0.4], "observation": MediaRef(uri="episode_01.mp4", pts_ns=50_000_000).model_dump()},
+])
+
+# Works with any format that stores strings: Parquet, HDF5, mcap, rosbag, etc.
+```
+
+MediaRef is already used in production ML data formats. For example, [OWAMcap](https://open-world-agents.github.io/open-world-agents/data/technical-reference/format-guide/) uses MediaRef for [screen observations](https://github.com/open-world-agents/open-world-agents/blob/main/projects/owa-msgs/owa/msgs/desktop/screen.py#L49).
+
+**2. Future-proof specification built on standards**
+
+The MediaRef schema(`uri`, `pts_ns`) is designed to be **permanent**, built entirely on established standards ([RFC 2397](https://datatracker.ietf.org/doc/html/rfc2397) for data URIs, [RFC 3986](https://datatracker.ietf.org/doc/html/rfc3986) for URI syntax). Use it anywhere with confidence—no proprietary formats, no breaking changes.
+
+**3. Optimized performance where it matters**
+
+Lazy loading prevents unnecessary I/O, while batch video decoding achieves **4.9× faster** throughput than naive approaches. Convenient APIs handle the complexity of multi-source media (local files, URLs, embedded data) with a single unified interface.
+
 ## Installation
 
+**Quick install:**
 ```bash
 # Core package with image loading support
 pip install mediaref
@@ -18,6 +54,17 @@ pip install mediaref
 # With video decoding support (adds PyAV for video frame extraction)
 pip install mediaref[video]
 ```
+
+**Add to your project:**
+```bash
+# Core package
+uv add mediaref~=0.4.1
+
+# With video decoding support
+uv add 'mediaref[video]~=0.4.1'
+```
+
+**Versioning Policy**: MediaRef follows [semantic versioning](https://semver.org/). Patch releases (e.g., 0.4.1 → 0.4.2) contain only bug fixes and performance improvements with **no API changes**. Minor releases (e.g., 0.4.x → 0.5.0) may introduce new features while maintaining backward compatibility. Use `~=0.4.1` to automatically receive patch updates.
 
 ## Quick Start
 
@@ -43,6 +90,10 @@ ref = MediaRef(uri=data_uri)                           # Self-contained referenc
 # 4. Batch decode video frames (opens video once, reuses handle)
 refs = [MediaRef(uri="video.mp4", pts_ns=int(i*1e9)) for i in range(10)]
 frames = batch_decode(refs)                            # Much faster than loading individually
+
+# 5. Serialize for storage in any container format (Parquet, HDF5, mcap, rosbag, etc.)
+json_str = ref.model_dump_json()                       # Lightweight JSON string
+# Store in your dataset format of choice - works with any format that stores strings
 ```
 
 ### Batch Decoding - Optimized Video Frame Loading
@@ -114,7 +165,7 @@ print(data_uri.is_image)                               # True for image/* types
 
 ### Path Resolution & Serialization
 
-Resolve relative paths and serialize MediaRef objects for dataset metadata and storage.
+Resolve relative paths and serialize MediaRef objects for storage in any container format (Parquet, HDF5, mcap, rosbag, etc.).
 
 ```python
 # Resolve relative paths
@@ -125,9 +176,18 @@ resolved = ref.resolve_relative_path("/data/recordings")
 remote = MediaRef(uri="https://example.com/image.jpg")
 resolved = remote.resolve_relative_path("/data", on_unresolvable="ignore")  # No warning
 
-# Serialization (Pydantic-based)
-data = ref.model_dump()                                # {'uri': '...', 'pts_ns': ...}
-json_str = ref.model_dump_json()                       # JSON string
+# Serialization (Pydantic-based) - works with any container format
+ref = MediaRef(uri="video.mp4", pts_ns=1_500_000_000)
+
+# As dict (for Python-based formats)
+data = ref.model_dump()
+# Output: {'uri': 'video.mp4', 'pts_ns': 1500000000}
+
+# As JSON string (for Parquet, HDF5, mcap, rosbag, etc.)
+json_str = ref.model_dump_json()
+# Output: '{"uri":"video.mp4","pts_ns":1500000000}'
+
+# Deserialization
 ref = MediaRef.model_validate(data)                    # From dict
 ref = MediaRef.model_validate_json(json_str)           # From JSON
 ```
