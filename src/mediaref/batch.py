@@ -46,54 +46,21 @@ def batch_decode(
 ) -> list[npt.NDArray[np.uint8]]:
     """Decode multiple media references efficiently using batch decoding.
 
-    For images, decodes them individually. For video frames from the same video,
-    uses optimized batch decoding API to decode multiple frames in one pass.
-
-    This function groups MediaRefs by video file and uses the specified decoder's
-    batch decoding API to decode multiple frames in one pass, which is much more
-    efficient than loading each frame separately.
+    Groups video frames by file and decodes them in one pass for efficiency.
+    Images are decoded individually.
 
     Args:
-        refs: List of MediaRef objects to load
-        strategy: Batch decoding strategy (SEPARATE, SEQUENTIAL_PER_KEYFRAME_BLOCK, or SEQUENTIAL).
-            Only supported by PyAV decoder. TorchCodec decoder ignores this parameter.
-        decoder: Video decoder backend to use ('pyav' or 'torchcodec'). Default: 'pyav'
+        refs: List of MediaRef objects to decode
+        strategy: Batch decoding strategy (PyAV only): SEPARATE, SEQUENTIAL_PER_KEYFRAME_BLOCK, or SEQUENTIAL
+        decoder: Decoder backend ('pyav' or 'torchcodec'). Default: 'pyav'
         **kwargs: Additional options passed to to_ndarray() for image loading
 
     Returns:
         List of RGB numpy arrays in the same order as input refs
 
-    Raises:
-        TypeError: If refs is not a list or contains invalid types
-        ValueError: If refs contains None values or video refs missing pts_ns
-        ValueError: If batch loading fails for any video
-        ImportError: If torchcodec decoder is requested but not installed
-
     Examples:
-        >>> from mediaref import MediaRef, batch_decode
-        >>> from mediaref.video_decoder import BatchDecodingStrategy
-        >>>
-        >>> # Decode multiple frames from same video efficiently (default PyAV decoder)
-        >>> refs = [
-        ...     MediaRef(uri="video.mp4", pts_ns=0),
-        ...     MediaRef(uri="video.mp4", pts_ns=1_000_000_000),
-        ...     MediaRef(uri="video.mp4", pts_ns=2_000_000_000),
-        ... ]
+        >>> refs = [MediaRef(uri="video.mp4", pts_ns=i*1_000_000_000) for i in range(3)]
         >>> frames = batch_decode(refs)
-        >>>
-        >>> # Use batch decoding strategy (PyAV only)
-        >>> frames = batch_decode(refs, strategy=BatchDecodingStrategy.SEQUENTIAL)
-        >>>
-        >>> # Use TorchCodec decoder for GPU acceleration (strategy ignored)
-        >>> frames = batch_decode(refs, decoder="torchcodec")
-        >>>
-        >>> # Also works with mixed images and videos
-        >>> refs = [
-        ...     MediaRef(uri="image1.png"),
-        ...     MediaRef(uri="video.mp4", pts_ns=0),
-        ...     MediaRef(uri="image2.png"),
-        ... ]
-        >>> media = batch_decode(refs)
     """
     # Input validation
     if not refs:
@@ -156,9 +123,9 @@ def batch_decode(
                 else:
                     batch = video_decoder.get_frames_played_at(pts_seconds)
 
-                # Convert from NCHW to HWC format. NOTE: here we assume RGB output
+                # Convert from NCHW to HWC format
                 for idx, frame_nchw in zip(indices, batch.data):
-                    # Transpose from (C, H, W) to (H, W, C)
+                    # Transpose from (C, H, W) to (H, W, C) - decoder outputs RGB
                     rgb_array = np.transpose(frame_nchw, (1, 2, 0))
                     results[idx] = rgb_array
         except ImportError:
