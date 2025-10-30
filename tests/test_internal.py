@@ -136,11 +136,8 @@ class TestColorConversion:
         # Verify shape
         assert rgb.shape == (48, 64, 3)
 
-        # Verify color channels are correct
-        # RGBA: [R, G, B, A] -> RGB: [R, G, B]
-        assert rgb[0, 0, 0] == sample_rgba_array[0, 0, 0]  # R from RGBA
-        assert rgb[0, 0, 1] == sample_rgba_array[0, 0, 1]  # G from RGBA
-        assert rgb[0, 0, 2] == sample_rgba_array[0, 0, 2]  # B from RGBA
+        # Verify color channels are correct for entire array
+        np.testing.assert_array_equal(rgb, sample_rgba_array[..., :3])
 
     def test_rgb_to_rgba_conversion(self, sample_rgb_array: npt.NDArray[np.uint8]):
         """Test that RGB to RGBA conversion is correct."""
@@ -150,9 +147,6 @@ class TestColorConversion:
         # Verify shape
         assert rgba.shape == (48, 64, 4)
 
-        # Verify color channels are correct
-        # RGB: [R, G, B] -> RGBA: [R, G, B, A]
-        assert rgba[0, 0, 0] == sample_rgb_array[0, 0, 0]  # R from RGB
-        assert rgba[0, 0, 1] == sample_rgb_array[0, 0, 1]  # G from RGB
-        assert rgba[0, 0, 2] == sample_rgb_array[0, 0, 2]  # B from RGB
-        assert rgba[0, 0, 3] == 255  # Alpha channel
+        # Verify color channels are correct and alpha is 255
+        np.testing.assert_array_equal(rgba[..., :3], sample_rgb_array)
+        assert np.all(rgba[..., 3] == 255)
