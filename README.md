@@ -45,7 +45,7 @@ The MediaRef schema(`uri`, `pts_ns`) is designed to be **permanent**, built enti
 
 **3. Optimized performance where it matters**
 
-Due to lazy lazy loading, MediaRef has **zero** CPU and I/O overhead when the media is not accessed. When you do need to load the media, convenient APIs handle the complexity of multi-source media (local files, URLs, embedded data) with a single unified interface.
+Due to lazy lazy loading, MediaRef has **zero CPU and I/O overhead** when the media is not accessed. When you do need to load the media, convenient APIs handle the complexity of multi-source media (local files, URLs, embedded data) with a single unified interface.
 
 When loading multiple frames from the same video, `batch_decode()` opens the video file once and reuses the handle with adaptive batching strategies that automatically optimize decoding based on frame access patterns, achieving **4.9× faster throughput** and **41× better I/O efficiency** compared to existing methods.
 
