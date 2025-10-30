@@ -6,6 +6,7 @@ These tests require the [loader] extra to be installed.
 from pathlib import Path
 
 import numpy as np
+import numpy.typing as npt
 import pytest
 from PIL import Image
 
@@ -13,12 +14,12 @@ from mediaref import DataURI, MediaRef
 
 
 class TestToRgbArrayImage:
-    """Test to_rgb_array method for images."""
+    """Test to_ndarray method for images."""
 
     def test_to_rgb_array_from_file(self, sample_image_file: Path):
         """Test loading RGB array from image file."""
         ref = MediaRef(uri=str(sample_image_file))
-        rgb = ref.to_rgb_array()
+        rgb = ref.to_ndarray()
 
         assert isinstance(rgb, np.ndarray)
         assert rgb.shape == (48, 64, 3)
@@ -27,7 +28,7 @@ class TestToRgbArrayImage:
     def test_to_rgb_array_color_correctness(self, sample_image_file: Path):
         """Test that RGB array has correct color values."""
         ref = MediaRef(uri=str(sample_image_file))
-        rgb = ref.to_rgb_array()
+        rgb = ref.to_ndarray()
 
         # sample_image_file has BGR = (255, 0, 0) which is blue in BGR format
         # When converted to RGB, it should be (0, 0, 255) - blue in RGB format
@@ -38,7 +39,7 @@ class TestToRgbArrayImage:
     def test_to_rgb_array_from_data_uri(self, sample_data_uri: str):
         """Test loading RGB array from data URI."""
         ref = MediaRef(uri=sample_data_uri)
-        rgb = ref.to_rgb_array()
+        rgb = ref.to_ndarray()
 
         assert isinstance(rgb, np.ndarray)
         assert rgb.shape == (48, 64, 3)
@@ -48,7 +49,7 @@ class TestToRgbArrayImage:
     def test_to_rgb_array_from_remote_url(self, remote_test_image_url: str):
         """Test loading RGB array from remote URL."""
         ref = MediaRef(uri=remote_test_image_url)
-        rgb = ref.to_rgb_array()
+        rgb = ref.to_ndarray()
 
         assert isinstance(rgb, np.ndarray)
         assert len(rgb.shape) == 3
@@ -59,7 +60,7 @@ class TestToRgbArrayImage:
         """Test loading RGB array from file:// URI."""
         file_uri = f"file://{sample_image_file.as_posix()}"
         ref = MediaRef(uri=file_uri)
-        rgb = ref.to_rgb_array()
+        rgb = ref.to_ndarray()
 
         assert isinstance(rgb, np.ndarray)
         assert rgb.shape == (48, 64, 3)
@@ -70,12 +71,12 @@ class TestToRgbArrayImage:
         ref = MediaRef(uri="/nonexistent/file.png")
 
         with pytest.raises(Exception):  # Should raise ValueError or FileNotFoundError
-            ref.to_rgb_array()
+            ref.to_ndarray()
 
 
 @pytest.mark.video
 class TestToRgbArrayVideo:
-    """Test to_rgb_array method for video frames."""
+    """Test to_ndarray method for video frames."""
 
     def test_to_rgb_array_from_video(self, sample_video_file: tuple[Path, list[int]]):
         """Test loading RGB array from video frame."""
@@ -83,7 +84,7 @@ class TestToRgbArrayVideo:
         pts_ns = timestamps[1]  # Second frame (already in nanoseconds)
 
         ref = MediaRef(uri=str(video_path), pts_ns=pts_ns)
-        rgb = ref.to_rgb_array()
+        rgb = ref.to_ndarray()
 
         assert isinstance(rgb, np.ndarray)
         assert rgb.shape == (48, 64, 3)
@@ -94,7 +95,7 @@ class TestToRgbArrayVideo:
         video_path, timestamps = sample_video_file
 
         ref = MediaRef(uri=str(video_path), pts_ns=0)
-        rgb = ref.to_rgb_array()
+        rgb = ref.to_ndarray()
 
         assert isinstance(rgb, np.ndarray)
         assert rgb.shape == (48, 64, 3)
@@ -106,8 +107,8 @@ class TestToRgbArrayVideo:
         ref1 = MediaRef(uri=str(video_path), pts_ns=timestamps[0])
         ref2 = MediaRef(uri=str(video_path), pts_ns=timestamps[2])
 
-        rgb1 = ref1.to_rgb_array()
-        rgb2 = ref2.to_rgb_array()
+        rgb1 = ref1.to_ndarray()
+        rgb2 = ref2.to_ndarray()
 
         # Frames should be different (different intensities)
         assert not np.array_equal(rgb1, rgb2)
@@ -117,7 +118,7 @@ class TestToRgbArrayVideo:
         ref = MediaRef(uri="/nonexistent/video.mp4", pts_ns=0)
 
         with pytest.raises(Exception):  # Should raise FileNotFoundError
-            ref.to_rgb_array()
+            ref.to_ndarray()
 
     def test_to_rgb_array_from_video_file_uri(self, sample_video_file: tuple[Path, list[int]]):
         """Test loading RGB array from video frame using file:// URI."""
@@ -126,7 +127,7 @@ class TestToRgbArrayVideo:
         pts_ns = timestamps[1]
 
         ref = MediaRef(uri=file_uri, pts_ns=pts_ns)
-        rgb = ref.to_rgb_array()
+        rgb = ref.to_ndarray()
 
         assert isinstance(rgb, np.ndarray)
         assert rgb.shape == (48, 64, 3)
@@ -143,7 +144,7 @@ class TestToRgbArrayVideo:
 
         # Should raise ValueError because it tries to load video file as image
         with pytest.raises(ValueError, match="Failed to load image"):
-            ref.to_rgb_array()
+            ref.to_ndarray()
 
 
 class TestToPilImage:
@@ -180,11 +181,11 @@ class TestToPilImage:
         assert pil_img.size == (64, 48)
         assert pil_img.mode == "RGB"
 
-    def test_to_pil_image_matches_to_rgb_array(self, sample_image_file: Path):
-        """Test that to_pil_image matches to_rgb_array."""
+    def test_to_pil_image_matches_to_ndarray(self, sample_image_file: Path):
+        """Test that to_pil_image matches to_ndarray."""
         ref = MediaRef(uri=str(sample_image_file))
 
-        rgb_array = ref.to_rgb_array()
+        rgb_array = ref.to_ndarray()
         pil_img = ref.to_pil_image()
         pil_array = np.array(pil_img)
 
@@ -225,7 +226,7 @@ class TestDataURICreation:
 
     def test_from_image_numpy_array(self, sample_image_file: Path):
         """Test creating DataURI from numpy array."""
-        rgb = MediaRef(uri=str(sample_image_file)).to_rgb_array()
+        rgb = MediaRef(uri=str(sample_image_file)).to_ndarray()
         data_uri = DataURI.from_image(rgb, format="png")
 
         assert data_uri.mimetype == "image/png"
@@ -254,7 +255,7 @@ class TestDataURICreation:
     def test_from_video_frame(self, sample_video_file: tuple[Path, list[int]]):
         """Test creating DataURI from video frame."""
         video_path, timestamps = sample_video_file
-        rgb = MediaRef(uri=str(video_path), pts_ns=timestamps[1]).to_rgb_array()
+        rgb = MediaRef(uri=str(video_path), pts_ns=timestamps[1]).to_ndarray()
         data_uri = DataURI.from_image(rgb, format="png")
 
         assert data_uri.mimetype == "image/png"
@@ -336,29 +337,29 @@ class TestDataURIFormats:
     """Test different image formats for DataURI."""
 
     @pytest.fixture
-    def sample_rgb(self, sample_image_file: Path) -> np.ndarray:
+    def sample_rgb(self, sample_image_file: Path) -> npt.NDArray[np.uint8]:
         """Provide sample RGB array."""
-        return MediaRef(uri=str(sample_image_file)).to_rgb_array()
+        return MediaRef(uri=str(sample_image_file)).to_ndarray()
 
-    def test_format_png(self, sample_rgb: np.ndarray):
+    def test_format_png(self, sample_rgb: npt.NDArray[np.uint8]):
         """Test PNG format."""
         data_uri = DataURI.from_image(sample_rgb, format="png")
         assert data_uri.mimetype == "image/png"
         assert data_uri.uri.startswith("data:image/png;base64,")
 
-    def test_format_jpeg(self, sample_rgb: np.ndarray):
+    def test_format_jpeg(self, sample_rgb: npt.NDArray[np.uint8]):
         """Test JPEG format."""
         data_uri = DataURI.from_image(sample_rgb, format="jpeg")
         assert data_uri.mimetype == "image/jpeg"
         assert data_uri.uri.startswith("data:image/jpeg;base64,")
 
-    def test_format_bmp(self, sample_rgb: np.ndarray):
+    def test_format_bmp(self, sample_rgb: npt.NDArray[np.uint8]):
         """Test BMP format."""
         data_uri = DataURI.from_image(sample_rgb, format="bmp")
         assert data_uri.mimetype == "image/bmp"
         assert data_uri.uri.startswith("data:image/bmp;base64,")
 
-    def test_jpeg_quality_parameter(self, sample_rgb: np.ndarray):
+    def test_jpeg_quality_parameter(self, sample_rgb: npt.NDArray[np.uint8]):
         """Test JPEG quality affects output size."""
         high_quality = DataURI.from_image(sample_rgb, format="jpeg", quality=95)
         low_quality = DataURI.from_image(sample_rgb, format="jpeg", quality=10)
@@ -376,7 +377,7 @@ class TestDataURIConversion:
 
     def test_to_rgb_array(self, sample_data_uri: DataURI):
         """Test converting DataURI to RGB array."""
-        rgb = sample_data_uri.to_rgb_array()
+        rgb = sample_data_uri.to_ndarray()
 
         assert isinstance(rgb, np.ndarray)
         assert rgb.shape == (48, 64, 3)
@@ -402,77 +403,118 @@ class TestDataURIRoundtrip:
     """Test DataURI encoding/decoding roundtrips."""
 
     @pytest.fixture
-    def sample_rgb(self, sample_image_file: Path) -> np.ndarray:
+    def sample_rgb(self, sample_image_file: Path) -> npt.NDArray[np.uint8]:
         """Provide sample RGB array."""
-        return MediaRef(uri=str(sample_image_file)).to_rgb_array()
+        return MediaRef(uri=str(sample_image_file)).to_ndarray()
 
-    def test_png_lossless_roundtrip(self, sample_rgb: np.ndarray):
+    def test_png_lossless_roundtrip(self, sample_rgb: npt.NDArray[np.uint8]):
         """Test PNG encoding is lossless."""
         data_uri = DataURI.from_image(sample_rgb, format="png")
-        restored_rgb = data_uri.to_rgb_array()
+        restored_rgb = data_uri.to_ndarray()
 
         assert np.array_equal(sample_rgb, restored_rgb)
 
-    def test_bmp_lossless_roundtrip(self, sample_rgb: np.ndarray):
+    def test_bmp_lossless_roundtrip(self, sample_rgb: npt.NDArray[np.uint8]):
         """Test BMP encoding is lossless."""
         data_uri = DataURI.from_image(sample_rgb, format="bmp")
-        restored_rgb = data_uri.to_rgb_array()
+        restored_rgb = data_uri.to_ndarray()
 
         assert np.array_equal(sample_rgb, restored_rgb)
 
-    def test_jpeg_lossy_roundtrip(self, sample_rgb: np.ndarray):
+    def test_jpeg_lossy_roundtrip(self, sample_rgb: npt.NDArray[np.uint8]):
         """Test JPEG encoding is lossy but close."""
         data_uri = DataURI.from_image(sample_rgb, format="jpeg", quality=85)
-        restored_rgb = data_uri.to_rgb_array()
+        restored_rgb = data_uri.to_ndarray()
 
         assert sample_rgb.shape == restored_rgb.shape
         assert np.allclose(sample_rgb, restored_rgb, atol=30)
 
-    def test_uri_string_roundtrip(self, sample_rgb: np.ndarray):
+    def test_uri_string_roundtrip(self, sample_rgb: npt.NDArray[np.uint8]):
         """Test parsing DataURI from string preserves data."""
         original = DataURI.from_image(sample_rgb, format="png")
         parsed = DataURI.from_uri(original.uri)
 
         assert parsed.mimetype == original.mimetype
         assert parsed.is_base64 == original.is_base64
-        assert np.array_equal(parsed.to_rgb_array(), original.to_rgb_array())
+        assert np.array_equal(parsed.to_ndarray(), original.to_ndarray())
+
+    def test_rgba_alpha_preservation_png(self):
+        """Test that alpha channel is preserved in PNG format."""
+        # Create RGBA array with varying alpha values
+        h, w = 10, 10
+        rgba = np.zeros((h, w, 4), dtype=np.uint8)
+        rgba[:, :, 0] = 100  # R
+        rgba[:, :, 1] = 150  # G
+        rgba[:, :, 2] = 200  # B
+        # Create varying alpha values
+        alpha_values = np.linspace(0, 255, h * w, dtype=np.uint8).reshape(h, w)
+        rgba[:, :, 3] = alpha_values
+
+        # Encode to PNG and decode
+        data_uri = DataURI.from_image(rgba, format="png")
+        restored_rgba = data_uri.to_ndarray(format="rgba")
+
+        # Verify alpha channel is preserved
+        assert np.array_equal(rgba, restored_rgba)
+
+    def test_rgba_alpha_dropped_jpeg(self):
+        """Test that alpha channel is dropped in JPEG format."""
+        # Create RGBA array with varying alpha values
+        h, w = 10, 10
+        rgba = np.zeros((h, w, 4), dtype=np.uint8)
+        rgba[:, :, 0] = 100  # R
+        rgba[:, :, 1] = 150  # G
+        rgba[:, :, 2] = 200  # B
+        rgba[:, :, 3] = 128  # Alpha (should be dropped)
+
+        # Encode to JPEG
+        data_uri = DataURI.from_image(rgba, format="jpeg")
+
+        # Decode as RGBA - alpha should be 255 (opaque)
+        restored_rgba = data_uri.to_ndarray(format="rgba")
+
+        # Verify alpha is 255 (opaque) everywhere
+        assert np.all(restored_rgba[:, :, 3] == 255)
+
+        # Verify RGB channels are approximately preserved (JPEG is lossy)
+        assert np.allclose(rgba[:, :, :3], restored_rgba[:, :, :3], atol=30)
 
 
 class TestDataURIWithMediaRef:
     """Test DataURI integration with MediaRef."""
 
     @pytest.fixture
-    def sample_rgb(self, sample_image_file: Path) -> np.ndarray:
+    def sample_rgb(self, sample_image_file: Path) -> npt.NDArray[np.uint8]:
         """Provide sample RGB array."""
-        return MediaRef(uri=str(sample_image_file)).to_rgb_array()
+        return MediaRef(uri=str(sample_image_file)).to_ndarray()
 
-    def test_mediaref_accepts_datauri_object(self, sample_rgb: np.ndarray):
+    def test_mediaref_accepts_datauri_object(self, sample_rgb: npt.NDArray[np.uint8]):
         """Test MediaRef accepts DataURI object directly."""
         data_uri = DataURI.from_image(sample_rgb, format="png")
         ref = MediaRef(uri=data_uri)  # type: ignore[arg-type]
 
         assert ref.is_embedded
-        assert np.array_equal(ref.to_rgb_array(), sample_rgb)
+        assert np.array_equal(ref.to_ndarray(), sample_rgb)
 
-    def test_mediaref_accepts_datauri_string(self, sample_rgb: np.ndarray):
+    def test_mediaref_accepts_datauri_string(self, sample_rgb: npt.NDArray[np.uint8]):
         """Test MediaRef accepts DataURI string."""
         data_uri = DataURI.from_image(sample_rgb, format="png")
         ref = MediaRef(uri=str(data_uri))
 
         assert ref.is_embedded
-        assert np.array_equal(ref.to_rgb_array(), sample_rgb)
+        assert np.array_equal(ref.to_ndarray(), sample_rgb)
 
     @pytest.mark.video
     def test_video_frame_to_datauri(self, sample_video_file: tuple[Path, list[int]]):
         """Test creating DataURI from video frame."""
         video_path, timestamps = sample_video_file
-        original_rgb = MediaRef(uri=str(video_path), pts_ns=timestamps[1]).to_rgb_array()
+        original_rgb = MediaRef(uri=str(video_path), pts_ns=timestamps[1]).to_ndarray()
 
         data_uri = DataURI.from_image(original_rgb, format="png")
         ref = MediaRef(uri=data_uri)  # type: ignore[arg-type]
 
         assert ref.is_embedded
-        assert np.array_equal(ref.to_rgb_array(), original_rgb)
+        assert np.array_equal(ref.to_ndarray(), original_rgb)
 
 
 class TestLoadingErrorHandling:
@@ -486,19 +528,19 @@ class TestLoadingErrorHandling:
         ref = MediaRef(uri=str(corrupted_file))
 
         with pytest.raises(Exception):  # Should raise ValueError
-            ref.to_rgb_array()
+            ref.to_ndarray()
 
     def test_load_invalid_data_uri(self):
         """Test loading invalid data URI raises error."""
         ref = MediaRef(uri="data:image/png;base64,invalid_base64!")
 
         with pytest.raises(Exception):  # Should raise ValueError
-            ref.to_rgb_array()
+            ref.to_ndarray()
 
     def test_load_unsupported_format(self, sample_image_file: Path):
         """Test that unsupported format in DataURI raises error."""
         ref = MediaRef(uri=str(sample_image_file))
-        rgb = ref.to_rgb_array()
+        rgb = ref.to_ndarray()
 
         with pytest.raises(Exception):  # Should raise ValueError
             DataURI.from_image(rgb, format="invalid")  # type: ignore

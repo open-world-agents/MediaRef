@@ -68,7 +68,7 @@ class TestBatchDecodeImages:
 
         # Verify order by checking individual loads
         for ref, result in zip(refs, results):
-            individual_result = ref.to_rgb_array()
+            individual_result = ref.to_ndarray()
             assert np.array_equal(result, individual_result)
 
 
@@ -116,7 +116,7 @@ class TestBatchDecodeVideo:
 
         # Verify order by checking individual loads
         for ref, result in zip(refs, results):
-            individual_result = ref.to_rgb_array()
+            individual_result = ref.to_ndarray()
             assert np.array_equal(result, individual_result)
 
 
@@ -162,7 +162,7 @@ class TestBatchDecodeMixed:
 
         # Verify order
         for ref, result in zip(refs, results):
-            individual_result = ref.to_rgb_array()
+            individual_result = ref.to_ndarray()
             assert np.array_equal(result, individual_result)
 
 
@@ -278,7 +278,7 @@ class TestBatchDecodePerformance:
         # Measure individual loading time
         cleanup_cache()  # Clear cache to ensure fair comparison
         start_individual = time.perf_counter()
-        individual_results = [ref.to_rgb_array() for ref in refs]
+        individual_results = [ref.to_ndarray() for ref in refs]
         individual_time = time.perf_counter() - start_individual
 
         # Verify results are the same

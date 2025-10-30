@@ -33,7 +33,7 @@ ref = MediaRef(uri="https://example.com/image.jpg")    # Remote URL
 ref = MediaRef(uri="video.mp4", pts_ns=1_000_000_000)  # Video frame at 1.0s
 
 # 2. Load media
-rgb = ref.to_rgb_array()                               # Returns (H, W, 3) numpy array
+rgb = ref.to_ndarray()                                 # Returns (H, W, 3) RGB array
 pil = ref.to_pil_image()                               # Returns PIL.Image
 
 # 3. Embed as data URI
@@ -94,7 +94,7 @@ pil_img = Image.open("image.png")
 embedded_ref = MediaRef(uri=DataURI.from_image(pil_img, format="jpeg", quality=90))
 
 # Use just like any other MediaRef
-rgb = embedded_ref.to_rgb_array()                      # (H, W, 3) numpy array
+rgb = embedded_ref.to_ndarray()                        # (H, W, 3) RGB array
 pil = embedded_ref.to_pil_image()                      # PIL Image
 
 # Serialize with embedded data
@@ -134,7 +134,9 @@ ref = MediaRef.model_validate_json(json_str)           # From JSON
 **Properties:** `is_embedded`, `is_video`, `is_remote`, `is_relative_path`
 
 **Methods:**
-- `to_rgb_array(**kwargs) -> np.ndarray` - Load as RGB array (H, W, 3)
+- `to_ndarray(format="rgb", **kwargs) -> np.ndarray` - Load as numpy array
+  - Formats: `"rgb"` (default), `"bgr"`, `"rgba"`, `"bgra"`, `"gray"`
+  - Returns: (H, W, 3) for RGB/BGR, (H, W, 4) for RGBA/BGRA, (H, W) for grayscale
 - `to_pil_image(**kwargs) -> PIL.Image` - Load as PIL Image
 - `resolve_relative_path(base_path, on_unresolvable="warn") -> MediaRef` - Resolve relative paths
   - `on_unresolvable`: How to handle embedded/remote URIs: `"error"`, `"warn"` (default), or `"ignore"`
@@ -148,11 +150,13 @@ ref = MediaRef.model_validate_json(json_str)           # From JSON
 
 **Class Methods:**
 - `from_image(image: np.ndarray | PIL.Image, format="png", quality=None) -> DataURI` - Create from image
+  - PNG format preserves alpha channel; JPEG/BMP drop alpha
 - `from_file(path: str | Path, format=None) -> DataURI` - Create from file
 - `from_uri(uri: str) -> DataURI` - Parse data URI string
 
 **Methods:**
-- `to_rgb_array() -> np.ndarray` - Convert to RGB array (H, W, 3)
+- `to_ndarray(format="rgb") -> np.ndarray` - Convert to numpy array
+  - Formats: `"rgb"` (default), `"bgr"`, `"rgba"`, `"bgra"`, `"gray"`
 - `to_pil_image() -> PIL.Image` - Convert to PIL Image
 
 **Properties:**

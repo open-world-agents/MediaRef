@@ -58,7 +58,7 @@ def batch_decode(
         strategy: Batch decoding strategy (SEPARATE, SEQUENTIAL_PER_KEYFRAME_BLOCK, or SEQUENTIAL).
             Only supported by PyAV decoder. TorchCodec decoder ignores this parameter.
         decoder: Video decoder backend to use ('pyav' or 'torchcodec'). Default: 'pyav'
-        **kwargs: Additional options passed to to_rgb_array() for image loading
+        **kwargs: Additional options passed to to_ndarray() for image loading
 
     Returns:
         List of RGB numpy arrays in the same order as input refs
@@ -127,12 +127,12 @@ def batch_decode(
             f"batch_decode() received {len(image_refs)} image reference(s). "
             f"Batch decoding is only optimized for video frames. "
             f"Images will be decoded individually. "
-            f"Consider using ref.to_rgb_array() directly for images.",
+            f"Consider using ref.to_ndarray() directly for images.",
             UserWarning,
             stacklevel=2,
         )
     for i, ref in image_refs:
-        results[i] = ref.to_rgb_array(**kwargs)
+        results[i] = ref.to_ndarray(**kwargs)
 
     # Load video frames using optimized batch decoding
     for uri, group in video_groups.items():
@@ -156,7 +156,7 @@ def batch_decode(
                 else:
                     batch = video_decoder.get_frames_played_at(pts_seconds)
 
-                # Convert from NCHW to HWC format
+                # Convert from NCHW to HWC format. NOTE: here we assume RGB output
                 for idx, frame_nchw in zip(indices, batch.data):
                     # Transpose from (C, H, W) to (H, W, C)
                     rgb_array = np.transpose(frame_nchw, (1, 2, 0))
