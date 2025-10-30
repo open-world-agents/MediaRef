@@ -123,30 +123,3 @@ class TestVideoFrameCaching:
         # Verify container is NOT in cache
         assert cache_key not in cached_av._container_cache
         assert rgba.shape[2] == 4  # RGBA
-
-
-class TestColorConversion:
-    """Test color conversion correctness."""
-
-    def test_rgba_to_rgb_conversion(self, sample_rgba_array: npt.NDArray[np.uint8]):
-        """Test that RGBA to RGB conversion is correct."""
-        # Convert RGBA to RGB
-        rgb = cv2.cvtColor(sample_rgba_array, cv2.COLOR_RGBA2RGB)
-
-        # Verify shape
-        assert rgb.shape == (48, 64, 3)
-
-        # Verify color channels are correct for entire array
-        np.testing.assert_array_equal(rgb, sample_rgba_array[..., :3])
-
-    def test_rgb_to_rgba_conversion(self, sample_rgb_array: npt.NDArray[np.uint8]):
-        """Test that RGB to RGBA conversion is correct."""
-        # Convert RGB to RGBA
-        rgba = cv2.cvtColor(sample_rgb_array, cv2.COLOR_RGB2RGBA)
-
-        # Verify shape
-        assert rgba.shape == (48, 64, 4)
-
-        # Verify color channels are correct and alpha is 255
-        np.testing.assert_array_equal(rgba[..., :3], sample_rgb_array)
-        assert np.all(rgba[..., 3] == 255)

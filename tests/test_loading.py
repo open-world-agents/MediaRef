@@ -1,4 +1,4 @@
-"""Tests for MediaRef loading methods (to_rgb_array, to_pil_image) and DataURI.
+"""Tests for MediaRef loading methods (to_ndarray, to_pil_image) and DataURI.
 
 These tests require the [loader] extra to be installed.
 """
@@ -13,10 +13,10 @@ from PIL import Image
 from mediaref import DataURI, MediaRef
 
 
-class TestToRgbArrayImage:
+class TestToNdarrayImage:
     """Test to_ndarray method for images."""
 
-    def test_to_rgb_array_from_file(self, sample_image_file: Path):
+    def test_to_ndarray_from_file(self, sample_image_file: Path):
         """Test loading RGB array from image file."""
         ref = MediaRef(uri=str(sample_image_file))
         rgb = ref.to_ndarray()
@@ -25,7 +25,7 @@ class TestToRgbArrayImage:
         assert rgb.shape == (48, 64, 3)
         assert rgb.dtype == np.uint8
 
-    def test_to_rgb_array_color_correctness(self, sample_image_file: Path):
+    def test_to_ndarray_color_correctness(self, sample_image_file: Path):
         """Test that RGB array has correct color values."""
         ref = MediaRef(uri=str(sample_image_file))
         rgb = ref.to_ndarray()
@@ -36,7 +36,7 @@ class TestToRgbArrayImage:
         assert rgb[0, 0, 1] == 0  # Green channel
         assert rgb[0, 0, 2] == 255  # Blue channel
 
-    def test_to_rgb_array_from_data_uri(self, sample_data_uri: str):
+    def test_to_ndarray_from_data_uri(self, sample_data_uri: str):
         """Test loading RGB array from data URI."""
         ref = MediaRef(uri=sample_data_uri)
         rgb = ref.to_ndarray()
@@ -46,7 +46,7 @@ class TestToRgbArrayImage:
         assert rgb.dtype == np.uint8
 
     @pytest.mark.network
-    def test_to_rgb_array_from_remote_url(self, remote_test_image_url: str):
+    def test_to_ndarray_from_remote_url(self, remote_test_image_url: str):
         """Test loading RGB array from remote URL."""
         ref = MediaRef(uri=remote_test_image_url)
         rgb = ref.to_ndarray()
@@ -56,7 +56,7 @@ class TestToRgbArrayImage:
         assert rgb.shape[2] == 3
         assert rgb.dtype == np.uint8
 
-    def test_to_rgb_array_from_file_uri(self, sample_image_file: Path):
+    def test_to_ndarray_from_file_uri(self, sample_image_file: Path):
         """Test loading RGB array from file:// URI."""
         file_uri = f"file://{sample_image_file.as_posix()}"
         ref = MediaRef(uri=file_uri)
@@ -66,7 +66,7 @@ class TestToRgbArrayImage:
         assert rgb.shape == (48, 64, 3)
         assert rgb.dtype == np.uint8
 
-    def test_to_rgb_array_nonexistent_file(self):
+    def test_to_ndarray_nonexistent_file(self):
         """Test that loading from nonexistent file raises error."""
         ref = MediaRef(uri="/nonexistent/file.png")
 
@@ -75,10 +75,10 @@ class TestToRgbArrayImage:
 
 
 @pytest.mark.video
-class TestToRgbArrayVideo:
+class TestToNdarrayVideo:
     """Test to_ndarray method for video frames."""
 
-    def test_to_rgb_array_from_video(self, sample_video_file: tuple[Path, list[int]]):
+    def test_to_ndarray_from_video(self, sample_video_file: tuple[Path, list[int]]):
         """Test loading RGB array from video frame."""
         video_path, timestamps = sample_video_file
         pts_ns = timestamps[1]  # Second frame (already in nanoseconds)
@@ -90,7 +90,7 @@ class TestToRgbArrayVideo:
         assert rgb.shape == (48, 64, 3)
         assert rgb.dtype == np.uint8
 
-    def test_to_rgb_array_video_first_frame(self, sample_video_file: tuple[Path, list[int]]):
+    def test_to_ndarray_video_first_frame(self, sample_video_file: tuple[Path, list[int]]):
         """Test loading first frame from video."""
         video_path, timestamps = sample_video_file
 
@@ -100,7 +100,7 @@ class TestToRgbArrayVideo:
         assert isinstance(rgb, np.ndarray)
         assert rgb.shape == (48, 64, 3)
 
-    def test_to_rgb_array_video_different_frames(self, sample_video_file: tuple[Path, list[int]]):
+    def test_to_ndarray_video_different_frames(self, sample_video_file: tuple[Path, list[int]]):
         """Test that different frames have different content."""
         video_path, timestamps = sample_video_file
 
@@ -113,14 +113,14 @@ class TestToRgbArrayVideo:
         # Frames should be different (different intensities)
         assert not np.array_equal(rgb1, rgb2)
 
-    def test_to_rgb_array_video_nonexistent_file(self):
+    def test_to_ndarray_video_nonexistent_file(self):
         """Test that loading from nonexistent video raises error."""
         ref = MediaRef(uri="/nonexistent/video.mp4", pts_ns=0)
 
         with pytest.raises(Exception):  # Should raise FileNotFoundError
             ref.to_ndarray()
 
-    def test_to_rgb_array_from_video_file_uri(self, sample_video_file: tuple[Path, list[int]]):
+    def test_to_ndarray_from_video_file_uri(self, sample_video_file: tuple[Path, list[int]]):
         """Test loading RGB array from video frame using file:// URI."""
         video_path, timestamps = sample_video_file
         file_uri = f"file://{video_path.as_posix()}"
@@ -133,7 +133,7 @@ class TestToRgbArrayVideo:
         assert rgb.shape == (48, 64, 3)
         assert rgb.dtype == np.uint8
 
-    def test_to_rgb_array_video_without_pts_ns_raises_error(self, sample_video_file: tuple[Path, list[int]]):
+    def test_to_ndarray_video_without_pts_ns_raises_error(self, sample_video_file: tuple[Path, list[int]]):
         """Test that loading video file without pts_ns raises ValueError.
 
         When pts_ns is not provided, MediaRef treats the file as an image.
@@ -375,7 +375,7 @@ class TestDataURIConversion:
         """Provide sample DataURI."""
         return DataURI.from_file(sample_image_file)
 
-    def test_to_rgb_array(self, sample_data_uri: DataURI):
+    def test_to_ndarray(self, sample_data_uri: DataURI):
         """Test converting DataURI to RGB array."""
         rgb = sample_data_uri.to_ndarray()
 
