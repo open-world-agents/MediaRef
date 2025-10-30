@@ -34,7 +34,7 @@ df_video = pd.DataFrame([
 # Works with any format that stores strings: Parquet, HDF5, mcap, rosbag, etc.
 ```
 
-MediaRef is already used in production ML data formats. For example, [OWAMcap](https://open-world-agents.github.io/open-world-agents/data/technical-reference/format-guide/) uses MediaRef for [screen observations](https://github.com/open-world-agents/open-world-agents/blob/main/projects/owa-msgs/owa/msgs/desktop/screen.py#L49).
+MediaRef is already used in production ML data formats at scale. For example, the [D2E research project](https://worv-ai.github.io/d2e/) uses MediaRef via [OWAMcap](https://open-world-agents.github.io/open-world-agents/data/technical-reference/format-guide/) to store 10TB+ of gameplay data with [screen observations](https://github.com/open-world-agents/open-world-agents/blob/main/projects/owa-msgs/owa/msgs/desktop/screen.py#L49).
 
 **2. Future-proof specification built on standards**
 
