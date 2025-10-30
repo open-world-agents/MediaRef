@@ -33,7 +33,7 @@ ref = MediaRef(uri="https://example.com/image.jpg")    # Remote URL
 ref = MediaRef(uri="video.mp4", pts_ns=1_000_000_000)  # Video frame at 1.0s
 
 # 2. Load media
-rgb = ref.to_rgb_array()                               # Returns (H, W, 3) numpy array
+rgb = ref.to_ndarray()                                 # Returns (H, W, 3) RGB array
 pil = ref.to_pil_image()                               # Returns PIL.Image
 
 # 3. Embed as data URI
@@ -93,8 +93,13 @@ from PIL import Image
 pil_img = Image.open("image.png")
 embedded_ref = MediaRef(uri=DataURI.from_image(pil_img, format="jpeg", quality=90))
 
+# Or from BGR array (OpenCV uses BGR by default - input_format="bgr" is REQUIRED)
+import cv2
+bgr_array = cv2.imread("image.jpg")  # OpenCV loads as BGR, not RGB!
+embedded_ref = MediaRef(uri=DataURI.from_image(bgr_array, format="png", input_format="bgr"))
+
 # Use just like any other MediaRef
-rgb = embedded_ref.to_rgb_array()                      # (H, W, 3) numpy array
+rgb = embedded_ref.to_ndarray()                        # (H, W, 3) RGB array
 pil = embedded_ref.to_pil_image()                      # PIL Image
 
 # Serialize with embedded data
@@ -134,7 +139,9 @@ ref = MediaRef.model_validate_json(json_str)           # From JSON
 **Properties:** `is_embedded`, `is_video`, `is_remote`, `is_relative_path`
 
 **Methods:**
-- `to_rgb_array(**kwargs) -> np.ndarray` - Load as RGB array (H, W, 3)
+- `to_ndarray(format="rgb", **kwargs) -> np.ndarray` - Load as numpy array
+  - Formats: `"rgb"` (default), `"bgr"`, `"rgba"`, `"bgra"`, `"gray"`
+  - Returns: (H, W, 3) for RGB/BGR, (H, W, 4) for RGBA/BGRA, (H, W) for grayscale
 - `to_pil_image(**kwargs) -> PIL.Image` - Load as PIL Image
 - `resolve_relative_path(base_path, on_unresolvable="warn") -> MediaRef` - Resolve relative paths
   - `on_unresolvable`: How to handle embedded/remote URIs: `"error"`, `"warn"` (default), or `"ignore"`
@@ -147,12 +154,21 @@ ref = MediaRef.model_validate_json(json_str)           # From JSON
 ### DataURI (for embedding media)
 
 **Class Methods:**
-- `from_image(image: np.ndarray | PIL.Image, format="png", quality=None) -> DataURI` - Create from image
+- `from_image(image: np.ndarray | PIL.Image, format="png", quality=None, input_format="rgb") -> DataURI` - Create from image
+  - `format`: Output format (`"png"`, `"jpeg"`, `"bmp"`)
+  - `quality`: JPEG quality (1-100), ignored for PNG/BMP
+  - `input_format`: Input channel order for numpy arrays. Default: `"rgb"`. Ignored for PIL Images.
+    - `"rgb"`: RGB format (3 channels)
+    - `"bgr"`: BGR format (3 channels) - **REQUIRED for OpenCV arrays** (e.g., `cv2.imread()`)
+    - `"rgba"`: RGBA format (4 channels)
+    - `"bgra"`: BGRA format (4 channels)
+  - PNG format preserves alpha channel; JPEG/BMP drop alpha
 - `from_file(path: str | Path, format=None) -> DataURI` - Create from file
 - `from_uri(uri: str) -> DataURI` - Parse data URI string
 
 **Methods:**
-- `to_rgb_array() -> np.ndarray` - Convert to RGB array (H, W, 3)
+- `to_ndarray(format="rgb") -> np.ndarray` - Convert to numpy array
+  - Formats: `"rgb"` (default), `"bgr"`, `"rgba"`, `"bgra"`, `"gray"`
 - `to_pil_image() -> PIL.Image` - Convert to PIL Image
 
 **Properties:**
@@ -186,10 +202,6 @@ ref = MediaRef.model_validate_json(json_str)           # From JSON
 | GPU acceleration | ❌ CPU only | ✅ CUDA support |
 | Backend | PyAV (FFmpeg) | TorchCodec (FFmpeg) |
 | Installation | `pip install mediaref[video]` | `pip install torchcodec>=0.4.0` |
-
-**When to use:**
-- Use `PyAVVideoDecoder` (default) for fine-grained control over batch decoding strategies
-- Use `TorchCodecVideoDecoder` for GPU-accelerated decoding when processing large batches
 
 ## Design Notes
 

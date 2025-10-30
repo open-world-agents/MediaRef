@@ -1,7 +1,7 @@
 [project]
 name = "mediaref"
 dynamic = ["version"]
-description = "Add your description here"
+description = "Pydantic media reference for images and video frames with lazy loading and optimized batch decoding"
 readme = "README.md"
 authors = [
     { name = "Suhwan Choi", email = "milkclouds00@gmail.com" }

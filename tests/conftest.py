@@ -5,6 +5,7 @@ from pathlib import Path
 
 import cv2
 import numpy as np
+import numpy.typing as npt
 import pytest
 
 # ============================================================================
@@ -43,11 +44,11 @@ def sample_image_files(tmp_path: Path) -> list[Path]:
 
 
 @pytest.fixture
-def sample_bgra_array() -> np.ndarray:
-    """Create a sample BGRA numpy array with gradient pattern.
+def sample_rgba_array() -> npt.NDArray[np.uint8]:
+    """Create a sample RGBA numpy array with gradient pattern.
 
     Returns:
-        BGRA numpy array (48, 64, 4).
+        RGBA numpy array (48, 64, 4).
     """
     height, width = 48, 64
     frame = np.zeros((height, width, 4), dtype=np.uint8)
@@ -55,13 +56,13 @@ def sample_bgra_array() -> np.ndarray:
     # Create gradient pattern for easy identification
     for y in range(height):
         for x in range(width):
-            frame[y, x] = [x * 4, y * 5, (x + y) * 2, 255]  # BGRA
+            frame[y, x] = [x * 4, y * 5, (x + y) * 2, 255]  # RGBA
 
     return frame
 
 
 @pytest.fixture
-def sample_rgb_array() -> np.ndarray:
+def sample_rgb_array() -> npt.NDArray[np.uint8]:
     """Create a sample RGB numpy array.
 
     Returns:
@@ -178,15 +179,15 @@ def sample_video_file_large(tmp_path: Path) -> tuple[Path, list[int]]:
 
 
 @pytest.fixture
-def sample_data_uri(sample_bgra_array: np.ndarray) -> str:
-    """Create a valid data URI from BGRA array.
+def sample_data_uri(sample_rgba_array: npt.NDArray[np.uint8]) -> str:
+    """Create a valid data URI from RGBA array.
 
     Returns:
         Data URI string (PNG format).
     """
-    # Convert BGRA to BGR for encoding
-    bgr_array = cv2.cvtColor(sample_bgra_array, cv2.COLOR_BGRA2BGR)
-    success, encoded = cv2.imencode(".png", bgr_array)
+    # Convert RGBA to BGRA for cv2 encoding (cv2 uses BGR format)
+    bgra_array = cv2.cvtColor(sample_rgba_array, cv2.COLOR_RGBA2BGRA)
+    success, encoded = cv2.imencode(".png", bgra_array)
     if not success:
         raise ValueError("Failed to encode image")
 

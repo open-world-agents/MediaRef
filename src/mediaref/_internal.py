@@ -31,14 +31,14 @@ GC_COLLECTION_INTERVAL = 10
 # ============================================================================
 
 
-def load_image_as_bgra(path_or_uri: str) -> npt.NDArray[np.uint8]:
-    """Load image from any source and return as BGRA numpy array.
+def load_image_as_rgba(path_or_uri: str) -> npt.NDArray[np.uint8]:
+    """Load image from any source and return as RGBA numpy array.
 
     Args:
         path_or_uri: File path, URL, or data URI
 
     Returns:
-        BGRA numpy array
+        RGBA numpy array
 
     Raises:
         ValueError: If loading fails
@@ -46,11 +46,13 @@ def load_image_as_bgra(path_or_uri: str) -> npt.NDArray[np.uint8]:
     """
     try:
         if path_or_uri.startswith("data:"):
-            return _load_from_data_uri(path_or_uri)
+            from .data_uri import DataURI
+
+            return DataURI.from_uri(path_or_uri).to_ndarray(format="rgba")
         else:
-            # Load as PIL image and convert to BGRA
+            # Load as PIL image and convert to RGBA
             pil_image = _load_pil_image(path_or_uri)
-            return _pil_to_bgra_array(pil_image)
+            return np.array(pil_image.convert("RGBA"))
     except FileNotFoundError:
         raise
     except Exception as e:
@@ -95,22 +97,10 @@ def _load_pil_image(
     # Handle EXIF orientation
     image = PIL.ImageOps.exif_transpose(image)
 
-    # Convert to RGB
-    image = image.convert("RGB")
+    # Convert to RGBA
+    image = image.convert("RGBA")
 
     return image
-
-
-def _pil_to_bgra_array(pil_image: PIL.Image.Image) -> npt.NDArray[np.uint8]:
-    """Convert PIL image to BGRA numpy array."""
-    # Ensure image is in RGB mode
-    if pil_image.mode != "RGB":
-        pil_image = pil_image.convert("RGB")
-
-    # Convert to numpy array and then to BGRA
-    rgb_array = np.array(pil_image, dtype=np.uint8)
-    bgra_array: npt.NDArray[np.uint8] = cv2.cvtColor(rgb_array, cv2.COLOR_RGB2BGRA)  # type: ignore[assignment]
-    return bgra_array
 
 
 # ============================================================================
@@ -118,13 +108,13 @@ def _pil_to_bgra_array(pil_image: PIL.Image.Image) -> npt.NDArray[np.uint8]:
 # ============================================================================
 
 
-def load_video_frame_as_bgra(
+def load_video_frame_as_rgba(
     path_or_url: str,
     pts_ns: int,
     *,
     keep_av_open: bool = False,
 ) -> npt.NDArray[np.uint8]:
-    """Load video frame and return as BGRA numpy array.
+    """Load video frame and return as RGBA numpy array.
 
     Args:
         path_or_url: File path or URL to video
@@ -132,7 +122,7 @@ def load_video_frame_as_bgra(
         keep_av_open: Keep AV container open in cache
 
     Returns:
-        BGRA numpy array
+        RGBA numpy array
 
     Raises:
         ImportError: If video dependencies are not installed
@@ -168,8 +158,8 @@ def load_video_frame_as_bgra(
         try:
             frame = _read_frame_at_pts(container, pts_fraction)
             rgb_array = frame.to_ndarray(format="rgb24")
-            bgra_array: npt.NDArray[np.uint8] = cv2.cvtColor(rgb_array, cv2.COLOR_RGB2BGRA)  # type: ignore[assignment]
-            return bgra_array
+            rgba_array: npt.NDArray[np.uint8] = cv2.cvtColor(rgb_array, cv2.COLOR_RGB2RGBA)  # type: ignore[assignment]
+            return rgba_array
         finally:
             if not keep_av_open:
                 container.close()
@@ -199,19 +189,3 @@ def _read_frame_at_pts(
             return frame
 
     raise ValueError(f"Frame not found at {float(pts):.2f}s")
-
-
-# ============================================================================
-# Data URI Handling
-# ============================================================================
-
-
-def _load_from_data_uri(data_uri: str) -> npt.NDArray[np.uint8]:
-    """Load image from data URI and return as BGRA array."""
-    from .data_uri import DataURI
-
-    data_uri_obj = DataURI.from_uri(data_uri)
-    # DataURI.to_rgb_array() returns RGB, convert to BGRA
-    rgb_array = data_uri_obj.to_rgb_array()
-    bgra_array: npt.NDArray[np.uint8] = cv2.cvtColor(rgb_array, cv2.COLOR_RGB2BGRA)  # type: ignore[assignment]
-    return bgra_array

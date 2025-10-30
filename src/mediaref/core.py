@@ -36,11 +36,11 @@ class MediaRef(BaseModel):
     Examples:
         >>> # Image reference
         >>> ref = MediaRef(uri="image.png")
-        >>> rgb = ref.to_rgb_array()
+        >>> rgb = ref.to_ndarray(format="rgb")  # Default RGB format
         >>>
         >>> # Video frame reference
         >>> ref = MediaRef(uri="video.mp4", pts_ns=1_000_000_000)
-        >>> frame = ref.to_rgb_array()
+        >>> frame = ref.to_ndarray()
         >>>
         >>> # Remote URL
         >>> ref = MediaRef(uri="https://example.com/image.jpg")
@@ -163,29 +163,49 @@ class MediaRef(BaseModel):
         return MediaRef(uri=resolved_path, pts_ns=self.pts_ns)
 
     # ========== Loading Methods ==========
-    # TODO: non-rgb support
-    def to_rgb_array(self, **kwargs) -> npt.NDArray[np.uint8]:
-        """Load and return media as RGB numpy array.
+
+    def to_ndarray(
+        self, format: Literal["rgb", "bgr", "rgba", "bgra", "gray"] = "rgb", **kwargs
+    ) -> npt.NDArray[np.uint8]:
+        """Load and return media as numpy ndarray in specified format.
 
         Args:
+            format: Output format (default: "rgb")
+                - "rgb": RGB color (H, W, 3)
+                - "bgr": BGR color (H, W, 3)
+                - "rgba": RGB with alpha (H, W, 4)
+                - "bgra": BGR with alpha (H, W, 4)
+                - "gray": Grayscale (H, W)
             **kwargs: Additional options (e.g., keep_av_open for videos)
 
         Returns:
-            RGB numpy array (H, W, 3)
+            Numpy ndarray in requested format
 
         Raises:
             ImportError: If video dependencies are not installed (for video frames)
+            ValueError: If format is invalid
 
         Examples:
             >>> ref = MediaRef(uri="image.png")
-            >>> rgb = ref.to_rgb_array()
+            >>> rgb = ref.to_ndarray(format="rgb")  # Default RGB format
             >>>
             >>> ref = MediaRef(uri="video.mp4", pts_ns=1_000_000_000)
-            >>> frame = ref.to_rgb_array()  # Requires: pip install mediaref[video]
+            >>> frame = ref.to_ndarray()  # Requires: pip install mediaref[video]
         """
-        bgra = self._load_as_bgra(**kwargs)
-        rgb_array: npt.NDArray[np.uint8] = cv2.cvtColor(bgra, cv2.COLOR_BGRA2RGB)  # type: ignore[assignment]
-        return rgb_array
+        rgba = self._load_as_rgba(**kwargs)
+
+        CONVERSION_MAP = {
+            "rgb": cv2.COLOR_RGBA2RGB,
+            "bgr": cv2.COLOR_RGBA2BGR,
+            "bgra": cv2.COLOR_RGBA2BGRA,
+            "gray": cv2.COLOR_RGBA2GRAY,
+        }
+        if format == "rgba":
+            return rgba
+        if format in CONVERSION_MAP:
+            return cv2.cvtColor(rgba, CONVERSION_MAP[format])  # type: ignore[return-value]
+
+        raise ValueError(f"Unsupported format: {format}. Must be one of: rgb, bgr, rgba, bgra, gray")
 
     def to_pil_image(self, **kwargs) -> PIL.Image.Image:
         """Load and return media as PIL Image.
@@ -203,21 +223,21 @@ class MediaRef(BaseModel):
             >>> ref = MediaRef(uri="image.png")
             >>> img = ref.to_pil_image()
         """
-        rgb_array = self.to_rgb_array(**kwargs)
+        rgb_array = self.to_ndarray(format="rgb", **kwargs)
         return PIL.Image.fromarray(rgb_array)
 
     # ========== Internal ==========
 
-    def _load_as_bgra(self, **kwargs) -> npt.NDArray[np.uint8]:
-        """Internal: Load media as BGRA array.
+    def _load_as_rgba(self, **kwargs) -> npt.NDArray[np.uint8]:
+        """Internal: Load media as RGBA array.
 
         Raises:
             ImportError: If video dependencies are not installed (for video frames)
         """
-        from ._internal import load_image_as_bgra, load_video_frame_as_bgra
+        from ._internal import load_image_as_rgba, load_video_frame_as_rgba
 
         if self.is_video:
             assert self.pts_ns is not None  # Type guard: is_video ensures pts_ns is not None
-            return load_video_frame_as_bgra(self.uri, self.pts_ns, **kwargs)
+            return load_video_frame_as_rgba(self.uri, self.pts_ns, **kwargs)
         else:
-            return load_image_as_bgra(self.uri)
+            return load_image_as_rgba(self.uri)

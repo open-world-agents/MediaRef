@@ -61,14 +61,14 @@ print(f"   ✓ Created refs: local, remote (is_remote={ref.is_remote}), video (i
 
 print("\n2. Load media")
 ref = MediaRef(uri=str(image_path))
-rgb = ref.to_rgb_array()  # Returns (H, W, 3) numpy array
+rgb = ref.to_ndarray()  # Returns (H, W, 3) RGB array
 pil = ref.to_pil_image()  # Returns PIL.Image
 print(f"   ✓ Loaded: rgb={rgb.shape}, pil={pil.size}")
 
 print("\n3. Embed as data URI")
 data_uri = DataURI.from_image(rgb, format="png")  # e.g., "data:image/png;base64,iVBORw0KG..."
 ref = MediaRef(uri=data_uri)  # Self-contained reference
-print(f"   ✓ Embedded: is_embedded={ref.is_embedded}, can load back: {ref.to_rgb_array().shape}")
+print(f"   ✓ Embedded: is_embedded={ref.is_embedded}, can load back: {ref.to_ndarray().shape}")
 
 # 4. Batch decode video frames (opens video once, reuses handle)
 if video_available:
@@ -77,7 +77,7 @@ if video_available:
 
     # Individual loading (naive approach)
     start = time.perf_counter()
-    frames_individual = [ref.to_rgb_array() for ref in refs]
+    frames_individual = [ref.to_ndarray() for ref in refs]
     time_individual = time.perf_counter() - start
 
     # Batch loading (optimized)
@@ -132,13 +132,13 @@ embedded_ref = MediaRef(uri=DataURI.from_image(pil_img, format="jpeg", quality=9
 print("   ✓ Created embedded refs from: numpy, file, PIL Image")
 
 # Use just like any other MediaRef
-rgb = embedded_ref.to_rgb_array()  # (H, W, 3) numpy array
+rgb = embedded_ref.to_ndarray()  # (H, W, 3) RGB array
 pil = embedded_ref.to_pil_image()  # PIL Image
 
 # Serialize with embedded data
 serialized = embedded_ref.model_dump_json()  # Contains image data
 restored = MediaRef.model_validate_json(serialized)  # No external file needed!
-print(f"   ✓ Serialized: {len(serialized)} bytes, restored: {restored.to_rgb_array().shape}")
+print(f"   ✓ Serialized: {len(serialized)} bytes, restored: {restored.to_ndarray().shape}")
 
 # Properties
 data_uri = DataURI.from_image(rgb, format="png")

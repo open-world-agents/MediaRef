@@ -22,29 +22,36 @@ def _encode_image_to_bytes(
     format: Literal["png", "jpeg", "bmp"],
     quality: Optional[int] = None,
 ) -> bytes:
-    """Encode BGRA numpy array to image bytes using cv2.
+    """Encode RGBA numpy array to image bytes using cv2.
 
     Args:
-        array: BGRA numpy array
+        array: RGBA numpy array (H, W, 4)
         format: Output format ('png', 'jpeg', or 'bmp')
         quality: JPEG quality (1-100), ignored for PNG and BMP
 
     Returns:
         Encoded image bytes
-    """
-    # Convert BGRA to BGR for cv2 encoding
-    bgr_array = cv2.cvtColor(array, cv2.COLOR_BGRA2BGR)
 
+    Note:
+        PNG format preserves alpha channel. JPEG and BMP do not support alpha,
+        so alpha channel is dropped for those formats.
+    """
     # Encode based on format
     if format == "png":
-        success, encoded = cv2.imencode(".png", bgr_array)
+        # PNG supports alpha - convert RGBA to BGRA for cv2
+        bgra_array = cv2.cvtColor(array, cv2.COLOR_RGBA2BGRA)
+        success, encoded = cv2.imencode(".png", bgra_array)
     elif format == "jpeg":
+        # JPEG doesn't support alpha - convert to BGR
+        bgr_array = cv2.cvtColor(array, cv2.COLOR_RGBA2BGR)
         if quality is None:
             quality = 85
         if not (1 <= quality <= 100):
             raise ValueError("JPEG quality must be between 1 and 100")
         success, encoded = cv2.imencode(".jpg", bgr_array, [cv2.IMWRITE_JPEG_QUALITY, quality])
     elif format == "bmp":
+        # BMP doesn't support alpha - convert to BGR
+        bgr_array = cv2.cvtColor(array, cv2.COLOR_RGBA2BGR)
         success, encoded = cv2.imencode(".bmp", bgr_array)
     else:
         raise ValueError(f"Unsupported format: {format}")
@@ -55,24 +62,41 @@ def _encode_image_to_bytes(
     return encoded.tobytes()
 
 
-def _decode_image_to_bgra(image_bytes: bytes) -> npt.NDArray[np.uint8]:
-    """Decode image bytes to BGRA numpy array using cv2.
+def _decode_image_to_rgba(image_bytes: bytes) -> npt.NDArray[np.uint8]:
+    """Decode image bytes to RGBA numpy array using cv2.
 
     Args:
         image_bytes: Encoded image data
 
     Returns:
-        BGRA numpy array
+        RGBA numpy array (H, W, 4)
+
+    Note:
+        If the image has an alpha channel, it is preserved.
+        If not, alpha channel is added with full opacity (255).
     """
     try:
         nparr = np.frombuffer(image_bytes, np.uint8)
-        bgr_array = cv2.imdecode(nparr, cv2.IMREAD_COLOR)
+        # Use IMREAD_UNCHANGED to preserve alpha channel if present
+        img_array = cv2.imdecode(nparr, cv2.IMREAD_UNCHANGED)
 
-        if bgr_array is None:
+        if img_array is None:
             raise ValueError("Failed to decode image data")
 
-        bgra_array: npt.NDArray[np.uint8] = cv2.cvtColor(bgr_array, cv2.COLOR_BGR2BGRA)  # type: ignore[assignment]
-        return bgra_array
+        # Convert to RGBA based on input format
+        if img_array.ndim == 2:
+            # Grayscale - convert to RGBA
+            rgba_array: npt.NDArray[np.uint8] = cv2.cvtColor(img_array, cv2.COLOR_GRAY2RGBA)  # type: ignore[assignment]
+        elif img_array.shape[2] == 3:
+            # BGR - convert to RGBA
+            rgba_array = cv2.cvtColor(img_array, cv2.COLOR_BGR2RGBA)  # type: ignore[assignment]
+        elif img_array.shape[2] == 4:
+            # BGRA - convert to RGBA
+            rgba_array = cv2.cvtColor(img_array, cv2.COLOR_BGRA2RGBA)  # type: ignore[assignment]
+        else:
+            raise ValueError(f"Unexpected image shape: {img_array.shape}")
+
+        return rgba_array
     except Exception as e:
         raise ValueError(f"Failed to decode image data: {e}") from e
 
@@ -101,7 +125,7 @@ class DataURI(BaseModel):
         >>> # Parse existing data URI
         >>> uri_str = "data:image/png;base64,iVBORw0KG..."
         >>> data_uri = DataURI.from_uri(uri_str)
-        >>> array = data_uri.to_rgb_array()
+        >>> array = data_uri.to_ndarray()  # Default RGB format
     """
 
     mimetype: str = Field(description="MIME type (e.g., 'image/png')")
@@ -212,40 +236,69 @@ class DataURI(BaseModel):
         image: Union[npt.NDArray[np.uint8], PIL.Image.Image],
         format: Literal["png", "jpeg", "bmp"] = "png",
         quality: Optional[int] = None,
+        input_format: Literal["rgb", "bgr", "rgba", "bgra"] = "rgb",
     ) -> "DataURI":
         """Create from numpy array or PIL Image.
 
         Args:
-            image: Numpy array (H, W, 3) RGB or PIL Image
+            image: PIL Image or numpy array
             format: Output format ('png', 'jpeg', 'bmp')
             quality: JPEG quality (1-100), ignored for PNG/BMP
+            input_format: Input channel order for numpy arrays. Default: 'rgb'.
+                - 'rgb': RGB format (3 channels)
+                - 'bgr': BGR format (3 channels, e.g., from cv2.imread)
+                - 'rgba': RGBA format (4 channels)
+                - 'bgra': BGRA format (4 channels, e.g., from cv2.imread with alpha)
+                Ignored for PIL Images.
 
         Returns:
             DataURI instance
 
-        Raises:
-            ValueError: If format is invalid or encoding fails
+        Note:
+            Alpha channel is only preserved in PNG format.
+
+        Examples:
+            >>> # RGB numpy array (default)
+            >>> rgb_array = np.zeros((100, 100, 3), dtype=np.uint8)
+            >>> data_uri = DataURI.from_image(rgb_array, format="png")
+            >>>
+            >>> # BGR numpy array (e.g., from OpenCV)
+            >>> bgr_array = cv2.imread("image.jpg")
+            >>> data_uri = DataURI.from_image(bgr_array, format="png", input_format="bgr")
         """
-        # Convert to RGB numpy array if PIL Image
         if isinstance(image, PIL.Image.Image):
-            if image.mode != "RGB":
-                image = image.convert("RGB")
-            rgb_array = np.array(image, dtype=np.uint8)
+            rgba_array: npt.NDArray[np.uint8] = np.array(image.convert("RGBA"), dtype=np.uint8)
         else:
-            # Assume RGB format
-            if image.ndim != 3 or image.shape[2] != 3:
-                raise ValueError(f"Expected RGB array with shape (H, W, 3), got {image.shape}")
-            rgb_array = image
+            if image.ndim != 3:
+                raise ValueError(f"Expected 3D array (H, W, C), got shape {image.shape}")
 
-        # Convert RGB to BGRA for cv2 encoding
-        bgra_array: npt.NDArray[np.uint8] = cv2.cvtColor(rgb_array, cv2.COLOR_RGB2BGRA)  # type: ignore[assignment]
+            channels = image.shape[2]
+            if channels == 3:
+                # Convert to RGBA based on input format
+                if input_format == "rgb":
+                    rgba_array = cv2.cvtColor(image, cv2.COLOR_RGB2RGBA)  # type: ignore[assignment]
+                elif input_format == "bgr":
+                    rgba_array = cv2.cvtColor(image, cv2.COLOR_BGR2RGBA)  # type: ignore[assignment]
+                else:
+                    raise ValueError(
+                        f"Invalid input_format '{input_format}' for 3-channel array. Must be 'rgb' or 'bgr'"
+                    )
+            elif channels == 4:
+                # Convert to RGBA based on input format
+                if input_format == "rgb" or input_format == "rgba":
+                    rgba_array = image  # Assume RGBA
+                elif input_format == "bgr" or input_format == "bgra":
+                    rgba_array = cv2.cvtColor(image, cv2.COLOR_BGRA2RGBA)  # type: ignore[assignment]
+                else:
+                    raise ValueError(
+                        f"Invalid input_format '{input_format}' for 4-channel array. "
+                        f"Must be 'rgb', 'bgr', 'rgba', or 'bgra'"
+                    )
+            else:
+                raise ValueError(f"Expected 3 or 4 channels, got {channels}")
 
-        # Encode to image bytes
-        image_bytes = _encode_image_to_bytes(bgra_array, format=format, quality=quality)
-
-        # Store as base64 encoded string (as bytes)
+        image_bytes = _encode_image_to_bytes(rgba_array, format=format, quality=quality)
         base64_str = base64.b64encode(image_bytes).decode("utf-8")
-
         mimetype = f"image/{format}"
         return cls(mimetype=mimetype, is_base64=True, data=base64_str.encode("utf-8"))
 
@@ -290,6 +343,59 @@ class DataURI(BaseModel):
 
     # ========== Conversion Methods ==========
 
+    def to_ndarray(
+        self,
+        format: Literal["rgb", "bgr", "rgba", "bgra", "gray"] = "rgb",
+    ) -> npt.NDArray[np.uint8]:
+        """Convert to numpy ndarray in specified format.
+
+        Args:
+            format: Output format (default: "rgb")
+                - "rgb": RGB color (H, W, 3)
+                - "bgr": BGR color (H, W, 3)
+                - "rgba": RGB with alpha (H, W, 4)
+                - "bgra": BGR with alpha (H, W, 4)
+                - "gray": Grayscale (H, W)
+
+        Returns:
+            Numpy ndarray in requested format
+
+        Raises:
+            ValueError: If data is not a valid image or format is invalid
+
+        Examples:
+            >>> data_uri = DataURI.from_file("image.png")
+            >>> rgb = data_uri.to_ndarray()  # Default RGB format
+        """
+        if not self.is_image:
+            raise ValueError(f"Cannot convert non-image MIME type '{self.mimetype}' to numpy array")
+
+        try:
+            # Get decoded data (handles base64 decoding if needed)
+            image_bytes = self.decoded_data
+
+            # Decode image bytes to RGBA using cv2
+            rgba_array = _decode_image_to_rgba(image_bytes)
+
+            # Convert to requested format
+            CONVERSION_MAP = {
+                "rgb": cv2.COLOR_RGBA2RGB,
+                "bgr": cv2.COLOR_RGBA2BGR,
+                "bgra": cv2.COLOR_RGBA2BGRA,
+                "gray": cv2.COLOR_RGBA2GRAY,
+            }
+            if format == "rgba":
+                return rgba_array
+            if format in CONVERSION_MAP:
+                return cv2.cvtColor(rgba_array, CONVERSION_MAP[format])  # type: ignore[return-value]
+
+            raise ValueError(f"Unsupported format: {format}. Must be one of: rgb, bgr, rgba, bgra, gray")
+        except ValueError:
+            # Re-raise ValueError (format errors or conversion errors)
+            raise
+        except Exception as e:
+            raise ValueError(f"Failed to decode image data: {e}") from e
+
     def to_pil_image(self) -> PIL.Image.Image:
         """Convert to PIL Image.
 
@@ -300,33 +406,8 @@ class DataURI(BaseModel):
             ValueError: If data is not a valid image
         """
         # Convert to RGB array first, then to PIL
-        rgb_array = self.to_rgb_array()
+        rgb_array = self.to_ndarray(format="rgb")
         return PIL.Image.fromarray(rgb_array, mode="RGB")
-
-    def to_rgb_array(self) -> npt.NDArray[np.uint8]:
-        """Convert to RGB numpy array (H, W, 3).
-
-        Returns:
-            RGB numpy array with shape (H, W, 3) and dtype uint8
-
-        Raises:
-            ValueError: If data is not a valid image
-        """
-        if not self.is_image:
-            raise ValueError(f"Cannot convert non-image MIME type '{self.mimetype}' to PIL Image")
-
-        try:
-            # Get decoded data (handles base64 decoding if needed)
-            image_bytes = self.decoded_data
-
-            # Decode image bytes to BGRA using cv2
-            bgra_array = _decode_image_to_bgra(image_bytes)
-
-            # Convert BGRA to RGB
-            rgb_array: npt.NDArray[np.uint8] = cv2.cvtColor(bgra_array, cv2.COLOR_BGRA2RGB)  # type: ignore[assignment]
-            return rgb_array
-        except Exception as e:
-            raise ValueError(f"Failed to decode image data: {e}") from e
 
     # ========== String Representation ==========
 

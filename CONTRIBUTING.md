@@ -30,7 +30,7 @@ pytest
 pytest --cov=mediaref --cov-report=html
 
 # Run specific test
-pytest tests/test_loading.py::TestToRgbArrayImage::test_to_rgb_array_from_file
+pytest tests/test_loading.py::TestToNdarrayImage::test_to_ndarray_from_file -xvs
 ```
 
 ## Code Style
