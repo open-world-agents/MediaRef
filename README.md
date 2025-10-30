@@ -203,10 +203,6 @@ ref = MediaRef.model_validate_json(json_str)           # From JSON
 | Backend | PyAV (FFmpeg) | TorchCodec (FFmpeg) |
 | Installation | `pip install mediaref[video]` | `pip install torchcodec>=0.4.0` |
 
-**When to use:**
-- Use `PyAVVideoDecoder` (default) for fine-grained control over batch decoding strategies
-- Use `TorchCodecVideoDecoder` for GPU-accelerated decoding when processing large batches
-
 ## Design Notes
 
 - **Video container caching**: Uses reference counting with LRU eviction (default: 10 containers)
