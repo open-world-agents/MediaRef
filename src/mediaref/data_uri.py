@@ -345,18 +345,18 @@ class DataURI(BaseModel):
             rgba_array = _decode_image_to_rgba(image_bytes)
 
             # Convert to requested format
-            if format == "rgb":
-                return cv2.cvtColor(rgba_array, cv2.COLOR_RGBA2RGB)  # type: ignore[return-value]
-            elif format == "bgr":
-                return cv2.cvtColor(rgba_array, cv2.COLOR_RGBA2BGR)  # type: ignore[return-value]
-            elif format == "rgba":
+            CONVERSION_MAP = {
+                "rgb": cv2.COLOR_RGBA2RGB,
+                "bgr": cv2.COLOR_RGBA2BGR,
+                "bgra": cv2.COLOR_RGBA2BGRA,
+                "gray": cv2.COLOR_RGBA2GRAY,
+            }
+            if format == "rgba":
                 return rgba_array
-            elif format == "bgra":
-                return cv2.cvtColor(rgba_array, cv2.COLOR_RGBA2BGRA)  # type: ignore[return-value]
-            elif format == "gray":
-                return cv2.cvtColor(rgba_array, cv2.COLOR_RGBA2GRAY)  # type: ignore[return-value]
-            else:
-                raise ValueError(f"Unsupported format: {format}. Must be one of: rgb, bgr, rgba, bgra, gray")
+            if format in CONVERSION_MAP:
+                return cv2.cvtColor(rgba_array, CONVERSION_MAP[format])  # type: ignore[return-value]
+
+            raise ValueError(f"Unsupported format: {format}. Must be one of: rgb, bgr, rgba, bgra, gray")
         except ValueError:
             # Re-raise ValueError (format errors or conversion errors)
             raise
