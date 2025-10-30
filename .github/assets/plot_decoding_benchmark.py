@@ -4,7 +4,7 @@
 import matplotlib.pyplot as plt
 
 # Benchmark data
-configurations = ["Baseline", "TorchCodec\n(batch)", "MediaRef\n(adaptive batch)"]
+configurations = ["Sequential\nDecoding", "TorchCodec\n(batch)", "MediaRef\n(adaptive batch)"]
 throughput = [24.25, 79.73, 119.16]  # img/s
 io_efficiency = [41.69, 770.39, 18.73]  # KB/img
 
@@ -87,5 +87,5 @@ ax2.text(
 plt.tight_layout()
 
 # Save figure
-plt.savefig(".github/assets/decoding_benchmark.png", dpi=150, bbox_inches="tight")
-print("Figure saved to .github/assets/decoding_benchmark.png")
+plt.savefig("decoding_benchmark.png", dpi=150, bbox_inches="tight")
+print("Figure saved to decoding_benchmark.png")
