@@ -236,6 +236,7 @@ class DataURI(BaseModel):
         image: Union[npt.NDArray[np.uint8], PIL.Image.Image],
         format: Literal["png", "jpeg", "bmp"] = "png",
         quality: Optional[int] = None,
+        input_format: Literal["rgb", "bgr", "rgba", "bgra"] = "rgb",
     ) -> "DataURI":
         """Create from numpy array or PIL Image.
 
@@ -243,12 +244,27 @@ class DataURI(BaseModel):
             image: PIL Image or numpy array
             format: Output format ('png', 'jpeg', 'bmp')
             quality: JPEG quality (1-100), ignored for PNG/BMP
+            input_format: Input channel order for numpy arrays. Default: 'rgb'.
+                - 'rgb': RGB format (3 channels)
+                - 'bgr': BGR format (3 channels, e.g., from cv2.imread)
+                - 'rgba': RGBA format (4 channels)
+                - 'bgra': BGRA format (4 channels, e.g., from cv2.imread with alpha)
+                Ignored for PIL Images.
 
         Returns:
             DataURI instance
 
         Note:
             Alpha channel is only preserved in PNG format.
+
+        Examples:
+            >>> # RGB numpy array (default)
+            >>> rgb_array = np.zeros((100, 100, 3), dtype=np.uint8)
+            >>> data_uri = DataURI.from_image(rgb_array, format="png")
+            >>>
+            >>> # BGR numpy array (e.g., from OpenCV)
+            >>> bgr_array = cv2.imread("image.jpg")
+            >>> data_uri = DataURI.from_image(bgr_array, format="png", input_format="bgr")
         """
         if isinstance(image, PIL.Image.Image):
             rgba_array: npt.NDArray[np.uint8] = np.array(image.convert("RGBA"), dtype=np.uint8)
@@ -258,9 +274,26 @@ class DataURI(BaseModel):
 
             channels = image.shape[2]
             if channels == 3:
-                rgba_array = cv2.cvtColor(image, cv2.COLOR_RGB2RGBA)  # type: ignore[assignment]
+                # Convert to RGBA based on input format
+                if input_format == "rgb":
+                    rgba_array = cv2.cvtColor(image, cv2.COLOR_RGB2RGBA)  # type: ignore[assignment]
+                elif input_format == "bgr":
+                    rgba_array = cv2.cvtColor(image, cv2.COLOR_BGR2RGBA)  # type: ignore[assignment]
+                else:
+                    raise ValueError(
+                        f"Invalid input_format '{input_format}' for 3-channel array. Must be 'rgb' or 'bgr'"
+                    )
             elif channels == 4:
-                rgba_array = image
+                # Convert to RGBA based on input format
+                if input_format == "rgb" or input_format == "rgba":
+                    rgba_array = image  # Assume RGBA
+                elif input_format == "bgr" or input_format == "bgra":
+                    rgba_array = cv2.cvtColor(image, cv2.COLOR_BGRA2RGBA)  # type: ignore[assignment]
+                else:
+                    raise ValueError(
+                        f"Invalid input_format '{input_format}' for 4-channel array. "
+                        f"Must be 'rgb', 'bgr', 'rgba', or 'bgra'"
+                    )
             else:
                 raise ValueError(f"Expected 3 or 4 channels, got {channels}")
 

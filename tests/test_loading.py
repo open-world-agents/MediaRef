@@ -366,6 +366,69 @@ class TestDataURIFormats:
 
         assert len(high_quality) > len(low_quality)
 
+    def test_input_format_rgb(self, sample_rgb: npt.NDArray[np.uint8]):
+        """Test input_format='rgb' (default)."""
+        data_uri = DataURI.from_image(sample_rgb, format="png", input_format="rgb")
+        restored = data_uri.to_ndarray()
+
+        # Should be lossless for PNG
+        assert np.array_equal(sample_rgb, restored)
+
+    def test_input_format_bgr(self, sample_rgb: npt.NDArray[np.uint8]):
+        """Test input_format='bgr' correctly converts BGR to RGB."""
+        import cv2
+
+        # Convert RGB to BGR
+        bgr_array = cv2.cvtColor(sample_rgb, cv2.COLOR_RGB2BGR)
+
+        # Create DataURI with input_format='bgr'
+        data_uri = DataURI.from_image(bgr_array, format="png", input_format="bgr")
+        restored = data_uri.to_ndarray()
+
+        # Should match original RGB
+        assert np.array_equal(sample_rgb, restored)
+
+    def test_input_format_rgba(self, sample_rgb: npt.NDArray[np.uint8]):
+        """Test input_format='rgba' with 4-channel RGBA array."""
+        import cv2
+
+        # Convert RGB to RGBA
+        rgba_array = cv2.cvtColor(sample_rgb, cv2.COLOR_RGB2RGBA)
+
+        # Create DataURI with input_format='rgba'
+        data_uri = DataURI.from_image(rgba_array, format="png", input_format="rgba")
+        restored = data_uri.to_ndarray()
+
+        # Should match original RGB
+        assert np.array_equal(sample_rgb, restored)
+
+    def test_input_format_bgra(self, sample_rgb: npt.NDArray[np.uint8]):
+        """Test input_format='bgra' with 4-channel BGRA array."""
+        import cv2
+
+        # Convert RGB to BGRA
+        bgra_array = cv2.cvtColor(sample_rgb, cv2.COLOR_RGB2BGRA)
+
+        # Create DataURI with input_format='bgra'
+        data_uri = DataURI.from_image(bgra_array, format="png", input_format="bgra")
+        restored = data_uri.to_ndarray()
+
+        # Should match original RGB
+        assert np.array_equal(sample_rgb, restored)
+
+    def test_input_format_invalid_3channel(self, sample_rgb: npt.NDArray[np.uint8]):
+        """Test that invalid input_format for 3-channel array raises ValueError."""
+        with pytest.raises(ValueError, match="Invalid input_format.*for 3-channel array"):
+            DataURI.from_image(sample_rgb, format="png", input_format="rgba")  # type: ignore
+
+    def test_input_format_invalid_4channel(self, sample_rgb: npt.NDArray[np.uint8]):
+        """Test that invalid input_format for 4-channel array raises ValueError."""
+        import cv2
+
+        rgba_array = cv2.cvtColor(sample_rgb, cv2.COLOR_RGB2RGBA)
+        with pytest.raises(ValueError, match="Invalid input_format.*for 4-channel array"):
+            DataURI.from_image(rgba_array, format="png", input_format="invalid")  # type: ignore
+
 
 class TestDataURIConversion:
     """Test DataURI conversion methods."""

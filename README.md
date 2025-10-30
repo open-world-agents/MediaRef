@@ -93,6 +93,11 @@ from PIL import Image
 pil_img = Image.open("image.png")
 embedded_ref = MediaRef(uri=DataURI.from_image(pil_img, format="jpeg", quality=90))
 
+# Or from BGR array (OpenCV uses BGR by default - input_format="bgr" is REQUIRED)
+import cv2
+bgr_array = cv2.imread("image.jpg")  # OpenCV loads as BGR, not RGB!
+embedded_ref = MediaRef(uri=DataURI.from_image(bgr_array, format="png", input_format="bgr"))
+
 # Use just like any other MediaRef
 rgb = embedded_ref.to_ndarray()                        # (H, W, 3) RGB array
 pil = embedded_ref.to_pil_image()                      # PIL Image
@@ -149,7 +154,14 @@ ref = MediaRef.model_validate_json(json_str)           # From JSON
 ### DataURI (for embedding media)
 
 **Class Methods:**
-- `from_image(image: np.ndarray | PIL.Image, format="png", quality=None) -> DataURI` - Create from image
+- `from_image(image: np.ndarray | PIL.Image, format="png", quality=None, input_format="rgb") -> DataURI` - Create from image
+  - `format`: Output format (`"png"`, `"jpeg"`, `"bmp"`)
+  - `quality`: JPEG quality (1-100), ignored for PNG/BMP
+  - `input_format`: Input channel order for numpy arrays. Default: `"rgb"`. Ignored for PIL Images.
+    - `"rgb"`: RGB format (3 channels)
+    - `"bgr"`: BGR format (3 channels) - **REQUIRED for OpenCV arrays** (e.g., `cv2.imread()`)
+    - `"rgba"`: RGBA format (4 channels)
+    - `"bgra"`: BGRA format (4 channels)
   - PNG format preserves alpha channel; JPEG/BMP drop alpha
 - `from_file(path: str | Path, format=None) -> DataURI` - Create from file
 - `from_uri(uri: str) -> DataURI` - Parse data URI string
