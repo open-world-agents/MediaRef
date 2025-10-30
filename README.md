@@ -15,7 +15,7 @@ Pydantic media reference for images and video frames (with timestamp support) fr
 # Core package with image loading support
 pip install mediaref
 
-# With video support (adds PyAV for video frame extraction)
+# With video decoding support (adds PyAV for video frame extraction)
 pip install mediaref[video]
 ```
 
