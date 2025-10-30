@@ -3,7 +3,6 @@
 These tests verify internal implementation details not exposed by the public API:
 - Internal RGBA format handling (load_image_as_rgba)
 - Video frame caching behavior (keep_av_open parameter)
-- Color conversion correctness (RGBA <-> RGB)
 """
 
 from pathlib import Path
