@@ -40,6 +40,15 @@ pytest tests/test_loading.py::TestToNdarrayImage::test_to_ndarray_from_file -xvs
 - Write docstrings for public APIs
 - Keep functions focused and small
 
+## Design & Implementation Notes
+
+Understanding these implementation details can help when contributing to MediaRef:
+
+- **Video container caching**: Uses reference counting with LRU eviction (default: 10 containers)
+- **Garbage collection**: Triggered every 10 PyAV operations to handle FFmpeg reference cycles
+- **Cache size**: Configurable via `AV_CACHE_SIZE` environment variable
+- **Lazy loading**: Video dependencies only imported when needed (not at module import time)
+
 ## Making Changes
 
 1. Create a new branch for your feature/fix

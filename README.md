@@ -201,13 +201,6 @@ ref = MediaRef.model_validate_json(json_str)           # From JSON
 
 See [API Documentation](docs/API.md) for detailed API reference.
 
-## Design Notes
-
-- **Video container caching**: Uses reference counting with LRU eviction (default: 10 containers)
-- **Garbage collection**: Triggered every 10 PyAV operations to handle FFmpeg reference cycles
-- **Cache size**: Configurable via `AV_CACHE_SIZE` environment variable
-- **Lazy loading**: Video dependencies only imported when needed (not at module import time)
-
 ## Potential Future Enhancements
 
 - [ ] **HuggingFace datasets integration**: Add native `MediaRef` feature type to [HuggingFace datasets](https://github.com/huggingface/datasets) for seamless integration with the ML ecosystem
