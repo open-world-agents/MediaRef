@@ -23,10 +23,9 @@ from mediaref import MediaRef
 class VideoWriter:
     """Video encoder using PyAV with CFR and precise timestamps."""
 
-    def __init__(self, output_path: Path, fps: float = 30.0, keyframe_interval_sec: float = 1.0):
+    def __init__(self, output_path: Path, fps: float = 30.0):
         self.output_path = output_path
         self.fps = fps
-        self.keyframe_interval_sec = keyframe_interval_sec
         self.container = None
         self.stream = None
         self._closed = False
@@ -59,18 +58,19 @@ class VideoWriter:
     def _init_writer(self, width: int, height: int):
         """Initialize video encoder with CFR."""
         self.output_path.parent.mkdir(parents=True, exist_ok=True)
-        keyframe_interval = max(1, int(self.fps * self.keyframe_interval_sec))
+        gop_size = 30  # Ensure keyframe every 30 frames
 
         self.container = av.open(str(self.output_path), mode="w")
         self.stream = self.container.add_stream("h264", rate=int(self.fps))
         self.stream.width = width
         self.stream.height = height
         self.stream.pix_fmt = "yuv420p"
-        self.stream.codec_context.gop_size = keyframe_interval
+        self.stream.codec_context.gop_size = gop_size
         # Set options for fixed keyframe interval
         self.stream.codec_context.options = {
-            "g": str(keyframe_interval),
+            "g": str(gop_size),
             "sc_threshold": "0",  # Disable scenecut
+            "bf": "0",  # Disable B-frames (only I and P frames)
         }
 
     def close(self):
