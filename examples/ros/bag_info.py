@@ -54,7 +54,7 @@ def show_rosbag(bag_path: Path, max_messages: int, fmt: str):
     else:  # rosbag2
         print(f"ROS2 BAG DIRECTORY: {bag_path.name}")
         Reader = Rosbag2Reader
-        typestore = get_typestore(Stores.ROS2_HUMBLE)
+        typestore = get_typestore(Stores.ROS2_JAZZY)
         deserialize = typestore.deserialize_cdr
 
     with Reader(bag_path) as reader:

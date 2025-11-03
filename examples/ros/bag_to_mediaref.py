@@ -88,7 +88,7 @@ def convert_bag(
         writer_factory = lambda path: Writer1(path)  # noqa: E731
     else:  # rosbag2
         Reader = Reader2
-        typestore = get_typestore(Stores.ROS2_HUMBLE)
+        typestore = get_typestore(Stores.ROS2_JAZZY)
         deserialize = typestore.deserialize_cdr
         serialize = typestore.serialize_cdr
         writer_factory = lambda path: Writer2(path, version=9)  # noqa: E731

@@ -36,7 +36,7 @@ def read_mediaref_messages(bag_path: Path, max_count: int, fmt: str) -> list[tup
         is_string_msg = lambda msgtype: "String" in msgtype  # noqa: E731
     else:  # rosbag2
         Reader = Rosbag2Reader
-        typestore = get_typestore(Stores.ROS2_HUMBLE)
+        typestore = get_typestore(Stores.ROS2_JAZZY)
         deserialize = typestore.deserialize_cdr
         is_string_msg = lambda msgtype: msgtype == "std_msgs/msg/String"  # noqa: E731
 
