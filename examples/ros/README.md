@@ -1,12 +1,12 @@
-# ROS Bag Viewers
+# ROS MediaRef Tools
 
-Separate scripts for each ROS bag format.
+Tools for working with ROS bags and MediaRef format.
 
 ## Scripts
 
-- **`show_ros1_bag.py`** - View ROS1 .bag files
-- **`show_ros2_bag.py`** - View ROS2 bag directories
-- **`show_mcap.py`** - View MCAP files
+- **`bag_info.py`** - Display bag contents (ROS1/ROS2/MCAP)
+- **`bag_to_mediaref.py`** - Convert bags with CompressedImage to MediaRef format
+- **`mediaref_decode.py`** - Read and decode MediaRef bags
 
 ## Installation
 
@@ -20,25 +20,34 @@ pip3 install -r requirements.txt
 
 ## Usage
 
-### ROS1 .bag files
+### View bag contents
 ```bash
-uv run show_ros1_bag.py ba234b52c88d7f1f0da04baab375f574.bag
-```
+# Auto-detects format (ROS1/ROS2/MCAP)
+uv run bag_info.py ba234b52c88d7f1f0da04baab375f574.bag
+uv run bag_info.py ba234b52c88d7f1f0da04baab375f574/
+uv run bag_info.py ba234b52c88d7f1f0da04baab375f574_ros1.mcap
 
-### ROS2 directories
-```bash
-uv run show_ros2_bag.py ba234b52c88d7f1f0da04baab375f574
-```
-
-### MCAP files
-```bash
-uv run show_mcap.py ba234b52c88d7f1f0da04baab375f574_ros1.mcap
-```
-
-### Options
-```bash
 # Show more messages per topic
-uv run show_ros1_bag.py my_bag.bag --max-messages 5
+uv run bag_info.py my_bag.bag -n 5
+```
+
+### Convert to MediaRef format
+```bash
+# Auto-detects ROS1/ROS2
+uv run bag_to_mediaref.py input.bag
+uv run bag_to_mediaref.py input/
+
+# Custom output path and video settings
+uv run bag_to_mediaref.py input.bag -o output.bag --fps 30 --keyframe-interval 1.0
+```
+
+### Read MediaRef bags
+```bash
+# Display MediaRef messages
+uv run mediaref_decode.py output_mediaref.bag -n 10
+
+# Batch decode and save frames
+uv run mediaref_decode.py output_mediaref.bag --batch-decode --max-frames 20 -o frames/
 ```
 
 ## Bag Info

@@ -17,31 +17,37 @@ def detect_format(path: Path) -> str:
     """Detect bag format."""
     if path.is_file() and path.suffix == ".bag":
         return "rosbag1"
-    elif path.is_file() and path.suffix == ".mcap":
-        return "mcap"
     elif path.is_dir() and (path / "metadata.yaml").exists():
         return "rosbag2"
     raise ValueError(f"Unknown format: {path}")
 
 
-def read_rosbag1(bag_path: Path, max_messages: int):
-    """Read ROS1 bag with MediaRef messages."""
-    typestore = get_typestore(Stores.ROS1_NOETIC)
+def read_bag(bag_path: Path, max_messages: int, fmt: str):
+    """Read bag with MediaRef messages."""
+    if fmt == "rosbag1":
+        Reader = Rosbag1Reader
+        typestore = get_typestore(Stores.ROS1_NOETIC)
+        deserialize = typestore.deserialize_ros1
+        is_string_msg = lambda msgtype: "String" in msgtype
+    else:  # rosbag2
+        Reader = Rosbag2Reader
+        typestore = get_typestore(Stores.ROS2_HUMBLE)
+        deserialize = typestore.deserialize_cdr
+        is_string_msg = lambda msgtype: msgtype == "std_msgs/msg/String"
 
-    with Rosbag1Reader(bag_path) as reader:
-        mediaref_topics = [conn for conn in reader.connections if "String" in conn.msgtype]
+    with Reader(bag_path) as reader:
+        mediaref_topics = [conn for conn in reader.connections if is_string_msg(conn.msgtype)]
         print(f"Found {len(mediaref_topics)} MediaRef topics: {[c.topic for c in mediaref_topics]}")
 
         if max_messages > 0:
             print(f"\nReading first {max_messages} MediaRef messages:\n")
             count = 0
-            for connection, _timestamp, rawdata in reader.messages():
-                if "String" not in connection.msgtype:
+            for connection, _, rawdata in reader.messages():
+                if not is_string_msg(connection.msgtype):
                     continue
 
-                msg = typestore.deserialize_ros1(rawdata, connection.msgtype)
+                msg = deserialize(rawdata, connection.msgtype)
                 ref = MediaRef.model_validate_json(msg.data)
-
                 print(f"[{count}] {connection.topic}: {ref.uri} @ {ref.pts_ns / 1e9:.3f}s")
 
                 count += 1
@@ -49,34 +55,18 @@ def read_rosbag1(bag_path: Path, max_messages: int):
                     break
 
 
-def read_rosbag2(bag_path: Path, max_messages: int):
-    """Read ROS2 bag with MediaRef messages."""
-    typestore = get_typestore(Stores.ROS2_HUMBLE)
-
-    with Rosbag2Reader(bag_path) as reader:
-        mediaref_topics = [conn for conn in reader.connections if conn.msgtype == "std_msgs/msg/String"]
-        print(f"Found {len(mediaref_topics)} MediaRef topics: {[c.topic for c in mediaref_topics]}")
-
-        if max_messages > 0:
-            print(f"\nReading first {max_messages} MediaRef messages:\n")
-            count = 0
-            for connection, _timestamp, rawdata in reader.messages():
-                if connection.msgtype != "std_msgs/msg/String":
-                    continue
-
-                msg = typestore.deserialize_cdr(rawdata, connection.msgtype)
-                ref = MediaRef.model_validate_json(msg.data)
-
-                print(f"[{count}] {connection.topic}: {ref.uri} @ {ref.pts_ns / 1e9:.3f}s")
-
-                count += 1
-                if count >= max_messages:
-                    break
-
-
-def batch_decode_demo(bag_path: Path, max_frames: int, output_dir: Path):
+def batch_decode_demo(bag_path: Path, max_frames: int, output_dir: Path, fmt: str):
     """Demo: Batch decode frames and save to files."""
-    typestore = get_typestore(Stores.ROS1_NOETIC)
+    if fmt == "rosbag1":
+        Reader = Rosbag1Reader
+        typestore = get_typestore(Stores.ROS1_NOETIC)
+        deserialize = typestore.deserialize_ros1
+        is_string_msg = lambda msgtype: "String" in msgtype
+    else:  # rosbag2
+        Reader = Rosbag2Reader
+        typestore = get_typestore(Stores.ROS2_HUMBLE)
+        deserialize = typestore.deserialize_cdr
+        is_string_msg = lambda msgtype: msgtype == "std_msgs/msg/String"
 
     print(f"\n{'=' * 60}")
     print("BATCH DECODE DEMO")
@@ -86,12 +76,12 @@ def batch_decode_demo(bag_path: Path, max_frames: int, output_dir: Path):
     refs = []
     topics = []
 
-    with Rosbag1Reader(bag_path) as reader:
-        for connection, _timestamp, rawdata in reader.messages():
-            if "String" not in connection.msgtype:
+    with Reader(bag_path) as reader:
+        for connection, _, rawdata in reader.messages():
+            if not is_string_msg(connection.msgtype):
                 continue
 
-            msg = typestore.deserialize_ros1(rawdata, connection.msgtype)
+            msg = deserialize(rawdata, connection.msgtype)
             ref = MediaRef.model_validate_json(msg.data)
             refs.append(ref)
             topics.append(connection.topic)
@@ -171,14 +161,9 @@ def main():
         print(f"Format: {fmt}\n")
 
         if args.batch_decode:
-            batch_decode_demo(args.bag_path, args.max_frames, args.output)
+            batch_decode_demo(args.bag_path, args.max_frames, args.output, fmt)
         else:
-            if fmt == "rosbag1":
-                read_rosbag1(args.bag_path, args.max_messages)
-            elif fmt == "rosbag2":
-                read_rosbag2(args.bag_path, args.max_messages)
-            else:
-                print("Warning: MCAP format not yet implemented", file=sys.stderr)
+            read_bag(args.bag_path, args.max_messages, fmt)
     except Exception as e:
         print(f"Error: Failed to read bag: {e}", file=sys.stderr)
         raise SystemExit(1)
