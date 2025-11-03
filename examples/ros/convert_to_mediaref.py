@@ -8,7 +8,10 @@ from pathlib import Path
 import av
 import cv2
 import numpy as np
-from rosbags.rosbag1 import Reader, Writer
+from rosbags.rosbag1 import Reader as Reader1
+from rosbags.rosbag1 import Writer as Writer1
+from rosbags.rosbag2 import Reader as Reader2
+from rosbags.rosbag2 import Writer as Writer2
 from rosbags.typesys import Stores, get_typestore
 from tqdm import tqdm
 
@@ -72,9 +75,24 @@ class VideoWriter:
             self.container.close()
 
 
-def convert_rosbag1(input_path: Path, output_path: Path, media_dir: Path, fps: float, keyframe_interval_sec: float):
-    """Convert ROS1 bag file to MediaRef format."""
-    typestore = get_typestore(Stores.ROS1_NOETIC)
+def convert_bag(
+    input_path: Path, output_path: Path, media_dir: Path, fps: float, keyframe_interval_sec: float, fmt: str
+):
+    """Convert ROS bag to MediaRef format."""
+    # Select Reader/Writer and serialization based on format
+    if fmt == "rosbag1":
+        Reader = Reader1
+        typestore = get_typestore(Stores.ROS1_NOETIC)
+        deserialize = typestore.deserialize_ros1
+        serialize = typestore.serialize_ros1
+        writer_factory = lambda path: Writer1(path)
+    else:  # rosbag2
+        Reader = Reader2
+        typestore = get_typestore(Stores.ROS2_HUMBLE)
+        deserialize = typestore.deserialize_cdr
+        serialize = typestore.serialize_cdr
+        writer_factory = lambda path: Writer2(path, version=9)
+
     video_writers = {}
     first_timestamps = {}
 
@@ -105,7 +123,7 @@ def convert_rosbag1(input_path: Path, output_path: Path, media_dir: Path, fps: f
                 if connection.topic not in video_writers:
                     continue
 
-                msg = typestore.deserialize_ros1(rawdata, connection.msgtype)
+                msg = deserialize(rawdata, connection.msgtype)
                 pts_ns = msg.header.stamp.sec * 1_000_000_000 + msg.header.stamp.nanosec
 
                 if connection.topic not in first_timestamps:
@@ -113,7 +131,6 @@ def convert_rosbag1(input_path: Path, output_path: Path, media_dir: Path, fps: f
 
                 video_writers[connection.topic].add_frame(bytes(msg.data))
 
-                # Update progress by time elapsed
                 pbar.update((timestamp - last_time) / 1e9)
                 last_time = timestamp
 
@@ -121,7 +138,7 @@ def convert_rosbag1(input_path: Path, output_path: Path, media_dir: Path, fps: f
         writer.close()
 
     # Pass 2: Create MediaRef bag
-    with Reader(input_path) as reader, Writer(output_path) as writer:
+    with Reader(input_path) as reader, writer_factory(output_path) as writer:
         conn_map = {}
         for connection in reader.connections:
             msgtype = "std_msgs/msg/String" if connection.topic in video_writers else connection.msgtype
@@ -137,29 +154,46 @@ def convert_rosbag1(input_path: Path, output_path: Path, media_dir: Path, fps: f
             last_time = start_time
             for connection, timestamp, rawdata in reader.messages():
                 if connection.topic in video_writers:
-                    msg = typestore.deserialize_ros1(rawdata, connection.msgtype)
+                    msg = deserialize(rawdata, connection.msgtype)
                     pts_ns = msg.header.stamp.sec * 1_000_000_000 + msg.header.stamp.nanosec
                     relative_pts_ns = pts_ns - first_timestamps[connection.topic]
 
                     topic_name = connection.topic.strip("/").replace("/", "_")
                     ref = MediaRef(uri=f"media/{topic_name}.mp4", pts_ns=relative_pts_ns)
                     ref_msg = typestore.types["std_msgs/msg/String"](data=ref.model_dump_json())
-                    ref_data = typestore.serialize_ros1(ref_msg, "std_msgs/msg/String")
+                    ref_data = serialize(ref_msg, "std_msgs/msg/String")
                     writer.write(conn_map[connection.id], timestamp, ref_data)
                 else:
                     writer.write(conn_map[connection.id], timestamp, rawdata)
 
-                # Update progress by time elapsed
                 pbar.update((timestamp - last_time) / 1e9)
                 last_time = timestamp
 
     print_stats(input_path, output_path, media_dir)
 
 
+def detect_format(path: Path) -> str:
+    """Detect bag format."""
+    if path.is_file() and path.suffix == ".bag":
+        return "rosbag1"
+    elif path.is_dir() and (path / "metadata.yaml").exists():
+        return "rosbag2"
+    raise ValueError(f"Unknown format: {path}")
+
+
 def print_stats(input_path: Path, output_path: Path, media_dir: Path):
     """Print file size statistics."""
-    input_size = input_path.stat().st_size
-    output_size = output_path.stat().st_size
+    if input_path.is_file():
+        input_size = input_path.stat().st_size
+    else:
+        # ROS2 bag is a directory
+        input_size = sum(f.stat().st_size for f in input_path.rglob("*") if f.is_file())
+
+    if output_path.is_file():
+        output_size = output_path.stat().st_size
+    else:
+        output_size = sum(f.stat().st_size for f in output_path.rglob("*") if f.is_file())
+
     media_size = sum(f.stat().st_size for f in media_dir.glob("*.mp4"))
     total_size = output_size + media_size
 
@@ -172,8 +206,8 @@ def print_stats(input_path: Path, output_path: Path, media_dir: Path):
 
 def main():
     parser = argparse.ArgumentParser(description="Convert ROS bag files to MediaRef format")
-    parser.add_argument("input", type=Path, help="Input bag file")
-    parser.add_argument("--output", type=Path, help="Output bag file")
+    parser.add_argument("input", type=Path, help="Input bag file or directory (ROS1 .bag or ROS2 directory)")
+    parser.add_argument("--output", type=Path, help="Output bag file or directory")
     parser.add_argument("--fps", type=float, default=30.0, help="Video FPS (default: 30)")
     parser.add_argument(
         "--keyframe-interval", type=float, default=1.0, help="Keyframe interval in seconds (default: 1.0)"
@@ -183,10 +217,17 @@ def main():
     if not args.input.exists():
         sys.exit(f"Error: {args.input} not found")
 
-    if args.input.suffix != ".bag":
-        sys.exit("Error: Only ROS1 .bag files supported")
+    # Detect format
+    try:
+        fmt = detect_format(args.input)
+    except ValueError as e:
+        sys.exit(f"Error: {e}")
 
-    output_path = args.output or args.input.parent / f"{args.input.stem}_mediaref.bag"
+    # Determine output path
+    if fmt == "rosbag1":
+        output_path = args.output or args.input.parent / f"{args.input.stem}_mediaref.bag"
+    else:  # rosbag2
+        output_path = args.output or args.input.parent / f"{args.input.name}_mediaref"
 
     if output_path.exists():
         sys.exit(f"Error: {output_path} already exists")
@@ -194,7 +235,7 @@ def main():
     media_dir = output_path.parent / "media"
     media_dir.mkdir(parents=True, exist_ok=True)
 
-    convert_rosbag1(args.input, output_path, media_dir, args.fps, args.keyframe_interval)
+    convert_bag(args.input, output_path, media_dir, args.fps, args.keyframe_interval, fmt)
 
 
 if __name__ == "__main__":

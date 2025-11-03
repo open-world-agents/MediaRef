@@ -64,7 +64,7 @@ def read_rosbag1(bag_path: Path, max_messages: int = 10):
 
 def read_rosbag2(bag_path: Path, max_messages: int = 10):
     """Read ROS2 bag with MediaRef messages."""
-    typestore = get_typestore(Stores.ROS2_FOXY)
+    typestore = get_typestore(Stores.ROS2_JAZZY)
 
     with Rosbag2Reader(bag_path) as reader:
         mediaref_topics = [conn for conn in reader.connections if conn.msgtype == "std_msgs/msg/String"]
@@ -80,7 +80,7 @@ def read_rosbag2(bag_path: Path, max_messages: int = 10):
             if connection.msgtype != "std_msgs/msg/String":
                 continue
 
-            msg = typestore.deserialize_ros1(rawdata, connection.msgtype)
+            msg = typestore.deserialize_cdr(rawdata, connection.msgtype)
             ref = MediaRef.model_validate_json(msg.data)
 
             print(f"[{count}] Topic: {connection.topic}")
