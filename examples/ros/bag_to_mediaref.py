@@ -3,7 +3,6 @@
 
 import argparse
 import sys
-from fractions import Fraction
 from pathlib import Path
 
 import av
@@ -20,6 +19,7 @@ from tqdm import tqdm
 from mediaref import MediaRef
 
 
+# NOTE: We must deal with bagfile with short duration / with different duration than embedded images. e.g. 0d83527337fb0277195e6c3264d84804.bag
 class VideoWriter:
     """Video encoder using PyAV with CFR and precise timestamps."""
 
@@ -32,12 +32,11 @@ class VideoWriter:
         self._closed = False
         self.frame_count = 0
 
-    def add_frame(self, image_data: bytes, pts_ns: int = 0):
+    def add_frame(self, image_data: bytes):
         """Add compressed image frame to video.
 
         Args:
             image_data: JPEG compressed image data
-            pts_ns: Unused (kept for API compatibility)
         """
         img_array = np.frombuffer(image_data, dtype=np.uint8)
         frame = cv2.imdecode(img_array, cv2.IMREAD_COLOR)
@@ -140,7 +139,7 @@ def convert_bag(
                     continue
 
                 msg = deserialize(rawdata, connection.msgtype)
-                video_writers[connection.topic].add_frame(bytes(msg.data), 0)  # pts_ns unused in CFR
+                video_writers[connection.topic].add_frame(bytes(msg.data))
                 frame_indices[connection.topic] += 1
 
                 pbar.update((timestamp - last_time) / 1e9)
