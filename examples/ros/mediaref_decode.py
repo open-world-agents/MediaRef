@@ -1,5 +1,10 @@
 #!/usr/bin/env python3
-"""Read and decode MediaRef-converted bag files (ROS1/ROS2)."""
+"""Read MediaRef-converted bag files (ROS1/ROS2).
+
+MediaRef bags contain JSON references to video files instead of raw image data:
+- Original: CompressedImage messages (large binary data)
+- MediaRef: String messages with JSON like {"uri": "output.media/camera.mp4", "pts_ns": 123456789}
+"""
 
 import argparse
 import sys
@@ -22,8 +27,8 @@ def detect_format(path: Path) -> str:
     raise ValueError(f"Unknown format: {path}")
 
 
-def read_bag(bag_path: Path, max_messages: int, fmt: str, decode_frames: bool = False, output_dir: Path | None = None):
-    """Read bag with MediaRef messages and optionally decode frames."""
+def read_mediaref_messages(bag_path: Path, max_count: int, fmt: str) -> list[tuple[MediaRef, str]]:
+    """Read MediaRef messages from bag and return list of (MediaRef, topic) tuples."""
     if fmt == "rosbag1":
         Reader = Rosbag1Reader
         typestore = get_typestore(Stores.ROS1_NOETIC)
@@ -35,92 +40,75 @@ def read_bag(bag_path: Path, max_messages: int, fmt: str, decode_frames: bool = 
         deserialize = typestore.deserialize_cdr
         is_string_msg = lambda msgtype: msgtype == "std_msgs/msg/String"  # noqa: E731
 
+    refs = []
     with Reader(bag_path) as reader:
-        mediaref_topics = [conn for conn in reader.connections if is_string_msg(conn.msgtype)]
-        print(f"Found {len(mediaref_topics)} MediaRef topics: {[c.topic for c in mediaref_topics]}")
-
-        # Collect MediaRef objects
-        refs = []
-        topics = []
-        count = 0
-
         for connection, _, rawdata in reader.messages():
             if not is_string_msg(connection.msgtype):
                 continue
 
             msg = deserialize(rawdata, connection.msgtype)
             ref = MediaRef.model_validate_json(msg.data)
+            refs.append((ref, connection.topic))
 
-            if decode_frames:
-                refs.append(ref)
-                topics.append(connection.topic)
-                if len(refs) >= max_messages:
-                    break
-            else:
-                print(f"[{count}] {connection.topic}: {ref.uri} @ {ref.pts_ns / 1e9:.3f}s")
-                count += 1
-                if count >= max_messages:
-                    break
+            if len(refs) >= max_count:
+                break
 
-    # Batch decode if requested
-    if decode_frames and refs and output_dir:
-        print(f"\nCollected {len(refs)} MediaRef objects from topics: {set(topics)}")
+    return refs
 
-        # Resolve relative paths against bag file directory
-        bag_dir = str(bag_path.parent)
-        refs = [ref.resolve_relative_path(bag_dir) for ref in refs]
 
-        # Batch decode frames
-        print("Batch decoding frames...")
-        frames = batch_decode(refs, decoder="pyav")
-        print(f"Decoded {len(frames)} frames (shape: {frames[0].shape}, dtype: {frames[0].dtype})\n")
+def display_messages(refs: list[tuple[MediaRef, str]]):
+    """Display MediaRef messages."""
+    print(f"\nMediaRef messages ({len(refs)}):\n")
+    for i, (ref, topic) in enumerate(refs):
+        print(f"[{i}] {topic}: {ref.uri} @ {ref.pts_ns / 1e9:.3f}s")
 
-        # Save frames to files organized by topic
-        output_dir.mkdir(exist_ok=True, parents=True)
-        print(f"Saving frames to {output_dir}/")
 
-        topic_counters = {}
-        for frame, topic in zip(frames, topics):
-            topic_name = topic.replace("/", "_").strip("_")
-            topic_dir = output_dir / topic_name
-            topic_dir.mkdir(exist_ok=True)
+def decode_and_save(refs: list[tuple[MediaRef, str]], bag_path: Path, output_dir: Path):
+    """Decode frames from MediaRef and save to files."""
+    # Resolve relative paths
+    bag_dir = str(bag_path.parent)
+    resolved_refs = [ref.resolve_relative_path(bag_dir) for ref, _ in refs]
 
-            if topic not in topic_counters:
-                topic_counters[topic] = 0
+    # Batch decode
+    print(f"\nDecoding {len(resolved_refs)} frames...")
+    frames = batch_decode(resolved_refs, decoder="pyav")
+    print(f"Decoded {len(frames)} frames (shape: {frames[0].shape}, dtype: {frames[0].dtype})")
 
-            frame_idx = topic_counters[topic]
-            topic_counters[topic] += 1
+    # Save frames organized by topic
+    output_dir.mkdir(exist_ok=True, parents=True)
+    topic_counters = {}
 
-            filename = topic_dir / f"frame_{frame_idx:04d}.jpg"
-            frame_bgr = cv2.cvtColor(frame, cv2.COLOR_RGB2BGR)
-            cv2.imwrite(str(filename), frame_bgr)
+    for frame, (_, topic) in zip(frames, refs):
+        topic_name = topic.replace("/", "_").strip("_")
+        topic_dir = output_dir / topic_name
+        topic_dir.mkdir(exist_ok=True)
 
-        # Print summary
-        print("")
-        for topic, count in topic_counters.items():
-            topic_name = topic.replace("/", "_").strip("_")
-            print(f"  {topic_name}/: {count} frames")
+        if topic not in topic_counters:
+            topic_counters[topic] = 0
 
-        print(f"\n✓ Batch decode complete! Saved {len(frames)} frames to {output_dir}/")
+        frame_idx = topic_counters[topic]
+        topic_counters[topic] += 1
+
+        filename = topic_dir / f"frame_{frame_idx:04d}.jpg"
+        frame_bgr = cv2.cvtColor(frame, cv2.COLOR_RGB2BGR)
+        cv2.imwrite(str(filename), frame_bgr)
+
+    # Summary
+    print(f"\nSaved to {output_dir}/:")
+    for topic, count in topic_counters.items():
+        topic_name = topic.replace("/", "_").strip("_")
+        print(f"  {topic_name}/: {count} frames")
 
 
 def main():
     parser = argparse.ArgumentParser(
-        description="Read and decode MediaRef-converted bag files (auto-detects ROS1/ROS2)",
+        description="Read MediaRef-converted bag files (auto-detects ROS1/ROS2)",
         formatter_class=argparse.RawDescriptionHelpFormatter,
     )
     parser.add_argument("bag_path", type=Path, help="Path to bag file or directory")
-    parser.add_argument(
-        "-n", "--max-messages", type=int, default=10, help="Max messages to display/decode (default: 10)"
-    )
-    parser.add_argument("--batch-decode", action="store_true", help="Decode frames and save to files")
-    parser.add_argument(
-        "-o",
-        "--output",
-        type=Path,
-        default=Path("decoded_frames"),
-        help="Output directory for batch decode (default: decoded_frames)",
-    )
+    parser.add_argument("-n", "--max-messages", type=int, default=30, help="Max messages (default: 30)")
+    parser.add_argument("--decode", action="store_true", help="Decode frames and save to files")
+    parser.add_argument("-o", "--output", type=Path, default=Path("decoded_frames"), help="Output directory")
     args = parser.parse_args()
 
     if not args.bag_path.exists():
@@ -129,17 +117,15 @@ def main():
 
     try:
         fmt = detect_format(args.bag_path)
-        print(f"Format: {fmt}\n")
+        refs = read_mediaref_messages(args.bag_path, args.max_messages, fmt)
 
-        read_bag(
-            args.bag_path,
-            args.max_messages,
-            fmt,
-            decode_frames=args.batch_decode,
-            output_dir=args.output if args.batch_decode else None,
-        )
+        if args.decode:
+            decode_and_save(refs, args.bag_path, args.output)
+        else:
+            display_messages(refs)
+
     except Exception as e:
-        print(f"Error: Failed to read bag: {e}", file=sys.stderr)
+        print(f"Error: {e}", file=sys.stderr)
         raise SystemExit(1)
 
 

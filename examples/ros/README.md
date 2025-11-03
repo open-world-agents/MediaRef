@@ -42,11 +42,11 @@ uv run bag_to_mediaref.py input.bag -o output.bag --fps 30 --keyframe-interval 1
 
 ### Read MediaRef bags
 ```bash
-# Display MediaRef messages
+# Display MediaRef messages (JSON references to video files)
 uv run mediaref_decode.py output_mediaref.bag -n 10
 
-# Batch decode and save frames
-uv run mediaref_decode.py output_mediaref.bag --batch-decode -n 20 -o frames/
+# Decode frames from video and save as images
+uv run mediaref_decode.py output_mediaref.bag --decode -n 20 -o frames/
 ```
 
 ## Bag Info
