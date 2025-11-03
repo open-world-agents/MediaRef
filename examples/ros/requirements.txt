@@ -1,0 +1,7 @@
+rosbags>=0.9.23
+mcap>=1.0.0
+mediaref[video]>=0.1.4
+opencv-python>=4.8.0
+numpy>=1.24.0
+av>=10.0.0
+tqdm>=4.66.0
