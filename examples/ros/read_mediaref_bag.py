@@ -7,11 +7,13 @@ Demonstrates batch decoding and saving frames.
 
 import sys
 from pathlib import Path
+
+import cv2
 from rosbags.rosbag1 import Reader as Rosbag1Reader
 from rosbags.rosbag2 import Reader as Rosbag2Reader
 from rosbags.typesys import Stores, get_typestore
+
 from mediaref import MediaRef, batch_decode
-import cv2
 
 
 def detect_format(path: Path) -> str:
@@ -45,7 +47,7 @@ def read_rosbag1(bag_path: Path, max_messages: int = 10):
                 continue
 
             # Deserialize String message
-            msg = typestore.deserialize_cdr(rawdata, connection.msgtype)
+            msg = typestore.deserialize_ros1(rawdata, connection.msgtype)
 
             # Parse MediaRef from JSON
             ref = MediaRef.model_validate_json(msg.data)
@@ -78,7 +80,7 @@ def read_rosbag2(bag_path: Path, max_messages: int = 10):
             if connection.msgtype != "std_msgs/msg/String":
                 continue
 
-            msg = typestore.deserialize_cdr(rawdata, connection.msgtype)
+            msg = typestore.deserialize_ros1(rawdata, connection.msgtype)
             ref = MediaRef.model_validate_json(msg.data)
 
             print(f"[{count}] Topic: {connection.topic}")
@@ -109,7 +111,7 @@ def batch_decode_demo(bag_path: Path, output_dir: Path = Path("decoded_frames"))
             if "String" not in connection.msgtype:
                 continue
 
-            msg = typestore.deserialize_cdr(rawdata, connection.msgtype)
+            msg = typestore.deserialize_ros1(rawdata, connection.msgtype)
             ref = MediaRef.model_validate_json(msg.data)
             refs.append(ref)
             topics.append(connection.topic)
