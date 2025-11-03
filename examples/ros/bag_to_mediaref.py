@@ -3,6 +3,7 @@
 
 import argparse
 import sys
+from fractions import Fraction
 from pathlib import Path
 
 import av
@@ -20,7 +21,7 @@ from mediaref import MediaRef
 
 
 class VideoWriter:
-    """Video encoder using PyAV with fixed keyframe interval."""
+    """Video encoder using PyAV with CFR and precise timestamps."""
 
     def __init__(self, output_path: Path, fps: float = 30.0, keyframe_interval_sec: float = 1.0):
         self.output_path = output_path
@@ -28,10 +29,16 @@ class VideoWriter:
         self.keyframe_interval_sec = keyframe_interval_sec
         self.container = None
         self.stream = None
+        self._closed = False
         self.frame_count = 0
 
-    def add_frame(self, image_data: bytes):
-        """Add compressed image frame to video."""
+    def add_frame(self, image_data: bytes, pts_ns: int = 0):
+        """Add compressed image frame to video.
+
+        Args:
+            image_data: JPEG compressed image data
+            pts_ns: Unused (kept for API compatibility)
+        """
         img_array = np.frombuffer(image_data, dtype=np.uint8)
         frame = cv2.imdecode(img_array, cv2.IMREAD_COLOR)
         if frame is None:
@@ -42,15 +49,16 @@ class VideoWriter:
 
         frame_rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
         video_frame = av.VideoFrame.from_ndarray(frame_rgb, format="rgb24")
+
+        # Use frame count as pts for CFR
         video_frame.pts = self.frame_count
+        self.frame_count += 1
 
         for packet in self.stream.encode(video_frame):
             self.container.mux(packet)
 
-        self.frame_count += 1
-
     def _init_writer(self, width: int, height: int):
-        """Initialize video encoder with fixed keyframe interval."""
+        """Initialize video encoder with CFR."""
         self.output_path.parent.mkdir(parents=True, exist_ok=True)
         keyframe_interval = max(1, int(self.fps * self.keyframe_interval_sec))
 
@@ -59,21 +67,23 @@ class VideoWriter:
         self.stream.width = width
         self.stream.height = height
         self.stream.pix_fmt = "yuv420p"
-        self.stream.gop_size = keyframe_interval
-        self.stream.options = {
-            # Set keyframe interval
+        self.stream.codec_context.gop_size = keyframe_interval
+        # Set options for fixed keyframe interval
+        self.stream.codec_context.options = {
             "g": str(keyframe_interval),
-            # Disable scenecut
-            "sc_threshold": "0",
+            "sc_threshold": "0",  # Disable scenecut
         }
 
     def close(self):
         """Finalize video file."""
+        if self._closed:
+            return
         if self.stream:
             for packet in self.stream.encode():
                 self.container.mux(packet)
         if self.container:
             self.container.close()
+        self._closed = True
 
 
 def convert_bag(
@@ -95,14 +105,14 @@ def convert_bag(
         writer_factory = lambda path: Writer2(path, version=9)  # noqa: E731
 
     video_writers = {}
-    first_timestamps = {}
+    frame_indices = {}  # Track frame index per topic for CFR
 
     # Media directory name for URI (e.g., "output.media")
     media_dir_name = media_dir.name
 
-    # Get bag duration for progress bar
+    # Get bag start time and duration
     with Reader(input_path) as reader:
-        start_time = reader.start_time
+        bag_start_time_ns = reader.start_time
         duration_ns = reader.duration
 
     # Pass 1: Extract images to videos
@@ -112,6 +122,7 @@ def convert_bag(
                 topic_name = conn.topic.strip("/").replace("/", "_")
                 video_path = media_dir / f"{topic_name}.mp4"
                 video_writers[conn.topic] = VideoWriter(video_path, fps, keyframe_interval_sec)
+                frame_indices[conn.topic] = 0
 
         if not video_writers:
             print("Error: No CompressedImage topics found", file=sys.stderr)
@@ -123,18 +134,14 @@ def convert_bag(
             unit="s",
             bar_format="{l_bar}{bar}| {n:.2f}/{total:.2f}s [{elapsed}<{remaining}]",
         ) as pbar:
-            last_time = start_time
+            last_time = bag_start_time_ns
             for connection, timestamp, rawdata in reader.messages():
                 if connection.topic not in video_writers:
                     continue
 
                 msg = deserialize(rawdata, connection.msgtype)
-                pts_ns = msg.header.stamp.sec * 1_000_000_000 + msg.header.stamp.nanosec
-
-                if connection.topic not in first_timestamps:
-                    first_timestamps[connection.topic] = pts_ns
-
-                video_writers[connection.topic].add_frame(bytes(msg.data))
+                video_writers[connection.topic].add_frame(bytes(msg.data), 0)  # pts_ns unused in CFR
+                frame_indices[connection.topic] += 1
 
                 pbar.update((timestamp - last_time) / 1e9)
                 last_time = timestamp
@@ -143,6 +150,9 @@ def convert_bag(
         writer.close()
 
     # Pass 2: Create MediaRef bag
+    # Reset frame indices for Pass 2
+    current_frame_indices = {topic: 0 for topic in video_writers}
+
     with Reader(input_path) as reader, writer_factory(output_path) as writer:
         conn_map = {}
         for connection in reader.connections:
@@ -162,19 +172,20 @@ def convert_bag(
             unit="s",
             bar_format="{l_bar}{bar}| {n:.2f}/{total:.2f}s [{elapsed}<{remaining}]",
         ) as pbar:
-            last_time = start_time
+            last_time = bag_start_time_ns
             for connection, timestamp, rawdata in reader.messages():
                 # Skip if connection was not added (unknown type)
                 if connection.id not in conn_map:
                     continue
 
                 if connection.topic in video_writers:
-                    msg = deserialize(rawdata, connection.msgtype)
-                    pts_ns = msg.header.stamp.sec * 1_000_000_000 + msg.header.stamp.nanosec
-                    relative_pts_ns = pts_ns - first_timestamps[connection.topic]
+                    # Calculate CFR-based pts_ns from frame index
+                    frame_idx = current_frame_indices[connection.topic]
+                    cfr_pts_ns = int(frame_idx * 1_000_000_000 / fps)
+                    current_frame_indices[connection.topic] += 1
 
                     topic_name = connection.topic.strip("/").replace("/", "_")
-                    ref = MediaRef(uri=f"{media_dir_name}/{topic_name}.mp4", pts_ns=relative_pts_ns)
+                    ref = MediaRef(uri=f"{media_dir_name}/{topic_name}.mp4", pts_ns=cfr_pts_ns)
                     ref_msg = typestore.types["std_msgs/msg/String"](data=ref.model_dump_json())
                     ref_data = serialize(ref_msg, "std_msgs/msg/String")
                     writer.write(conn_map[connection.id], timestamp, ref_data)
