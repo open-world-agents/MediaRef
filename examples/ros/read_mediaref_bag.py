@@ -123,6 +123,10 @@ def batch_decode_demo(bag_path: Path, output_dir: Path = Path("decoded_frames"))
     print(f"Collected {len(refs)} MediaRef objects")
     print(f"Topics: {set(topics)}\n")
 
+    # Resolve relative paths against bag file directory
+    bag_dir = str(bag_path.parent)
+    refs = [ref.resolve_relative_path(bag_dir) for ref in refs]
+
     # Batch decode frames
     print("Batch decoding frames...")
     frames = batch_decode(refs, decoder="pyav")

@@ -60,9 +60,9 @@ class VideoWriter:
         self.stream.pix_fmt = "yuv420p"
         self.stream.gop_size = keyframe_interval
         self.stream.options = {
-            "crf": "23",
+            # Set keyframe interval
             "g": str(keyframe_interval),
-            "keyint_min": str(keyframe_interval),
+            # Disable scenecut
             "sc_threshold": "0",
         }
 
@@ -95,6 +95,9 @@ def convert_bag(
 
     video_writers = {}
     first_timestamps = {}
+
+    # Media directory name for URI (e.g., "output.media")
+    media_dir_name = media_dir.name
 
     # Get bag duration for progress bar
     with Reader(input_path) as reader:
@@ -159,7 +162,7 @@ def convert_bag(
                     relative_pts_ns = pts_ns - first_timestamps[connection.topic]
 
                     topic_name = connection.topic.strip("/").replace("/", "_")
-                    ref = MediaRef(uri=f"media/{topic_name}.mp4", pts_ns=relative_pts_ns)
+                    ref = MediaRef(uri=f"{media_dir_name}/{topic_name}.mp4", pts_ns=relative_pts_ns)
                     ref_msg = typestore.types["std_msgs/msg/String"](data=ref.model_dump_json())
                     ref_data = serialize(ref_msg, "std_msgs/msg/String")
                     writer.write(conn_map[connection.id], timestamp, ref_data)
@@ -223,16 +226,20 @@ def main():
     except ValueError as e:
         sys.exit(f"Error: {e}")
 
-    # Determine output path
+    # Determine output path and media directory
     if fmt == "rosbag1":
         output_path = args.output or args.input.parent / f"{args.input.stem}_mediaref.bag"
+        media_dir = output_path.parent / f"{output_path.stem}.media"
     else:  # rosbag2
         output_path = args.output or args.input.parent / f"{args.input.name}_mediaref"
+        media_dir = output_path.parent / f"{output_path.name}.media"
 
     if output_path.exists():
         sys.exit(f"Error: {output_path} already exists")
 
-    media_dir = output_path.parent / "media"
+    if media_dir.exists():
+        sys.exit(f"Error: {media_dir} already exists")
+
     media_dir.mkdir(parents=True, exist_ok=True)
 
     convert_bag(args.input, output_path, media_dir, args.fps, args.keyframe_interval, fmt)
