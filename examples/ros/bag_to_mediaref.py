@@ -13,6 +13,7 @@ from rosbags.rosbag1 import Writer as Writer1
 from rosbags.rosbag2 import Reader as Reader2
 from rosbags.rosbag2 import Writer as Writer2
 from rosbags.typesys import Stores, get_typestore
+from rosbags.typesys.base import TypesysError
 from tqdm import tqdm
 
 from mediaref import MediaRef
@@ -146,8 +147,14 @@ def convert_bag(
         conn_map = {}
         for connection in reader.connections:
             msgtype = "std_msgs/msg/String" if connection.topic in video_writers else connection.msgtype
-            conn = writer.add_connection(connection.topic, msgtype, typestore=typestore)
-            conn_map[connection.id] = conn
+
+            # Try to add connection, skip if type is unknown. TODO: check whether this is safe for `tf2_msgs/msg/TFMessage`
+            try:
+                conn = writer.add_connection(connection.topic, msgtype, typestore=typestore)
+                conn_map[connection.id] = conn
+            except TypesysError as e:
+                print(f"Warning: Skipping topic {connection.topic} ({msgtype}): {e}", file=sys.stderr)
+                continue
 
         with tqdm(
             total=duration_ns / 1e9,
@@ -157,6 +164,10 @@ def convert_bag(
         ) as pbar:
             last_time = start_time
             for connection, timestamp, rawdata in reader.messages():
+                # Skip if connection was not added (unknown type)
+                if connection.id not in conn_map:
+                    continue
+
                 if connection.topic in video_writers:
                     msg = deserialize(rawdata, connection.msgtype)
                     pts_ns = msg.header.stamp.sec * 1_000_000_000 + msg.header.stamp.nanosec
