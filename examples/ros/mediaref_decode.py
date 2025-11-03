@@ -28,12 +28,12 @@ def read_bag(bag_path: Path, max_messages: int, fmt: str):
         Reader = Rosbag1Reader
         typestore = get_typestore(Stores.ROS1_NOETIC)
         deserialize = typestore.deserialize_ros1
-        is_string_msg = lambda msgtype: "String" in msgtype
+        is_string_msg = lambda msgtype: "String" in msgtype  # noqa: E731
     else:  # rosbag2
         Reader = Rosbag2Reader
         typestore = get_typestore(Stores.ROS2_HUMBLE)
         deserialize = typestore.deserialize_cdr
-        is_string_msg = lambda msgtype: msgtype == "std_msgs/msg/String"
+        is_string_msg = lambda msgtype: msgtype == "std_msgs/msg/String"  # noqa: E731
 
     with Reader(bag_path) as reader:
         mediaref_topics = [conn for conn in reader.connections if is_string_msg(conn.msgtype)]
@@ -61,12 +61,12 @@ def batch_decode_demo(bag_path: Path, max_frames: int, output_dir: Path, fmt: st
         Reader = Rosbag1Reader
         typestore = get_typestore(Stores.ROS1_NOETIC)
         deserialize = typestore.deserialize_ros1
-        is_string_msg = lambda msgtype: "String" in msgtype
+        is_string_msg = lambda msgtype: "String" in msgtype  # noqa: E731
     else:  # rosbag2
         Reader = Rosbag2Reader
         typestore = get_typestore(Stores.ROS2_HUMBLE)
         deserialize = typestore.deserialize_cdr
-        is_string_msg = lambda msgtype: msgtype == "std_msgs/msg/String"
+        is_string_msg = lambda msgtype: msgtype == "std_msgs/msg/String"  # noqa: E731
 
     print(f"\n{'=' * 60}")
     print("BATCH DECODE DEMO")

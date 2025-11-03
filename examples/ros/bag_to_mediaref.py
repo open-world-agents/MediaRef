@@ -85,13 +85,13 @@ def convert_bag(
         typestore = get_typestore(Stores.ROS1_NOETIC)
         deserialize = typestore.deserialize_ros1
         serialize = typestore.serialize_ros1
-        writer_factory = lambda path: Writer1(path)
+        writer_factory = lambda path: Writer1(path)  # noqa: E731
     else:  # rosbag2
         Reader = Reader2
         typestore = get_typestore(Stores.ROS2_HUMBLE)
         deserialize = typestore.deserialize_cdr
         serialize = typestore.serialize_cdr
-        writer_factory = lambda path: Writer2(path, version=9)
+        writer_factory = lambda path: Writer2(path, version=9)  # noqa: E731
 
     video_writers = {}
     first_timestamps = {}
