@@ -1,10 +1,7 @@
 #!/usr/bin/env python3
-"""
-Minimal demo to read MediaRef-converted bag files.
-Supports ROS1 bag, ROS2 bag, and MCAP formats.
-Demonstrates batch decoding and saving frames.
-"""
+"""Read and decode MediaRef-converted bag files (ROS1/ROS2/MCAP)."""
 
+import argparse
 import sys
 from pathlib import Path
 
@@ -27,73 +24,57 @@ def detect_format(path: Path) -> str:
     raise ValueError(f"Unknown format: {path}")
 
 
-def read_rosbag1(bag_path: Path, max_messages: int = 10):
+def read_rosbag1(bag_path: Path, max_messages: int):
     """Read ROS1 bag with MediaRef messages."""
     typestore = get_typestore(Stores.ROS1_NOETIC)
 
     with Rosbag1Reader(bag_path) as reader:
-        # Find MediaRef topics (String messages - can be ROS1 or ROS2 format)
         mediaref_topics = [conn for conn in reader.connections if "String" in conn.msgtype]
+        print(f"Found {len(mediaref_topics)} MediaRef topics: {[c.topic for c in mediaref_topics]}")
 
-        print(f"Found {len(mediaref_topics)} MediaRef topics:")
-        for conn in mediaref_topics:
-            print(f"  {conn.topic}")
+        if max_messages > 0:
+            print(f"\nReading first {max_messages} MediaRef messages:\n")
+            count = 0
+            for connection, _timestamp, rawdata in reader.messages():
+                if "String" not in connection.msgtype:
+                    continue
 
-        print(f"\nReading first {max_messages} MediaRef messages:\n")
+                msg = typestore.deserialize_ros1(rawdata, connection.msgtype)
+                ref = MediaRef.model_validate_json(msg.data)
 
-        count = 0
-        for connection, timestamp, rawdata in reader.messages():
-            if "String" not in connection.msgtype:
-                continue
+                print(f"[{count}] {connection.topic}: {ref.uri} @ {ref.pts_ns / 1e9:.3f}s")
 
-            # Deserialize String message
-            msg = typestore.deserialize_ros1(rawdata, connection.msgtype)
-
-            # Parse MediaRef from JSON
-            ref = MediaRef.model_validate_json(msg.data)
-
-            print(f"[{count}] Topic: {connection.topic}")
-            print(f"    URI: {ref.uri}")
-            print(f"    PTS: {ref.pts_ns / 1e9:.3f}s")
-            print()
-
-            count += 1
-            if count >= max_messages:
-                break
+                count += 1
+                if count >= max_messages:
+                    break
 
 
-def read_rosbag2(bag_path: Path, max_messages: int = 10):
+def read_rosbag2(bag_path: Path, max_messages: int):
     """Read ROS2 bag with MediaRef messages."""
-    typestore = get_typestore(Stores.ROS2_JAZZY)
+    typestore = get_typestore(Stores.ROS2_HUMBLE)
 
     with Rosbag2Reader(bag_path) as reader:
         mediaref_topics = [conn for conn in reader.connections if conn.msgtype == "std_msgs/msg/String"]
+        print(f"Found {len(mediaref_topics)} MediaRef topics: {[c.topic for c in mediaref_topics]}")
 
-        print(f"Found {len(mediaref_topics)} MediaRef topics:")
-        for conn in mediaref_topics:
-            print(f"  {conn.topic}")
+        if max_messages > 0:
+            print(f"\nReading first {max_messages} MediaRef messages:\n")
+            count = 0
+            for connection, _timestamp, rawdata in reader.messages():
+                if connection.msgtype != "std_msgs/msg/String":
+                    continue
 
-        print(f"\nReading first {max_messages} MediaRef messages:\n")
+                msg = typestore.deserialize_cdr(rawdata, connection.msgtype)
+                ref = MediaRef.model_validate_json(msg.data)
 
-        count = 0
-        for connection, timestamp, rawdata in reader.messages():
-            if connection.msgtype != "std_msgs/msg/String":
-                continue
+                print(f"[{count}] {connection.topic}: {ref.uri} @ {ref.pts_ns / 1e9:.3f}s")
 
-            msg = typestore.deserialize_cdr(rawdata, connection.msgtype)
-            ref = MediaRef.model_validate_json(msg.data)
-
-            print(f"[{count}] Topic: {connection.topic}")
-            print(f"    URI: {ref.uri}")
-            print(f"    PTS: {ref.pts_ns / 1e9:.3f}s")
-            print()
-
-            count += 1
-            if count >= max_messages:
-                break
+                count += 1
+                if count >= max_messages:
+                    break
 
 
-def batch_decode_demo(bag_path: Path, output_dir: Path = Path("decoded_frames")):
+def batch_decode_demo(bag_path: Path, max_frames: int, output_dir: Path):
     """Demo: Batch decode frames and save to files."""
     typestore = get_typestore(Stores.ROS1_NOETIC)
 
@@ -106,8 +87,7 @@ def batch_decode_demo(bag_path: Path, output_dir: Path = Path("decoded_frames"))
     topics = []
 
     with Rosbag1Reader(bag_path) as reader:
-        count = 0
-        for connection, timestamp, rawdata in reader.messages():
+        for connection, _timestamp, rawdata in reader.messages():
             if "String" not in connection.msgtype:
                 continue
 
@@ -116,12 +96,10 @@ def batch_decode_demo(bag_path: Path, output_dir: Path = Path("decoded_frames"))
             refs.append(ref)
             topics.append(connection.topic)
 
-            count += 1
-            if count >= 20:  # Batch decode 20 frames
+            if len(refs) >= max_frames:
                 break
 
-    print(f"Collected {len(refs)} MediaRef objects")
-    print(f"Topics: {set(topics)}\n")
+    print(f"Collected {len(refs)} MediaRef objects from topics: {set(topics)}\n")
 
     # Resolve relative paths against bag file directory
     bag_dir = str(bag_path.parent)
@@ -131,41 +109,32 @@ def batch_decode_demo(bag_path: Path, output_dir: Path = Path("decoded_frames"))
     print("Batch decoding frames...")
     frames = batch_decode(refs, decoder="pyav")
 
-    print(f"Decoded {len(frames)} frames")
-    if frames:
-        print(f"Frame shape: {frames[0].shape}, dtype: {frames[0].dtype}\n")
+    print(f"Decoded {len(frames)} frames (shape: {frames[0].shape}, dtype: {frames[0].dtype})\n")
 
     # Save frames to files organized by topic
-    output_dir.mkdir(exist_ok=True)
+    output_dir.mkdir(exist_ok=True, parents=True)
     print(f"Saving frames to {output_dir}/")
 
     # Group frames by topic
     topic_counters = {}
 
-    for i, (frame, topic) in enumerate(zip(frames, topics)):
-        # Clean topic name for directory
+    for frame, topic in zip(frames, topics):
         topic_name = topic.replace("/", "_").strip("_")
-
-        # Create topic subdirectory
         topic_dir = output_dir / topic_name
         topic_dir.mkdir(exist_ok=True)
 
-        # Track frame count per topic
         if topic not in topic_counters:
             topic_counters[topic] = 0
 
         frame_idx = topic_counters[topic]
         topic_counters[topic] += 1
 
-        # Save with topic-specific numbering
         filename = topic_dir / f"frame_{frame_idx:04d}.jpg"
-
-        # Convert RGB to BGR for OpenCV
         frame_bgr = cv2.cvtColor(frame, cv2.COLOR_RGB2BGR)
         cv2.imwrite(str(filename), frame_bgr)
 
     # Print summary
-    print()
+    print("")
     for topic, count in topic_counters.items():
         topic_name = topic.replace("/", "_").strip("_")
         print(f"  {topic_name}/: {count} frames")
@@ -174,45 +143,45 @@ def batch_decode_demo(bag_path: Path, output_dir: Path = Path("decoded_frames"))
 
 
 def main():
-    if len(sys.argv) < 2:
-        print("Usage: python read_mediaref_bag.py <bag_file> [max_messages] [--batch-decode]")
-        print("\nExamples:")
-        print("  python read_mediaref_bag.py data_mediaref.bag")
-        print("  python read_mediaref_bag.py data_mediaref.bag 5")
-        print("  python read_mediaref_bag.py data_mediaref.bag 10 --batch-decode")
-        sys.exit(1)
+    parser = argparse.ArgumentParser(
+        description="Read and decode MediaRef-converted bag files (auto-detects ROS1/ROS2/MCAP)",
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+    )
+    parser.add_argument("bag_path", type=Path, help="Path to bag file or directory")
+    parser.add_argument(
+        "-n", "--max-messages", type=int, default=10, help="Max messages to display (default: 10, 0=none)"
+    )
+    parser.add_argument("--batch-decode", action="store_true", help="Run batch decode demo and save frames")
+    parser.add_argument("--max-frames", type=int, default=20, help="Max frames to decode in batch mode (default: 20)")
+    parser.add_argument(
+        "-o",
+        "--output",
+        type=Path,
+        default=Path("decoded_frames"),
+        help="Output directory for batch decode (default: decoded_frames)",
+    )
+    args = parser.parse_args()
 
-    bag_path = Path(sys.argv[1])
+    if not args.bag_path.exists():
+        print(f"Error: Path not found: {args.bag_path}", file=sys.stderr)
+        raise SystemExit(1)
 
-    # Check for --batch-decode flag
-    batch_mode = "--batch-decode" in sys.argv
-
-    # Get max_messages (skip --batch-decode if present)
-    max_messages = 10
-    for arg in sys.argv[2:]:
-        if arg != "--batch-decode" and arg.isdigit():
-            max_messages = int(arg)
-            break
-
-    if not bag_path.exists():
-        print(f"Error: {bag_path} not found")
-        sys.exit(1)
-
-    fmt = detect_format(bag_path)
-
-    if batch_mode:
-        # Run batch decode demo
-        batch_decode_demo(bag_path)
-    else:
-        # Run normal read demo
+    try:
+        fmt = detect_format(args.bag_path)
         print(f"Format: {fmt}\n")
 
-        if fmt == "rosbag1":
-            read_rosbag1(bag_path, max_messages)
-        elif fmt == "rosbag2":
-            read_rosbag2(bag_path, max_messages)
+        if args.batch_decode:
+            batch_decode_demo(args.bag_path, args.max_frames, args.output)
         else:
-            print("MCAP format not yet implemented")
+            if fmt == "rosbag1":
+                read_rosbag1(args.bag_path, args.max_messages)
+            elif fmt == "rosbag2":
+                read_rosbag2(args.bag_path, args.max_messages)
+            else:
+                print("Warning: MCAP format not yet implemented", file=sys.stderr)
+    except Exception as e:
+        print(f"Error: Failed to read bag: {e}", file=sys.stderr)
+        raise SystemExit(1)
 
 
 if __name__ == "__main__":

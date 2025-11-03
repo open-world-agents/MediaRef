@@ -113,7 +113,8 @@ def convert_bag(
                 video_writers[conn.topic] = VideoWriter(video_path, fps, keyframe_interval_sec)
 
         if not video_writers:
-            sys.exit("No CompressedImage topics found")
+            print("Error: No CompressedImage topics found", file=sys.stderr)
+            raise SystemExit(1)
 
         with tqdm(
             total=duration_ns / 1e9,
@@ -208,23 +209,30 @@ def print_stats(input_path: Path, output_path: Path, media_dir: Path):
 
 
 def main():
-    parser = argparse.ArgumentParser(description="Convert ROS bag files to MediaRef format")
-    parser.add_argument("input", type=Path, help="Input bag file or directory (ROS1 .bag or ROS2 directory)")
-    parser.add_argument("--output", type=Path, help="Output bag file or directory")
-    parser.add_argument("--fps", type=float, default=30.0, help="Video FPS (default: 30)")
+    parser = argparse.ArgumentParser(
+        description="Convert ROS bag files to MediaRef format (auto-detects ROS1/ROS2)",
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+    )
+    parser.add_argument("input", type=Path, help="Input bag file (.bag) or directory (ROS2)")
+    parser.add_argument("-o", "--output", type=Path, help="Output bag path (auto-generated if not specified)")
+    parser.add_argument("--fps", type=float, default=30.0, help="Video FPS (default: 30.0)")
     parser.add_argument(
         "--keyframe-interval", type=float, default=1.0, help="Keyframe interval in seconds (default: 1.0)"
     )
+    parser.add_argument("-q", "--quiet", action="store_true", help="Suppress progress bars")
     args = parser.parse_args()
 
     if not args.input.exists():
-        sys.exit(f"Error: {args.input} not found")
+        print(f"Error: Input not found: {args.input}", file=sys.stderr)
+        raise SystemExit(1)
 
     # Detect format
     try:
         fmt = detect_format(args.input)
+        print(f"Detected format: {fmt}")
     except ValueError as e:
-        sys.exit(f"Error: {e}")
+        print(f"Error: {e}", file=sys.stderr)
+        raise SystemExit(1)
 
     # Determine output path and media directory
     if fmt == "rosbag1":
@@ -235,12 +243,16 @@ def main():
         media_dir = output_path.parent / f"{output_path.name}.media"
 
     if output_path.exists():
-        sys.exit(f"Error: {output_path} already exists")
+        print(f"Error: Output already exists: {output_path}", file=sys.stderr)
+        raise SystemExit(1)
 
     if media_dir.exists():
-        sys.exit(f"Error: {media_dir} already exists")
+        print(f"Error: Media directory already exists: {media_dir}", file=sys.stderr)
+        raise SystemExit(1)
 
     media_dir.mkdir(parents=True, exist_ok=True)
+    print(f"Output: {output_path}")
+    print(f"Media: {media_dir}")
 
     convert_bag(args.input, output_path, media_dir, args.fps, args.keyframe_interval, fmt)
 
