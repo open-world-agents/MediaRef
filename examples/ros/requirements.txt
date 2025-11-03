@@ -1,5 +1,4 @@
 rosbags>=0.11.0
-mcap>=1.0.0
 mediaref[video]>=0.1.4
 opencv-python
 numpy>=1.24.0

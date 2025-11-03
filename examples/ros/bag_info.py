@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Show contents of ROS bag files (ROS1, ROS2, MCAP)."""
+"""Show contents of ROS bag files (ROS1/ROS2)."""
 
 import argparse
 from datetime import datetime
@@ -14,8 +14,6 @@ def detect_format(path: Path) -> str:
     """Detect bag format from path."""
     if path.is_file() and path.suffix == ".bag":
         return "rosbag1"
-    elif path.is_file() and path.suffix == ".mcap":
-        return "mcap"
     elif path.is_dir() and (path / "metadata.yaml").exists():
         return "rosbag2"
     raise ValueError(f"Unknown bag format: {path}")
@@ -46,12 +44,20 @@ def format_value(value, indent: int = 0) -> str:
     return f"{indent_str}{value}"
 
 
-def show_rosbag1(bag_path: Path, max_messages: int):
-    """Show contents of ROS1 bag file."""
-    print(f"ROS1 BAG FILE: {bag_path.name}")
-    typestore = get_typestore(Stores.ROS1_NOETIC)
+def show_rosbag(bag_path: Path, max_messages: int, fmt: str):
+    """Show contents of ROS bag file."""
+    if fmt == "rosbag1":
+        print(f"ROS1 BAG FILE: {bag_path.name}")
+        Reader = Rosbag1Reader
+        typestore = get_typestore(Stores.ROS1_NOETIC)
+        deserialize = typestore.deserialize_ros1
+    else:  # rosbag2
+        print(f"ROS2 BAG DIRECTORY: {bag_path.name}")
+        Reader = Rosbag2Reader
+        typestore = get_typestore(Stores.ROS2_HUMBLE)
+        deserialize = typestore.deserialize_cdr
 
-    with Rosbag1Reader(bag_path) as reader:
+    with Reader(bag_path) as reader:
         duration = reader.duration / 1e9
         print(f"Duration: {duration:.2f}s | Messages: {reader.message_count:,} | Topics: {len(reader.topics)}")
         print(f"Time: {format_timestamp(reader.start_time)} → {format_timestamp(reader.end_time)}")
@@ -81,101 +87,14 @@ def show_rosbag1(bag_path: Path, max_messages: int):
                     continue
 
                 topic_message_count[topic] += 1
-                msg = typestore.deserialize_ros1(rawdata, connection.msgtype)
+                msg = deserialize(rawdata, connection.msgtype)
                 print(f"\n[{topic}] {connection.msgtype} @ {format_timestamp(timestamp)}")
                 print(format_value(msg, 1))
-
-
-def show_rosbag2(bag_path: Path, max_messages: int):
-    """Show contents of ROS2 bag directory."""
-    print(f"ROS2 BAG DIRECTORY: {bag_path.name}")
-    typestore = get_typestore(Stores.ROS2_HUMBLE)
-
-    with Rosbag2Reader(bag_path) as reader:
-        duration = reader.duration / 1e9
-        print(f"Duration: {duration:.2f}s | Messages: {reader.message_count:,} | Topics: {len(reader.topics)}")
-        print(f"Time: {format_timestamp(reader.start_time)} → {format_timestamp(reader.end_time)}")
-
-        # Collect topic info
-        topic_info = {}
-        for connection in reader.connections:
-            topic = connection.topic
-            if topic not in topic_info:
-                topic_info[topic] = {"msgtype": connection.msgtype, "count": 0}
-            topic_info[topic]["count"] += connection.msgcount
-
-        print(f"\nTOPICS ({len(topic_info)}):")
-        for topic, info in sorted(topic_info.items()):
-            freq = info["count"] / duration if duration > 0 else 0
-            print(f"  {topic}: {info['msgtype']} ({info['count']:,} msgs, {freq:.2f} Hz)")
-
-        if max_messages > 0:
-            print(f"\nSAMPLE MESSAGES (max {max_messages} per topic):")
-            topic_message_count = {}
-
-            for connection, timestamp, rawdata in reader.messages():
-                topic = connection.topic
-                if topic not in topic_message_count:
-                    topic_message_count[topic] = 0
-                if topic_message_count[topic] >= max_messages:
-                    continue
-
-                topic_message_count[topic] += 1
-                msg = typestore.deserialize_cdr(rawdata, connection.msgtype)
-                print(f"\n[{topic}] {connection.msgtype} @ {format_timestamp(timestamp)}")
-                print(format_value(msg, 1))
-
-
-def show_mcap(mcap_path: Path, max_messages: int):
-    """Show contents of MCAP file."""
-    from mcap.reader import make_reader
-
-    print(f"MCAP FILE: {mcap_path.name}")
-
-    with open(mcap_path, "rb") as f:
-        reader = make_reader(f)
-        summary = reader.get_summary()
-
-        if summary and summary.statistics:
-            stats = summary.statistics
-            duration = (stats.message_end_time - stats.message_start_time) / 1e9
-            print(f"Duration: {duration:.2f}s | Messages: {stats.message_count:,} | Channels: {stats.channel_count}")
-            print(f"Time: {format_timestamp(stats.message_start_time)} → {format_timestamp(stats.message_end_time)}")
-
-        if summary and summary.channels:
-            print(f"\nCHANNELS ({len(summary.channels)}):")
-            for _channel_id, channel in summary.channels.items():
-                schema = summary.schemas.get(channel.schema_id)
-                schema_name = schema.name if schema else "unknown"
-                msg_count = sum(1 for _ in reader.iter_messages(topics=[channel.topic]))
-                freq = msg_count / duration if duration > 0 else 0
-                print(
-                    f"  {channel.topic}: {schema_name} [{channel.message_encoding}] ({msg_count:,} msgs, {freq:.2f} Hz)"
-                )
-
-        if max_messages > 0:
-            print(f"\nSAMPLE MESSAGES (max {max_messages} per topic):")
-            topic_message_count = {}
-
-            for schema, channel, message in reader.iter_messages():
-                topic = channel.topic
-                if topic not in topic_message_count:
-                    topic_message_count[topic] = 0
-                if topic_message_count[topic] >= max_messages:
-                    continue
-
-                topic_message_count[topic] += 1
-                schema_name = schema.name if schema else "unknown"
-                print(f"\n[{topic}] {schema_name} [{channel.message_encoding}] @ {format_timestamp(message.log_time)}")
-                print(f"  Data: {len(message.data)} bytes | Sequence: {message.sequence}")
-                if len(message.data) > 0:
-                    preview = message.data[:100].hex()[:200]
-                    print(f"  Preview: {preview}...")
 
 
 def main():
     parser = argparse.ArgumentParser(
-        description="Show contents of ROS bag files (auto-detects ROS1/ROS2/MCAP format)",
+        description="Show contents of ROS bag files (auto-detects ROS1/ROS2 format)",
         formatter_class=argparse.RawDescriptionHelpFormatter,
     )
     parser.add_argument("bag_path", type=Path, help="Path to bag file or directory")
@@ -190,13 +109,7 @@ def main():
 
     try:
         fmt = detect_format(args.bag_path)
-
-        if fmt == "rosbag1":
-            show_rosbag1(args.bag_path, args.max_messages)
-        elif fmt == "rosbag2":
-            show_rosbag2(args.bag_path, args.max_messages)
-        elif fmt == "mcap":
-            show_mcap(args.bag_path, args.max_messages)
+        show_rosbag(args.bag_path, args.max_messages, fmt)
     except Exception as e:
         print(f"Error: Failed to read bag: {e}", file=__import__("sys").stderr)
         raise SystemExit(1)

@@ -22,10 +22,9 @@ pip3 install -r requirements.txt
 
 ### View bag contents
 ```bash
-# Auto-detects format (ROS1/ROS2/MCAP)
+# Auto-detects format (ROS1/ROS2)
 uv run bag_info.py ba234b52c88d7f1f0da04baab375f574.bag
 uv run bag_info.py ba234b52c88d7f1f0da04baab375f574/
-uv run bag_info.py ba234b52c88d7f1f0da04baab375f574_ros1.mcap
 
 # Show more messages per topic
 uv run bag_info.py my_bag.bag -n 5
@@ -47,7 +46,7 @@ uv run bag_to_mediaref.py input.bag -o output.bag --fps 30 --keyframe-interval 1
 uv run mediaref_decode.py output_mediaref.bag -n 10
 
 # Batch decode and save frames
-uv run mediaref_decode.py output_mediaref.bag --batch-decode --max-frames 20 -o frames/
+uv run mediaref_decode.py output_mediaref.bag --batch-decode -n 20 -o frames/
 ```
 
 ## Bag Info
