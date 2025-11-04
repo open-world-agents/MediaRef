@@ -36,7 +36,7 @@ def format_value(value, indent: int = 0) -> str:
                 if hasattr(field_value, "__msgtype__"):
                     lines.append(f"{indent_str}{field}:")
                     lines.append(format_value(field_value, indent + 1))
-                elif str(type(field_value).__name__) == "ndarray":
+                elif isinstance(field_value, __import__('numpy').ndarray):
                     lines.append(f"{indent_str}{field}: ndarray")
                 else:
                     lines.append(f"{indent_str}{field}: {field_value}")
