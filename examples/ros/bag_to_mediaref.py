@@ -2,6 +2,7 @@
 """Convert ROS bag files with embedded CompressedImage messages to MediaRef format."""
 
 import argparse
+import shutil
 import sys
 from pathlib import Path
 
@@ -274,7 +275,23 @@ def main():
     print(f"Output: {output_path}")
     print(f"Media: {media_dir}")
 
-    convert_bag(args.input, output_path, media_dir, args.fps, args.keyframe_interval, fmt)
+    success = False
+    try:
+        convert_bag(args.input, output_path, media_dir, args.fps, args.keyframe_interval, fmt)
+        success = True
+    finally:
+        # Cleanup all outputs if conversion failed
+        if not success:
+            print("\nCleaning up due to conversion failure...", file=sys.stderr)
+            if media_dir.exists():
+                print(f"  Removing media directory: {media_dir}", file=sys.stderr)
+                shutil.rmtree(media_dir)
+            if output_path.exists():
+                print(f"  Removing output bag: {output_path}", file=sys.stderr)
+                if output_path.is_dir():
+                    shutil.rmtree(output_path)
+                else:
+                    output_path.unlink()
 
 
 if __name__ == "__main__":
