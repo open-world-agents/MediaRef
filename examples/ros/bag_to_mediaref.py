@@ -23,7 +23,7 @@ from mediaref import MediaRef
 class VideoWriter:
     """Video encoder using PyAV with CFR and precise timestamps."""
 
-    def __init__(self, output_path: Path, fps: float = 30.0):
+    def __init__(self, output_path: Path, *, fps: float = 30.0):
         self.output_path = output_path
         self.fps = fps
         self.container = None
@@ -120,7 +120,7 @@ def convert_bag(
             if "CompressedImage" in conn.msgtype:
                 topic_name = conn.topic.strip("/").replace("/", "_")
                 video_path = media_dir / f"{topic_name}.mp4"
-                video_writers[conn.topic] = VideoWriter(video_path, fps, keyframe_interval_sec)
+                video_writers[conn.topic] = VideoWriter(video_path, fps=fps)
                 frame_indices[conn.topic] = 0
 
         if not video_writers:
