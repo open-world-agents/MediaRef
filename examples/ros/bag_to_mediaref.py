@@ -240,7 +240,6 @@ def main():
     parser.add_argument(
         "--keyframe-interval", type=float, default=1.0, help="Keyframe interval in seconds (default: 1.0)"
     )
-    parser.add_argument("-q", "--quiet", action="store_true", help="Suppress progress bars")
     args = parser.parse_args()
 
     if not args.input.exists():

@@ -6,6 +6,7 @@ import sys
 from datetime import datetime
 from pathlib import Path
 
+import numpy as np
 from rosbags.rosbag1 import Reader as Rosbag1Reader
 from rosbags.rosbag2 import Reader as Rosbag2Reader
 from rosbags.typesys import Stores, get_typestore
@@ -37,7 +38,7 @@ def format_value(value, indent: int = 0) -> str:
                 if hasattr(field_value, "__msgtype__"):
                     lines.append(f"{indent_str}{field}:")
                     lines.append(format_value(field_value, indent + 1))
-                elif isinstance(field_value, __import__('numpy').ndarray):
+                elif isinstance(field_value, np.ndarray):
                     lines.append(f"{indent_str}{field}: ndarray")
                 else:
                     lines.append(f"{indent_str}{field}: {field_value}")
