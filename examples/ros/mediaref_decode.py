@@ -79,7 +79,7 @@ def decode_and_save(refs: list[tuple[MediaRef, str]], bag_path: Path, output_dir
     topic_counters = {}
 
     for frame, (_, topic) in zip(frames, refs):
-        topic_name = topic.replace("/", "_").strip("_")
+        topic_name = topic.strip("/").replace("/", "_")
         topic_dir = output_dir / topic_name
         topic_dir.mkdir(exist_ok=True)
 
