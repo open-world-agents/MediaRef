@@ -2,6 +2,7 @@
 """Show contents of ROS bag files (ROS1/ROS2)."""
 
 import argparse
+import sys
 from datetime import datetime
 from pathlib import Path
 
@@ -104,14 +105,14 @@ def main():
     args = parser.parse_args()
 
     if not args.bag_path.exists():
-        print(f"Error: Path not found: {args.bag_path}", file=__import__("sys").stderr)
+        print(f"Error: Path not found: {args.bag_path}", file=sys.stderr)
         raise SystemExit(1)
 
     try:
         fmt = detect_format(args.bag_path)
         show_rosbag(args.bag_path, args.max_messages, fmt)
     except Exception as e:
-        print(f"Error: Failed to read bag: {e}", file=__import__("sys").stderr)
+        print(f"Error: Failed to read bag: {e}", file=sys.stderr)
         raise SystemExit(1)
 
 
