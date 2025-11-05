@@ -19,7 +19,7 @@ logger.disable("mediaref")
 # Version is managed by hatch-vcs from Git tags
 try:
     from ._version import __version__
-except ImportError:
+except ImportError:  # pragma: no cover
     # Fallback for editable installs without build
     try:
         from importlib.metadata import version
