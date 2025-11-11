@@ -1,5 +1,5 @@
 rosbags>=0.11.0
-mediaref[video]>=0.1.4
+mediaref[video]>=0.4.1
 opencv-python
 numpy>=1.24.0
 av>=15.0.0
