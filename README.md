@@ -204,6 +204,7 @@ See [API Documentation](docs/API.md) for detailed API reference.
 ## Potential Future Enhancements
 
 - [ ] **HuggingFace datasets integration**: Add native `MediaRef` feature type to [HuggingFace datasets](https://github.com/huggingface/datasets) for seamless integration with the ML ecosystem
+- [ ] **msgspec support**: Replace pydantic BaseModel into [msgspec](https://jcristharif.com/msgspec/)
 - [ ] **Thread-safe resource caching**: Implement thread-safe `ResourceCache` for concurrent video decoding workloads
 - [ ] **Audio support**: Extend MediaRef to support audio references with timestamp-based extraction
 - [ ] **Cloud storage support**: Integrate `fsspec` for cloud URIs (e.g., `s3://`, `gs://`, `az://`)
