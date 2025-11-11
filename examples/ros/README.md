@@ -16,7 +16,7 @@ Traditional ROS bags store each image frame as an independent JPEG in a Compress
 
 ## Benchmark
 
-Sample bag: `ba234b52c88d7f1f0da04baab375f574.bag`
+Sample bag: `ba234b52c88d7f1f0da04baab375f574.bag` (bagfile is not included, try your own!)
 - Duration: 45 seconds
 - Topics: 4× CompressedImage (front/left/right cameras + local map)
 - Frames: 2,445 total (653-672 per topic @ 14-15 Hz)
