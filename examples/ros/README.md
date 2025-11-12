@@ -14,6 +14,14 @@ Traditional ROS bags store each image frame as an independent JPEG in a Compress
 {"data": '{"uri": "bag.media/camera.mp4", "pts_ns": 123456789}'}
 ```
 
+## What's Provided
+
+- **`bag_to_mediaref.py`**: Convert ROS bags (ROS1/ROS2) with CompressedImage topics to MediaRef format
+- **`mediaref_decode.py`**: Read and decode MediaRef-converted bags, extract frames as images
+- **`bag_info.py`**: Inspect ROS bag contents, topics, and message samples
+
+Thanks to the `rosbags` library, these scripts work **without ROS1/ROS2 installation**. All bag operations use pure Python packages.
+
 ## Benchmark
 
 Sample bag: `ba234b52c88d7f1f0da04baab375f574.bag` (bagfile is not included, try your own!)
