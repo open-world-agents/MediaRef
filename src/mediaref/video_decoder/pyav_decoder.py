@@ -5,6 +5,7 @@ from fractions import Fraction
 from typing import Generator, List, Optional, Union
 
 import av
+import cv2
 import numpy as np
 import numpy.typing as npt
 
@@ -176,8 +177,18 @@ class PyAVVideoDecoder(BaseVideoDecoder):
         av_frames = self._get_frames_at_timestamps(seconds, strategy)
 
         # Convert to RGB numpy arrays in NCHW format
-        frames = [frame.to_ndarray(format="rgb24") for frame in av_frames]
-        frames = [np.transpose(frame, (2, 0, 1)).astype(np.uint8) for frame in frames]
+        # Use the same conversion path as MediaRef.to_ndarray() for consistency:
+        # RGBA -> RGB via cv2 (instead of direct rgb24 conversion)
+        frames = []
+        for frame in av_frames:
+            # Convert to RGBA first. BUG: rgb24 yields incorrect value ONLY on OSX.
+            rgba_array = frame.to_ndarray(format="rgba")
+            # Convert RGBA to RGB using cv2
+            rgb_array = cv2.cvtColor(rgba_array, cv2.COLOR_RGBA2RGB)
+            # Transpose to NCHW format
+            frame_nchw = np.transpose(rgb_array, (2, 0, 1)).astype(np.uint8)
+            frames.append(frame_nchw)
+
         pts_list = [frame.time for frame in av_frames]
 
         duration = 1.0 / self.metadata.average_rate
