@@ -224,10 +224,12 @@ class MediaRef(BaseModel):
             >>> img = ref.to_pil_image()
         """
         # Extract 'format' from kwargs to handle it specifically
-        req_format = kwargs.pop("format", "rgb") # Default to 'rgb' if not provided
+        req_format = kwargs.pop("format", "rgb")  # Default to 'rgb' if not provided
 
         if req_format in ("bgr", "bgra"):
-            raise ValueError(f"Format '{req_format}' is not compatible with to_pil_image. Use 'rgb', 'rgba', or 'gray'.")
+            raise ValueError(
+                f"Format '{req_format}' is not compatible with to_pil_image. Use 'rgb', 'rgba', or 'gray'."
+            )
 
         # Pass the determined format and remaining kwargs to to_ndarray
         return PIL.Image.fromarray(self.to_ndarray(format=req_format, **kwargs))
