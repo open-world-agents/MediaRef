@@ -111,7 +111,8 @@ class TestToNdarrayVideo:
         rgb2 = ref2.to_ndarray()
 
         # Frames should be different (different intensities)
-        assert not np.array_equal(rgb1, rgb2)
+        with pytest.raises(AssertionError):
+            np.testing.assert_array_equal(rgb1, rgb2)
 
     def test_to_ndarray_video_nonexistent_file(self):
         """Test that loading from nonexistent video raises error."""
@@ -189,7 +190,7 @@ class TestToPilImage:
         pil_img = ref.to_pil_image()
         pil_array = np.array(pil_img)
 
-        assert np.array_equal(rgb_array, pil_array)
+        np.testing.assert_array_equal(rgb_array, pil_array)
 
     @pytest.mark.network
     def test_to_pil_image_from_remote_url(self, remote_test_image_url: str):
@@ -372,7 +373,7 @@ class TestDataURIFormats:
         restored = data_uri.to_ndarray()
 
         # Should be lossless for PNG
-        assert np.array_equal(sample_rgb, restored)
+        np.testing.assert_array_equal(sample_rgb, restored)
 
     def test_input_format_bgr(self, sample_rgb: npt.NDArray[np.uint8]):
         """Test input_format='bgr' correctly converts BGR to RGB."""
@@ -386,7 +387,7 @@ class TestDataURIFormats:
         restored = data_uri.to_ndarray()
 
         # Should match original RGB
-        assert np.array_equal(sample_rgb, restored)
+        np.testing.assert_array_equal(sample_rgb, restored)
 
     def test_input_format_rgba(self, sample_rgb: npt.NDArray[np.uint8]):
         """Test input_format='rgba' with 4-channel RGBA array."""
@@ -400,7 +401,7 @@ class TestDataURIFormats:
         restored = data_uri.to_ndarray()
 
         # Should match original RGB
-        assert np.array_equal(sample_rgb, restored)
+        np.testing.assert_array_equal(sample_rgb, restored)
 
     def test_input_format_bgra(self, sample_rgb: npt.NDArray[np.uint8]):
         """Test input_format='bgra' with 4-channel BGRA array."""
@@ -414,7 +415,7 @@ class TestDataURIFormats:
         restored = data_uri.to_ndarray()
 
         # Should match original RGB
-        assert np.array_equal(sample_rgb, restored)
+        np.testing.assert_array_equal(sample_rgb, restored)
 
     def test_input_format_invalid_3channel(self, sample_rgb: npt.NDArray[np.uint8]):
         """Test that invalid input_format for 3-channel array raises ValueError."""
@@ -475,14 +476,14 @@ class TestDataURIRoundtrip:
         data_uri = DataURI.from_image(sample_rgb, format="png")
         restored_rgb = data_uri.to_ndarray()
 
-        assert np.array_equal(sample_rgb, restored_rgb)
+        np.testing.assert_array_equal(sample_rgb, restored_rgb)
 
     def test_bmp_lossless_roundtrip(self, sample_rgb: npt.NDArray[np.uint8]):
         """Test BMP encoding is lossless."""
         data_uri = DataURI.from_image(sample_rgb, format="bmp")
         restored_rgb = data_uri.to_ndarray()
 
-        assert np.array_equal(sample_rgb, restored_rgb)
+        np.testing.assert_array_equal(sample_rgb, restored_rgb)
 
     def test_jpeg_lossy_roundtrip(self, sample_rgb: npt.NDArray[np.uint8]):
         """Test JPEG encoding is lossy but close."""
@@ -490,7 +491,7 @@ class TestDataURIRoundtrip:
         restored_rgb = data_uri.to_ndarray()
 
         assert sample_rgb.shape == restored_rgb.shape
-        assert np.allclose(sample_rgb, restored_rgb, atol=30)
+        np.testing.assert_allclose(sample_rgb, restored_rgb, atol=30)
 
     def test_uri_string_roundtrip(self, sample_rgb: npt.NDArray[np.uint8]):
         """Test parsing DataURI from string preserves data."""
@@ -499,7 +500,7 @@ class TestDataURIRoundtrip:
 
         assert parsed.mimetype == original.mimetype
         assert parsed.is_base64 == original.is_base64
-        assert np.array_equal(parsed.to_ndarray(), original.to_ndarray())
+        np.testing.assert_array_equal(parsed.to_ndarray(), original.to_ndarray())
 
     def test_rgba_alpha_preservation_png(self):
         """Test that alpha channel is preserved in PNG format."""
@@ -518,7 +519,7 @@ class TestDataURIRoundtrip:
         restored_rgba = data_uri.to_ndarray(format="rgba")
 
         # Verify alpha channel is preserved
-        assert np.array_equal(rgba, restored_rgba)
+        np.testing.assert_array_equal(rgba, restored_rgba)
 
     def test_rgba_alpha_dropped_jpeg(self):
         """Test that alpha channel is dropped in JPEG format."""
@@ -540,7 +541,7 @@ class TestDataURIRoundtrip:
         assert np.all(restored_rgba[:, :, 3] == 255)
 
         # Verify RGB channels are approximately preserved (JPEG is lossy)
-        assert np.allclose(rgba[:, :, :3], restored_rgba[:, :, :3], atol=30)
+        np.testing.assert_allclose(rgba[:, :, :3], restored_rgba[:, :, :3], atol=30)
 
 
 class TestDataURIWithMediaRef:
@@ -557,7 +558,7 @@ class TestDataURIWithMediaRef:
         ref = MediaRef(uri=data_uri)  # type: ignore[arg-type]
 
         assert ref.is_embedded
-        assert np.array_equal(ref.to_ndarray(), sample_rgb)
+        np.testing.assert_array_equal(ref.to_ndarray(), sample_rgb)
 
     def test_mediaref_accepts_datauri_string(self, sample_rgb: npt.NDArray[np.uint8]):
         """Test MediaRef accepts DataURI string."""
@@ -565,7 +566,7 @@ class TestDataURIWithMediaRef:
         ref = MediaRef(uri=str(data_uri))
 
         assert ref.is_embedded
-        assert np.array_equal(ref.to_ndarray(), sample_rgb)
+        np.testing.assert_array_equal(ref.to_ndarray(), sample_rgb)
 
     @pytest.mark.video
     def test_video_frame_to_datauri(self, sample_video_file: tuple[Path, list[int]]):
@@ -577,7 +578,7 @@ class TestDataURIWithMediaRef:
         ref = MediaRef(uri=data_uri)  # type: ignore[arg-type]
 
         assert ref.is_embedded
-        assert np.array_equal(ref.to_ndarray(), original_rgb)
+        np.testing.assert_array_equal(ref.to_ndarray(), original_rgb)
 
 
 class TestLoadingErrorHandling:
