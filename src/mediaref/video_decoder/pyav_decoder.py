@@ -176,12 +176,10 @@ class PyAVVideoDecoder(BaseVideoDecoder):
         # Get AV frames using internal method
         av_frames = self._get_frames_at_timestamps(seconds, strategy)
 
-        # Convert to RGB numpy arrays in NCHW format
-        # Use the same conversion path as MediaRef.to_ndarray() for consistency:
-        # RGBA -> RGB via cv2 (instead of direct rgb24 conversion)
+        # Convert to RGB numpy arrays in NCHW format.
         frames = []
         for frame in av_frames:
-            # Convert to RGBA first. BUG: rgb24 yields incorrect value ONLY on OSX.
+            # Convert to RGBA first. BUG: need rgba since rgb24 yields incorrect value ONLY on OSX.
             rgba_array = frame.to_ndarray(format="rgba")
             # Convert RGBA to RGB using cv2
             rgb_array = cv2.cvtColor(rgba_array, cv2.COLOR_RGBA2RGB)
