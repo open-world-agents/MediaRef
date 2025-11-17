@@ -223,8 +223,7 @@ class MediaRef(BaseModel):
             >>> ref = MediaRef(uri="image.png")
             >>> img = ref.to_pil_image()
         """
-        rgb_array = self.to_ndarray(format="rgb", **kwargs)
-        return PIL.Image.fromarray(rgb_array)
+        return PIL.Image.fromarray(self.to_ndarray(**kwargs))
 
     # ========== Internal ==========
 
