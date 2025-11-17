@@ -157,8 +157,7 @@ def load_video_frame_as_rgba(
         container = cached_av.open(actual_path, "r", keep_av_open=keep_av_open)
         try:
             frame = _read_frame_at_pts(container, pts_fraction)
-            rgb_array = frame.to_ndarray(format="rgb24")
-            rgba_array: npt.NDArray[np.uint8] = cv2.cvtColor(rgb_array, cv2.COLOR_RGB2RGBA)  # type: ignore[assignment]
+            rgba_array = frame.to_ndarray(format="rgba")
             return rgba_array
         finally:
             if not keep_av_open:
