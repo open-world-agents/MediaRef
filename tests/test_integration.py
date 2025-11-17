@@ -36,7 +36,7 @@ class TestEndToEndWorkflows:
         embedded_rgb = embedded_ref.to_ndarray()
 
         # 5. Verify data is identical (PNG is lossless)
-        assert np.array_equal(rgb, embedded_rgb)
+        np.testing.assert_array_equal(rgb, embedded_rgb)
 
     @pytest.mark.video
     def test_video_workflow_batch_processing(self, sample_video_file: tuple[Path, list[int]]):
@@ -109,7 +109,7 @@ class TestEndToEndWorkflows:
         # 5. Verify functionality
         original_rgb = original.to_ndarray()
         restored_rgb = restored.to_ndarray()
-        assert np.array_equal(original_rgb, restored_rgb)
+        np.testing.assert_array_equal(original_rgb, restored_rgb)
 
     def test_path_resolution_workflow(self, tmp_path: Path):
         """Test workflow: create relative ref -> resolve -> load."""
@@ -148,13 +148,13 @@ class TestDataURIIntegration:
 
         # Test PNG (lossless)
         png_ref = MediaRef(uri=DataURI.from_image(original_rgb, format="png"))
-        assert np.array_equal(original_rgb, png_ref.to_ndarray())
+        np.testing.assert_array_equal(original_rgb, png_ref.to_ndarray())
 
         # Test JPEG (lossy)
         jpeg_ref = MediaRef(uri=DataURI.from_image(original_rgb, format="jpeg", quality=90))
         jpeg_rgb = jpeg_ref.to_ndarray()
         assert jpeg_rgb.shape == original_rgb.shape
-        assert np.allclose(original_rgb, jpeg_rgb, atol=30)
+        np.testing.assert_allclose(original_rgb, jpeg_rgb, atol=30)
 
     def test_data_uri_serialization(self, sample_data_uri: str):
         """Test serializing and deserializing data URIs."""
@@ -174,7 +174,7 @@ class TestDataURIIntegration:
         # Load and compare
         original_rgb = ref.to_ndarray()
         restored_rgb = restored.to_ndarray()
-        assert np.array_equal(original_rgb, restored_rgb)
+        np.testing.assert_array_equal(original_rgb, restored_rgb)
 
     @pytest.mark.video
     def test_video_frame_to_data_uri(self, sample_video_file: tuple[Path, list[int]]):
@@ -186,7 +186,7 @@ class TestDataURIIntegration:
         embedded_ref = MediaRef(uri=DataURI.from_image(original_rgb, format="png"))
 
         # Verify roundtrip
-        assert np.array_equal(original_rgb, embedded_ref.to_ndarray())
+        np.testing.assert_array_equal(original_rgb, embedded_ref.to_ndarray())
 
 
 @pytest.mark.integration
@@ -223,7 +223,7 @@ class TestRemoteURLIntegration:
         embedded_ref = MediaRef(uri=DataURI.from_image(original_rgb, format="png"))
 
         # Verify roundtrip
-        assert np.array_equal(original_rgb, embedded_ref.to_ndarray())
+        np.testing.assert_array_equal(original_rgb, embedded_ref.to_ndarray())
 
 
 @pytest.mark.integration
@@ -310,4 +310,4 @@ class TestErrorRecovery:
         rgb2 = ref.to_ndarray()
 
         # Results should be identical
-        assert np.array_equal(rgb1, rgb2)
+        np.testing.assert_array_equal(rgb1, rgb2)

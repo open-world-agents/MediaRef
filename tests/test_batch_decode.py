@@ -51,8 +51,10 @@ class TestBatchDecodeImages:
             results = batch_decode(refs)
 
         # Images should be different (different intensities)
-        assert not np.array_equal(results[0], results[1])
-        assert not np.array_equal(results[1], results[2])
+        with pytest.raises(AssertionError):
+            np.testing.assert_array_equal(results[0], results[1])
+        with pytest.raises(AssertionError):
+            np.testing.assert_array_equal(results[1], results[2])
 
     def test_batch_decode_empty_list(self):
         """Test batch decoding with empty list."""
@@ -69,7 +71,7 @@ class TestBatchDecodeImages:
         # Verify order by checking individual loads
         for ref, result in zip(refs, results):
             individual_result = ref.to_ndarray()
-            assert np.array_equal(result, individual_result)
+            np.testing.assert_array_equal(result, individual_result)
 
 
 @pytest.mark.video
@@ -105,8 +107,10 @@ class TestBatchDecodeVideo:
         results = batch_decode(refs)
 
         # Frames should be different
-        assert not np.array_equal(results[0], results[1])
-        assert not np.array_equal(results[1], results[2])
+        with pytest.raises(AssertionError):
+            np.testing.assert_array_equal(results[0], results[1])
+        with pytest.raises(AssertionError):
+            np.testing.assert_array_equal(results[1], results[2])
 
     def test_batch_decode_preserves_order_video(self, sample_video_file: tuple[Path, list[int]]):
         """Test that batch_decode preserves order for video frames."""
@@ -117,7 +121,7 @@ class TestBatchDecodeVideo:
         # Verify order by checking individual loads
         for ref, result in zip(refs, results):
             individual_result = ref.to_ndarray()
-            assert np.array_equal(result, individual_result)
+            np.testing.assert_array_equal(result, individual_result)
 
 
 @pytest.mark.video
@@ -163,7 +167,7 @@ class TestBatchDecodeMixed:
         # Verify order
         for ref, result in zip(refs, results):
             individual_result = ref.to_ndarray()
-            assert np.array_equal(result, individual_result)
+            np.testing.assert_array_equal(result, individual_result)
 
 
 @pytest.mark.video
@@ -256,7 +260,7 @@ class TestBatchDecodeCache:
 
         # Results should be the same
         for r1, r2 in zip(results1, results2):
-            assert np.array_equal(r1, r2)
+            np.testing.assert_array_equal(r1, r2)
 
 
 @pytest.mark.performance
@@ -283,7 +287,7 @@ class TestBatchDecodePerformance:
 
         # Verify results are the same
         for batch_result, individual_result in zip(batch_results, individual_results):
-            assert np.array_equal(batch_result, individual_result)
+            np.testing.assert_array_equal(batch_result, individual_result)
 
         # Batch should be faster (at least 20% faster)
         print(f"\nBatch time: {batch_time:.4f}s, Individual time: {individual_time:.4f}s")

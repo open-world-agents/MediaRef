@@ -65,7 +65,8 @@ class TestInternalRGBAHandling:
         assert decoded_rgba.dtype == sample_rgba_array.dtype
 
         # JPEG is lossy - verify arrays are similar but not identical
-        assert not np.array_equal(decoded_rgba, sample_rgba_array)
+        with pytest.raises(AssertionError):
+            np.testing.assert_array_equal(decoded_rgba, sample_rgba_array)
         assert np.abs(decoded_rgba.astype(float) - sample_rgba_array.astype(float)).mean() < 50
 
 
