@@ -175,8 +175,8 @@ class PyAVVideoDecoder(BaseVideoDecoder):
         # Get AV frames using internal method
         av_frames = self._get_frames_at_timestamps(seconds, strategy)
 
-        # Convert to RGBA numpy arrays in NCHW format
-        frames = [frame.to_ndarray(format="rgba") for frame in av_frames]
+        # Convert to RGB numpy arrays in NCHW format
+        frames = [frame.to_ndarray(format="rgb24") for frame in av_frames]
         frames = [np.transpose(frame, (2, 0, 1)).astype(np.uint8) for frame in frames]
         pts_list = [frame.time for frame in av_frames]
 
