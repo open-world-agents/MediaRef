@@ -6,7 +6,6 @@ from fractions import Fraction
 from pathlib import Path
 from typing import TYPE_CHECKING, Union
 
-import cv2
 import numpy as np
 import numpy.typing as npt
 import PIL.Image
