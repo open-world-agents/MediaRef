@@ -29,7 +29,7 @@ dependencies = [
     "pydantic>=2.0",   # Pydantic v2 has breaking changes on APIs
     "numpy",
     "Pillow>=9.4.0",   # When PIL.Image.ExifTags was introduced
-    "opencv-python",
+    "opencv-python-headless",
     "requests>=2.32.2",
     "loguru",
 ]

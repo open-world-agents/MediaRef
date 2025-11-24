@@ -215,7 +215,7 @@ See [API Documentation](docs/API.md) for detailed API reference.
 **Core dependencies** (automatically installed):
 - `pydantic>=2.0` - Data validation and serialization (requires Pydantic v2 API)
 - `numpy` - Array operations
-- `opencv-python` - Image loading and color conversion
+- `opencv-python-headless` - Image loading and color conversion
 - `pillow>=9.4.0` - Image loading from various sources
 - `requests>=2.32.2` - HTTP/HTTPS URL loading
 - `loguru` - Logging (disabled by default for library code)
