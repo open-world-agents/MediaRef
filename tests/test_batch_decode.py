@@ -268,61 +268,93 @@ class TestBatchDecodeCache:
 class TestBatchDecodePerformance:
     """Performance benchmarks for batch decoding."""
 
+    NUM_RUNS = 5  # Number of times to run each benchmark for consistent results
+
     def test_batch_decode_performance_vs_individual(self, sample_video_file_large: tuple[Path, list[int]]):
         """Test that batch decoding is faster than individual loading."""
         video_path, timestamps = sample_video_file_large
-        # Use 10 frames for performance test (timestamps already in nanoseconds)
         refs = [MediaRef(uri=str(video_path), pts_ns=ts) for ts in timestamps[:10]]
 
-        # Measure batch decoding time
-        start_batch = time.perf_counter()
-        batch_results = batch_decode(refs)
-        batch_time = time.perf_counter() - start_batch
+        # Warmup: import video decoder module to trigger lazy imports and codec initialization
+        import mediaref.video_decoder  # noqa: F401
 
-        # Measure individual loading time
-        cleanup_cache()  # Clear cache to ensure fair comparison
-        start_individual = time.perf_counter()
-        individual_results = [ref.to_ndarray() for ref in refs]
-        individual_time = time.perf_counter() - start_individual
+        batch_times = []
+        individual_times = []
 
-        # Verify results are the same
-        for batch_result, individual_result in zip(batch_results, individual_results):
-            np.testing.assert_array_equal(batch_result, individual_result)
+        for run in range(self.NUM_RUNS):
+            # Batch decoding
+            cleanup_cache()
+            start = time.perf_counter()
+            batch_results = batch_decode(refs)
+            batch_times.append(time.perf_counter() - start)
 
-        # Batch should be faster (at least 20% faster)
-        print(f"\nBatch time: {batch_time:.4f}s, Individual time: {individual_time:.4f}s")
-        print(f"Speedup: {individual_time / batch_time:.2f}x")
-        assert batch_time < individual_time * 0.8, "Batch decoding should be at least 20% faster"
+            # Individual loading
+            cleanup_cache()
+            start = time.perf_counter()
+            individual_results = [ref.to_ndarray() for ref in refs]
+            individual_times.append(time.perf_counter() - start)
+
+            # Verify correctness on first run only
+            if run == 0:
+                for b, i in zip(batch_results, individual_results):
+                    np.testing.assert_array_equal(b, i)
+
+        # Statistics
+        b_mean, b_std = np.mean(batch_times), np.std(batch_times)
+        i_mean, i_std = np.mean(individual_times), np.std(individual_times)
+        speedup = i_mean / b_mean
+
+        print(f"\nBatch: {b_mean:.4f}s ± {b_std:.4f}s (min={min(batch_times):.4f}s, max={max(batch_times):.4f}s)")
+        print(
+            f"Individual: {i_mean:.4f}s ± {i_std:.4f}s (min={min(individual_times):.4f}s, max={max(individual_times):.4f}s)"
+        )
+        print(f"Speedup: {speedup:.2f}x (n={self.NUM_RUNS})")
+
+        assert b_mean * 2.0 < i_mean, f"Expected >2.0x speedup, got {speedup:.2f}x"
 
     def test_batch_decode_throughput(self, sample_video_file_large: tuple[Path, list[int]]):
         """Test batch decoding throughput."""
         video_path, timestamps = sample_video_file_large
-        refs = [MediaRef(uri=str(video_path), pts_ns=ts) for ts in timestamps]  # Already in nanoseconds
+        refs = [MediaRef(uri=str(video_path), pts_ns=ts) for ts in timestamps]
 
-        start = time.perf_counter()
-        results = batch_decode(refs)
-        elapsed = time.perf_counter() - start
+        # Warmup: import video decoder module to trigger lazy imports and codec initialization
+        import mediaref.video_decoder  # noqa: F401
 
-        fps = len(results) / elapsed
-        print(f"\nBatch decode throughput: {fps:.2f} frames/second")
-        print(f"Total frames: {len(results)}, Time: {elapsed:.4f}s")
+        elapsed_times = []
+        for _ in range(self.NUM_RUNS):
+            cleanup_cache()
+            start = time.perf_counter()
+            batch_decode(refs)
+            elapsed_times.append(time.perf_counter() - start)
 
-        # Should be able to decode at least 10 fps
-        assert fps > 10, f"Throughput too low: {fps:.2f} fps"
+        # Statistics
+        fps = [len(refs) / t for t in elapsed_times]
+        fps_mean, fps_std = np.mean(fps), np.std(fps)
+        t_mean, t_std = np.mean(elapsed_times), np.std(elapsed_times)
+
+        print(f"\nThroughput: {fps_mean:.1f} ± {fps_std:.1f} fps (n={self.NUM_RUNS}, frames={len(refs)})")
+        print(f"Time: {t_mean:.4f}s ± {t_std:.4f}s (min={min(elapsed_times):.4f}s, max={max(elapsed_times):.4f}s)")
+
+        assert fps_mean > 10, f"Throughput too low: {fps_mean:.1f} fps"
 
     def test_batch_decode_memory_efficiency(self, sample_video_file_large: tuple[Path, list[int]]):
         """Test that batch decoding doesn't use excessive memory."""
         video_path, timestamps = sample_video_file_large
-        refs = [MediaRef(uri=str(video_path), pts_ns=ts) for ts in timestamps]  # Already in nanoseconds
+        refs = [MediaRef(uri=str(video_path), pts_ns=ts) for ts in timestamps]
 
-        # This test just ensures batch_decode completes without memory errors
-        results = batch_decode(refs)
+        # Warmup: import video decoder module to trigger lazy imports and codec initialization
+        import mediaref.video_decoder  # noqa: F401
 
-        assert len(results) == len(refs)
-        # Verify all results are valid
-        for rgb in results:
-            assert isinstance(rgb, np.ndarray)
-            assert rgb.dtype == np.uint8
+        # Run multiple times to ensure no memory leaks
+        for _ in range(self.NUM_RUNS):
+            cleanup_cache()
+            results = batch_decode(refs)
+            assert len(results) == len(refs)
+            for rgb in results:
+                assert isinstance(rgb, np.ndarray)
+                assert rgb.dtype == np.uint8
+
+        print(f"\nMemory test: decoded {len(refs)} frames {self.NUM_RUNS} times (no errors)")
 
 
 @pytest.mark.video
