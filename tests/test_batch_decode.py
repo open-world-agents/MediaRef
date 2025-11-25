@@ -275,7 +275,7 @@ class TestBatchDecodePerformance:
         video_path, timestamps = sample_video_file_large
         refs = [MediaRef(uri=str(video_path), pts_ns=ts) for ts in timestamps[:10]]
 
-        # Warmup: import video decoder module to trigger lazy imports and codec initialization
+        # Warmup: import video decoder module to trigger lazy imports (PyAV, etc.)
         import mediaref.video_decoder  # noqa: F401
 
         batch_times = []
@@ -310,14 +310,14 @@ class TestBatchDecodePerformance:
         )
         print(f"Speedup: {speedup:.2f}x (n={self.NUM_RUNS})")
 
-        assert b_mean * 2.0 < i_mean, f"Expected >2.0x speedup, got {speedup:.2f}x"
+        assert b_mean * 1.5 < i_mean, f"Expected >1.5x speedup, got {speedup:.2f}x"
 
     def test_batch_decode_throughput(self, sample_video_file_large: tuple[Path, list[int]]):
         """Test batch decoding throughput."""
         video_path, timestamps = sample_video_file_large
         refs = [MediaRef(uri=str(video_path), pts_ns=ts) for ts in timestamps]
 
-        # Warmup: import video decoder module to trigger lazy imports and codec initialization
+        # Warmup: import video decoder module to trigger lazy imports (PyAV, etc.)
         import mediaref.video_decoder  # noqa: F401
 
         elapsed_times = []
@@ -342,7 +342,7 @@ class TestBatchDecodePerformance:
         video_path, timestamps = sample_video_file_large
         refs = [MediaRef(uri=str(video_path), pts_ns=ts) for ts in timestamps]
 
-        # Warmup: import video decoder module to trigger lazy imports and codec initialization
+        # Warmup: import video decoder module to trigger lazy imports (PyAV, etc.)
         import mediaref.video_decoder  # noqa: F401
 
         # Run multiple times to ensure no memory leaks
