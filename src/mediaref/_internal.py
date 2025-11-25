@@ -162,7 +162,7 @@ def load_video_frame_as_rgba(
             #   Example: https://huggingface.co/datasets/open-world-agents/example_dataset/resolve/main/example.mkv (pts_ns=1_000_000_000)
             # Possibly related to PyAV issue: https://github.com/PyAV-Org/PyAV/issues/1269
             argb_array = frame.to_ndarray(format="argb")
-            rgba_array: npt.NDArray[np.uint8] = argb_array[:, :, [2, 1, 0, 3]]  # ARGB -> RGBA channel reordering
+            rgba_array: npt.NDArray[np.uint8] = argb_array[:, :, [1, 2, 3, 0]]  # ARGB -> RGBA channel reordering
             return rgba_array
         finally:
             if not keep_av_open:
