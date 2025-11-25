@@ -1,6 +1,6 @@
 """Tests for batch_decode functionality with performance benchmarks.
 
-These tests require the [loader] extra to be installed.
+These tests require the [video] extra to be installed.
 """
 
 import sys

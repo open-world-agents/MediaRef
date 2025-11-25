@@ -1,6 +1,6 @@
 """Tests for MediaRef loading methods (to_ndarray, to_pil_image) and DataURI.
 
-These tests require the [loader] extra to be installed.
+These tests require the [video] extra to be installed.
 """
 
 from pathlib import Path
