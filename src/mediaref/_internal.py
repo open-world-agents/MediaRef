@@ -156,8 +156,9 @@ def load_video_frame_as_rgba(
         container = cached_av.open(actual_path, "r", keep_av_open=keep_av_open)
         try:
             frame = _read_frame_at_pts(container, pts_fraction)
-            # NOTE: argb->rgba is more robust and does not panic on some video;
+            # BUG: using argb->bgra conversion b.c. to_ndarray(format="rgba") raises `malloc_consolidate(): invalid chunk size; Fatal Python error: Aborted` on some video:
             # e.g. https://huggingface.co/datasets/open-world-agents/example_dataset/resolve/main/example.mkv, pts_ns=1_000_000_000
+            # might be related with: https://github.com/PyAV-Org/PyAV/issues/1269 but no clue :(
             argb_array = frame.to_ndarray(format="argb")
             rgba_array = argb_array[:, :, [2, 1, 0, 3]]  # Convert ARGB to RGBA
             return rgba_array
