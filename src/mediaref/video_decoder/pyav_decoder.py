@@ -10,6 +10,7 @@ import numpy as np
 import numpy.typing as npt
 
 from .. import cached_av
+from .._internal import _frame_to_rgba
 from .._typing import PathLike
 from .base import BaseVideoDecoder
 from .frame_batch import FrameBatch
@@ -179,13 +180,8 @@ class PyAVVideoDecoder(BaseVideoDecoder):
         # Convert to RGB numpy arrays in NCHW format.
         frames = []
         for frame in av_frames:
-            # NOTE: Convert ARGB to RGBA manually instead of using `to_ndarray(format="rgba")`
-            # Direct RGBA conversion causes memory corruption on certain videos:
-            #   Error: "malloc_consolidate(): invalid chunk size; Fatal Python error: Aborted"
-            #   Example: https://huggingface.co/datasets/open-world-agents/example_dataset/resolve/main/example.mkv (pts_ns=1_000_000_000)
-            # Possibly related to PyAV issue: https://github.com/PyAV-Org/PyAV/issues/1269
-            argb_array = frame.to_ndarray(format="argb")
-            rgba_array = argb_array[:, :, [1, 2, 3, 0]]  # ARGB -> RGBA channel reordering
+            # Use shared helper function to convert frame to RGBA (with FFmpeg SSSE3 bug workaround)
+            rgba_array = _frame_to_rgba(frame)
             # Convert RGBA to RGB using cv2
             rgb_array = cv2.cvtColor(rgba_array, cv2.COLOR_RGBA2RGB)
             # Transpose to NCHW format
