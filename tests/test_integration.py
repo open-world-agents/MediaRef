@@ -225,6 +225,25 @@ class TestRemoteURLIntegration:
         # Verify roundtrip
         np.testing.assert_array_equal(original_rgb, embedded_ref.to_ndarray())
 
+    @pytest.mark.video
+    def test_remote_video_loading(self):
+        """Test loading video frame from remote URL."""
+        remote_video_url = "https://huggingface.co/datasets/open-world-agents/example_dataset/resolve/main/example.mkv"
+        pts_ns = 1_000_000_000
+
+        ref = MediaRef(uri=remote_video_url, pts_ns=pts_ns)
+
+        assert ref.is_remote
+        assert ref.is_video
+        assert not ref.is_embedded
+
+        # Load video frame
+        rgb = ref.to_ndarray()
+        assert isinstance(rgb, np.ndarray)
+        assert len(rgb.shape) == 3
+        assert rgb.shape[2] == 3
+        assert rgb.dtype == np.uint8
+
 
 @pytest.mark.integration
 class TestPropertyInteractions:

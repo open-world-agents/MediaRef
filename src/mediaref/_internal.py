@@ -156,11 +156,13 @@ def load_video_frame_as_rgba(
         container = cached_av.open(actual_path, "r", keep_av_open=keep_av_open)
         try:
             frame = _read_frame_at_pts(container, pts_fraction)
-            # BUG: using argb->bgra conversion b.c. to_ndarray(format="rgba") raises `malloc_consolidate(): invalid chunk size; Fatal Python error: Aborted` on some video:
-            # e.g. https://huggingface.co/datasets/open-world-agents/example_dataset/resolve/main/example.mkv, pts_ns=1_000_000_000
-            # might be related with: https://github.com/PyAV-Org/PyAV/issues/1269 but no clue :(
+            # NOTE: Convert ARGB to RGBA manually instead of using `to_ndarray(format="rgba")`
+            # Direct RGBA conversion causes memory corruption on certain videos:
+            #   Error: "malloc_consolidate(): invalid chunk size; Fatal Python error: Aborted"
+            #   Example: https://huggingface.co/datasets/open-world-agents/example_dataset/resolve/main/example.mkv (pts_ns=1_000_000_000)
+            # Possibly related to PyAV issue: https://github.com/PyAV-Org/PyAV/issues/1269
             argb_array = frame.to_ndarray(format="argb")
-            rgba_array = argb_array[:, :, [2, 1, 0, 3]]  # Convert ARGB to RGBA
+            rgba_array: npt.NDArray[np.uint8] = argb_array[:, :, [2, 1, 0, 3]]  # ARGB -> RGBA channel reordering
             return rgba_array
         finally:
             if not keep_av_open:
