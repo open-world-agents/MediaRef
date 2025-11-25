@@ -156,7 +156,10 @@ def load_video_frame_as_rgba(
         container = cached_av.open(actual_path, "r", keep_av_open=keep_av_open)
         try:
             frame = _read_frame_at_pts(container, pts_fraction)
-            rgba_array = frame.to_ndarray(format="rgba")
+            # NOTE: argb->rgba is more robust and does not panic on some video;
+            # e.g. https://huggingface.co/datasets/open-world-agents/example_dataset/resolve/main/example.mkv, pts_ns=1_000_000_000
+            argb_array = frame.to_ndarray(format="argb")
+            rgba_array = argb_array[:, :, [2, 1, 0, 3]]  # Convert ARGB to RGBA
             return rgba_array
         finally:
             if not keep_av_open:
