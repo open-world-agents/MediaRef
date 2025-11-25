@@ -156,7 +156,23 @@ def load_video_frame_as_rgba(
         container = cached_av.open(actual_path, "r", keep_av_open=keep_av_open)
         try:
             frame = _read_frame_at_pts(container, pts_fraction)
-            rgba_array = frame.to_ndarray(format="rgba")
+            if not actual_path.startswith("http://") and not actual_path.startswith("https://"):
+                rgba_array = frame.to_ndarray(format="rgba")
+            else:
+                import warnings
+
+                import cv2
+
+                # BUG: PyAV crashes with `IOT instruction (core dumped)` when rgba format is used
+                # with remote videos. Fall back to rgb24 and convert to RGBA with OpenCV.
+                warnings.warn(
+                    "BUG: PyAV crashes with `IOT instruction (core dumped)` when rgba format is used with remote videos. Falling back to rgb24 and converting to RGBA with OpenCV",
+                    UserWarning,
+                    stacklevel=2,
+                )
+                rgb_array = frame.to_ndarray(format="rgb24")
+                rgba_array: npt.NDArray[np.uint8] = cv2.cvtColor(rgb_array, cv2.COLOR_RGB2RGBA)  # type: ignore[assignment]
+
             return rgba_array
         finally:
             if not keep_av_open:
