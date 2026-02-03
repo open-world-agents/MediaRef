@@ -49,7 +49,7 @@ Due to lazy lazy loading, MediaRef has **zero CPU and I/O overhead** when the me
 
 When loading multiple frames from the same video, `batch_decode()` opens the video file once and reuses the handle with **adaptive batching strategies**[^1] that automatically optimize decoding based on frame access patterns, achieving **4.9× faster throughput** and **41× better I/O efficiency** compared to existing methods.
 
-[^1]: **Adaptive Batching Strategies** are our novel contribution addressing a fundamental video codec constraint: reading any frame requires sequential decoding from its preceding keyframe. Existing approaches either (1) seek separately for each frame, causing redundant I/O and repeated decoding when multiple frames share a keyframe block, or (2) decode everything sequentially from first to last request, wasting computation on unwanted intermediate frames for sparse queries. Our `SEQUENTIAL_PER_KEYFRAME_BLOCK` strategy: sort requested timestamps, seek to the first target, decode and collect all matching frames until reaching the next keyframe block boundary, then seek directly to the next unprocessed target. This ensures each keyframe block is visited at most once—eliminating redundant seeks and duplicate decoding—while skipping unwanted frames between distant requests.
+[^1]: **Adaptive Batching Strategies** are our novel contribution (first introduced in the [D2E paper](https://arxiv.org/abs/2510.05684)) addressing a fundamental video codec constraint: reading any frame requires sequential decoding from its preceding keyframe. Existing approaches either (1) seek separately for each frame, causing redundant I/O and repeated decoding when multiple frames share a keyframe block, or (2) decode everything sequentially from first to last request, wasting computation on unwanted intermediate frames for sparse queries. Our `SEQUENTIAL_PER_KEYFRAME_BLOCK` strategy: sort requested timestamps, seek to the first target, decode and collect all matching frames until reaching the next keyframe block boundary, then seek directly to the next unprocessed target. This ensures each keyframe block is visited at most once—eliminating redundant seeks and duplicate decoding—while skipping unwanted frames between distant requests.
 
 <p align="center">
   <img src=".github/assets/decoding_benchmark.png" alt="Decoding Benchmark" width="800">
@@ -225,6 +225,19 @@ See [API Documentation](docs/API.md) for detailed API reference.
 **Optional dependencies**:
 - `[video]` extra: `av>=15.0` (PyAV for video frame extraction)
 - TorchCodec: `torchcodec>=0.4.0` (install separately for GPU-accelerated decoding)
+
+## Citation
+
+If you find the our batch decode API useful, please cite the D2E paper where it was first introduced:
+
+```bibtex
+@article{choi2025d2e,
+  title={D2E: Scaling Vision-Action Pretraining on Desktop Data for Transfer to Embodied AI},
+  author={Choi, Suhwan and Jung, Jaeyoon and Seong, Haebin and Kim, Minchan and Kim, Minyeong and Cho, Yongjun and Kim, Yoonshik and Park, Yubeen and Yu, Youngjae and Lee, Yunsung},
+  journal={arXiv preprint arXiv:2510.05684},
+  year={2025}
+}
+```
 
 ## Acknowledgments
 
