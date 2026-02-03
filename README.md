@@ -47,7 +47,9 @@ The MediaRef schema(`uri`, `pts_ns`) is designed to be **permanent**, built enti
 
 Due to lazy lazy loading, MediaRef has **zero CPU and I/O overhead** when the media is not accessed. When you do need to load the media, convenient APIs handle the complexity of multi-source media (local files, URLs, embedded data) with a single unified interface.
 
-When loading multiple frames from the same video, `batch_decode()` opens the video file once and reuses the handle with adaptive batching strategies that automatically optimize decoding based on frame access patterns, achieving **4.9× faster throughput** and **41× better I/O efficiency** compared to existing methods.
+When loading multiple frames from the same video, `batch_decode()` opens the video file once and reuses the handle with **adaptive batching strategies**[^1] that automatically optimize decoding based on frame access patterns, achieving **4.9× faster throughput** and **41× better I/O efficiency** compared to existing methods.
+
+[^1]: **Adaptive Batching Strategies** are our novel contribution addressing a fundamental video codec constraint: reading any frame requires sequential decoding from its preceding keyframe. Existing approaches either (1) seek separately for each frame, causing redundant I/O and repeated decoding when multiple frames share a keyframe block, or (2) decode everything sequentially from first to last request, wasting computation on unwanted intermediate frames for sparse queries. Our `SEQUENTIAL_PER_KEYFRAME_BLOCK` strategy: sort requested timestamps, seek to the first target, decode and collect all matching frames until reaching the next keyframe block boundary, then seek directly to the next unprocessed target. This ensures each keyframe block is visited at most once—eliminating redundant seeks and duplicate decoding—while skipping unwanted frames between distant requests.
 
 <p align="center">
   <img src=".github/assets/decoding_benchmark.png" alt="Decoding Benchmark" width="800">
@@ -109,7 +111,7 @@ json_str = ref.model_dump_json()                       # Lightweight JSON string
 
 ### Batch Decoding - Optimized Video Frame Loading
 
-When loading multiple frames from the same video, use `batch_decode()` to open the video file once and reuse the handle with adaptive batching strategies that automatically optimize decoding based on frame access patterns—achieving significantly better performance than loading frames individually.
+When loading multiple frames from the same video, use `batch_decode()` to open the video file once and reuse the handle with **adaptive batching strategies**[^1] that automatically optimize decoding based on frame access patterns—achieving significantly better performance than loading frames individually.
 
 ```python
 from mediaref import MediaRef, batch_decode
