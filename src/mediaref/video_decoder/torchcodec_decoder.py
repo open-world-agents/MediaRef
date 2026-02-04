@@ -66,6 +66,15 @@ class TorchCodecVideoDecoder(VideoDecoder, BaseVideoDecoder):
         # Register with cache using no-op cleanup (TorchCodec handles cleanup internally)
         self.cache.add_entry(self._cache_key, self, lambda: None)
 
+    @property
+    def metadata(self):
+        """Access video stream metadata set by TorchCodec's VideoDecoder."""
+        return self.__dict__["metadata"]
+
+    @metadata.setter
+    def metadata(self, value):
+        self.__dict__["metadata"] = value
+
     def close(self):
         """Release cache reference and decoder resources.
 
@@ -99,7 +108,7 @@ class TorchCodecVideoDecoder(VideoDecoder, BaseVideoDecoder):
         if strategy is not None:
             warnings.warn(
                 f"TorchCodec decoder does not support batch decoding strategies. "
-                f"The '{strategy.value}' strategy is ignored. "
+                f"The '{strategy}' strategy is ignored. "
                 f"Use PyAVVideoDecoder for batch decoding strategy support.",
                 UserWarning,
                 stacklevel=2,
@@ -130,7 +139,7 @@ class TorchCodecVideoDecoder(VideoDecoder, BaseVideoDecoder):
         if strategy is not None:
             warnings.warn(
                 f"TorchCodec decoder does not support batch decoding strategies. "
-                f"The '{strategy.value}' strategy is ignored. "
+                f"The '{strategy}' strategy is ignored. "
                 f"Use PyAVVideoDecoder for batch decoding strategy support.",
                 UserWarning,
                 stacklevel=2,
