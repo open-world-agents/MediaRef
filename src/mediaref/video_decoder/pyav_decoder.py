@@ -225,17 +225,20 @@ class PyAVVideoDecoder(BaseVideoDecoder):
             start_pts = queries[0][0]
             found = 0
             prev_frame: Optional[av.VideoFrame] = None
+            # Epsilon for floating-point comparison (handles pts_ns conversion precision loss)
+            EPSILON = 1e-6
 
-            for frame in self._read_frames(start_pts):  # do not specify end_pts to avoid early termination
+            # Use include_preceding=True to get frames before start_pts for proper floor semantics
+            for frame in self._read_frames(start_pts, include_preceding=True):
                 # Floor semantics: when we see frame F, assign prev_frame to queries where
-                # prev_frame.time <= Q < frame.time (i.e., queries that prev_frame is the floor for)
+                # prev_frame.time <= Q < frame.time (with epsilon tolerance)
                 if prev_frame is not None:
-                    while found < len(queries) and queries[found][0] < frame.time:
+                    while found < len(queries) and queries[found][0] < frame.time - EPSILON:
                         frames[queries[found][1]] = prev_frame
                         found += 1
 
-                # Handle exact matches: if query == frame.time, assign this frame
-                while found < len(queries) and queries[found][0] == frame.time:
+                # Handle approximate matches: if query ≈ frame.time, assign this frame
+                while found < len(queries) and abs(queries[found][0] - frame.time) < EPSILON:
                     frames[queries[found][1]] = frame
                     found += 1
 
@@ -252,6 +255,8 @@ class PyAVVideoDecoder(BaseVideoDecoder):
         # Restart-on-keyframe logic (floor semantics)
         elif strategy == BatchDecodingStrategy.SEQUENTIAL_PER_KEYFRAME_BLOCK:
             query_idx = 0
+            # Epsilon for floating-point comparison (handles pts_ns conversion precision loss)
+            EPSILON = 1e-6
 
             # Outer loop: restart/resume for each segment
             while query_idx < len(queries):
@@ -259,30 +264,35 @@ class PyAVVideoDecoder(BaseVideoDecoder):
                 first_keyframe_seen = False
                 query_idx_before_segment = query_idx
                 prev_frame_in_segment: Optional[av.VideoFrame] = None
+                next_keyframe_time: Optional[float] = None
 
                 # Inner loop: read frames until keyframe detected or all targets found
-                for frame in self._read_frames(start_pts=target_time):
-                    # Track keyframes
+                # Use include_preceding=True to get frames before target_time for floor semantics
+                for frame in self._read_frames(start_pts=target_time, include_preceding=True):
+                    frame_time = frame.time
+                    if frame_time is None:
+                        raise ValueError("Frame time is None")
+
+                    # Check for second keyframe BEFORE processing
+                    if frame.key_frame and first_keyframe_seen:
+                        # Found second keyframe - this marks the END of current block
+                        # All remaining queries with time < next_keyframe should use prev_frame
+                        next_keyframe_time = frame_time
+                        break
+
                     if frame.key_frame:
-                        if first_keyframe_seen:
-                            # Hit second keyframe - assign remaining queries to prev_frame and stop
-                            if prev_frame_in_segment is not None:
-                                while query_idx < len(queries) and queries[query_idx][0] < frame.time:
-                                    if frames[queries[query_idx][1]] is None:
-                                        frames[queries[query_idx][1]] = prev_frame_in_segment
-                                    query_idx += 1
-                            break
                         first_keyframe_seen = True
 
-                    # Floor semantics: assign prev_frame to queries where prev.time <= Q < frame.time
+                    # Floor semantics: when we see frame F, assign prev_frame to queries where
+                    # prev_frame.time <= Q < frame.time (with epsilon tolerance)
                     if prev_frame_in_segment is not None:
-                        while query_idx < len(queries) and queries[query_idx][0] < frame.time:
+                        while query_idx < len(queries) and queries[query_idx][0] < frame_time - EPSILON:
                             if frames[queries[query_idx][1]] is None:
                                 frames[queries[query_idx][1]] = prev_frame_in_segment
                             query_idx += 1
 
-                    # Handle exact matches
-                    while query_idx < len(queries) and queries[query_idx][0] == frame.time:
+                    # Handle approximate matches: if query ≈ frame.time, assign this frame
+                    while query_idx < len(queries) and abs(queries[query_idx][0] - frame_time) < EPSILON:
                         frames[queries[query_idx][1]] = frame
                         query_idx += 1
 
@@ -292,11 +302,19 @@ class PyAVVideoDecoder(BaseVideoDecoder):
                     if query_idx >= len(queries):
                         break
 
-                # Assign remaining queries in segment to the last frame seen
+                # After inner loop: assign remaining queries up to next_keyframe_time
                 if prev_frame_in_segment is not None:
-                    while query_idx < len(queries) and frames[queries[query_idx][1]] is None:
-                        frames[queries[query_idx][1]] = prev_frame_in_segment
-                        query_idx += 1
+                    if next_keyframe_time is not None:
+                        # We broke on second keyframe - assign remaining queries < next_keyframe_time
+                        while query_idx < len(queries) and queries[query_idx][0] < next_keyframe_time - EPSILON:
+                            if frames[queries[query_idx][1]] is None:
+                                frames[queries[query_idx][1]] = prev_frame_in_segment
+                            query_idx += 1
+                    else:
+                        # Reached end of video - assign all remaining queries to last frame
+                        while query_idx < len(queries) and frames[queries[query_idx][1]] is None:
+                            frames[queries[query_idx][1]] = prev_frame_in_segment
+                            query_idx += 1
 
                 # If no progress made in inner loop, raise error
                 if query_idx_before_segment == query_idx:
@@ -312,13 +330,18 @@ class PyAVVideoDecoder(BaseVideoDecoder):
         return frames
 
     def _read_frames(
-        self, start_pts: SECOND_TYPE = 0.0, end_pts: Optional[SECOND_TYPE] = None
+        self,
+        start_pts: SECOND_TYPE = 0.0,
+        end_pts: Optional[SECOND_TYPE] = None,
+        include_preceding: bool = False,
     ) -> Generator[av.VideoFrame, None, None]:
         """Yield frames between start_pts and end_pts in seconds.
 
         Args:
             start_pts: Start time in seconds
             end_pts: End time in seconds (None = read until end)
+            include_preceding: If True, include frames before start_pts that are
+                decoded after seeking (useful for floor semantics)
 
         Yields:
             Video frames in the specified time range
@@ -346,7 +369,7 @@ class PyAVVideoDecoder(BaseVideoDecoder):
         for frame in self._container.decode(video=0):
             if frame.time is None:
                 raise ValueError("Frame time is None")
-            if frame.time < float(start_pts):
+            if not include_preceding and frame.time < float(start_pts):
                 continue
             if frame.time > end_pts_float:
                 break
@@ -356,7 +379,8 @@ class PyAVVideoDecoder(BaseVideoDecoder):
         """Read the frame visible at the given timestamp.
 
         Returns the frame that would be displayed at the given timestamp during
-        video playback. This is the last frame where frame.time <= pts (floor semantics).
+        video playback. Uses frame.duration to determine if the query falls within
+        [frame.time, frame.time + duration) - the valid playback range.
 
         Args:
             pts: Timestamp in seconds
@@ -373,20 +397,35 @@ class PyAVVideoDecoder(BaseVideoDecoder):
         timestamp_ts = int(av.time_base * pts_float)
         self._container.seek(timestamp_ts, any_frame=False)
 
-        # Find the last frame where frame.time <= pts (the frame visible at pts)
-        last_valid_frame: Optional[av.VideoFrame] = None
+        stream = self._container.streams.video[0]
+
+        # Find the frame where pts falls within [frame.time, frame.time + duration)
         for frame in self._container.decode(video=0):
             if frame.time is None:
                 raise ValueError("Frame time is None")
-            if frame.time <= pts_float:
-                last_valid_frame = frame
-            else:
-                # Found a frame after pts, return the previous one
-                break
 
-        if last_valid_frame is None:
-            raise ValueError(f"Frame not found at {pts_float:.2f}s in {self.source}")
-        return last_valid_frame
+            # Use frame.duration to determine valid playback range
+            if frame.duration is not None:
+                duration_s = float(frame.duration * stream.time_base)
+                frame_end = frame.time + duration_s
+
+                # Check if pts falls within this frame's valid range [frame.time, frame_end)
+                if frame.time <= pts_float < frame_end:
+                    return frame
+
+                # If we've passed the target timestamp, frame was not found
+                if frame.time > pts_float:
+                    break
+            else:
+                # Fallback: no duration info, use old logic (decode until frame.time > pts)
+                if frame.time <= pts_float:
+                    last_valid_frame = frame
+                elif frame.time > pts_float:
+                    if last_valid_frame is not None:
+                        return last_valid_frame
+                    break
+
+        raise ValueError(f"Frame not found at {pts_float:.2f}s in {self.source}")
 
     def close(self):
         """Release video decoder resources.
