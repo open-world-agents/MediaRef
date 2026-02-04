@@ -57,6 +57,10 @@ When loading multiple frames from the same video, `batch_decode()` opens the vid
 
 > **Benchmark details**: Decoding throughput = decoded frames per second during dataloading; I/O efficiency = inverse of disk I/O operations per frame loaded. Measured on real ML dataloader workloads (Minecraft dataset: 64×5 min episodes, 640×360 @ 20Hz, FSLDataset with 4096 token sequences) vs baseline and TorchCodec v0.6.0. See [D2E paper](https://worv-ai.github.io/d2e/) Section 3 and Appendix A for full methodology.
 
+**4. Playback semantics for video frames**
+
+MediaRef uses **playback semantics**: for a query timestamp `T`, it returns the frame visible at time `T` during video playback (where `frame.time <= T < frame.time + frame.duration`). This ensures frame retrieval matches what you'd see in a video player, unlike simple floor-based approaches. See [API docs](docs/API.md#playback-semantics) for details.
+
 ## Installation
 
 **Quick install:**
