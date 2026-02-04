@@ -231,17 +231,13 @@ class PyAVVideoDecoder(BaseVideoDecoder):
 
             # Use include_preceding=True to get frames before start_pts for proper floor semantics
             for frame in self._read_frames(start_pts, include_preceding=True):
-                # Floor semantics: when we see frame F, assign prev_frame to queries where
-                # prev_frame.time <= Q < frame.time (with epsilon tolerance)
+                # Playback semantics: assign prev_frame to queries where
+                # prev_frame.time <= Q < frame.time (query falls within prev_frame's playback range)
+                # Use EPSILON on lower bound to handle floating point, but strict < on upper bound
                 if prev_frame is not None:
-                    while found < len(queries) and queries[found][0] < frame.time - EPSILON:
+                    while found < len(queries) and prev_frame.time - EPSILON <= queries[found][0] < frame.time:
                         frames[queries[found][1]] = prev_frame
                         found += 1
-
-                # Handle approximate matches: if query ≈ frame.time, assign this frame
-                while found < len(queries) and abs(queries[found][0] - frame.time) < EPSILON:
-                    frames[queries[found][1]] = frame
-                    found += 1
 
                 prev_frame = frame
                 if found >= len(queries):
@@ -282,18 +278,14 @@ class PyAVVideoDecoder(BaseVideoDecoder):
                     if frame.key_frame:
                         first_keyframe_seen = True
 
-                    # Floor semantics: when we see frame F, assign prev_frame to queries where
-                    # prev_frame.time <= Q < frame.time (with epsilon tolerance)
+                    # Playback semantics: assign prev_frame to queries where
+                    # prev_frame.time <= Q < frame.time (query falls within prev_frame's playback range)
+                    # Use EPSILON on lower bound to handle floating point, but strict < on upper bound
                     if prev_frame_in_segment is not None:
-                        while query_idx < len(queries) and queries[query_idx][0] < frame_time - EPSILON:
+                        while query_idx < len(queries) and prev_frame_in_segment.time - EPSILON <= queries[query_idx][0] < frame_time:
                             if frames[queries[query_idx][1]] is None:
                                 frames[queries[query_idx][1]] = prev_frame_in_segment
                             query_idx += 1
-
-                    # Handle approximate matches: if query ≈ frame.time, assign this frame
-                    while query_idx < len(queries) and abs(queries[query_idx][0] - frame_time) < EPSILON:
-                        frames[queries[query_idx][1]] = frame
-                        query_idx += 1
 
                     prev_frame_in_segment = frame
 
@@ -398,7 +390,7 @@ class PyAVVideoDecoder(BaseVideoDecoder):
 
         stream = self._container.streams.video[0]
 
-        # Track last valid frame for fallback logic (when frame.duration is None)
+        # Track last valid frame for playback semantics
         last_valid_frame: Optional[av.VideoFrame] = None
 
         # Find the frame where pts falls within [frame.time, frame.time + duration)
@@ -406,26 +398,26 @@ class PyAVVideoDecoder(BaseVideoDecoder):
             if frame.time is None:
                 raise ValueError("Frame time is None")
 
-            # Use frame.duration to determine valid playback range
+            # If frame has duration, check for exact playback interval match
             if frame.duration is not None:
                 duration_s = float(frame.duration * stream.time_base)
-                frame_end = frame.time + duration_s
-
-                # Check if pts falls within this frame's valid range [frame.time, frame_end)
-                if frame.time <= pts_float < frame_end:
+                if frame.time <= pts_float < frame.time + duration_s:
                     return frame
 
-                # If we've passed the target timestamp, frame was not found
-                if frame.time > pts_float:
-                    break
-            else:
-                # Fallback: no duration info, use old logic (decode until frame.time > pts)
-                if frame.time <= pts_float:
-                    last_valid_frame = frame
-                elif frame.time > pts_float:
-                    if last_valid_frame is not None:
-                        return last_valid_frame
-                    break
+            # If we've decoded past the query time, the previous frame is the correct one
+            if frame.time > pts_float:
+                if last_valid_frame:
+                    return last_valid_frame
+                break
+
+            last_valid_frame = frame
+
+        # If query is after the last frame, check if it's within the last frame's duration
+        if last_valid_frame:
+            if last_valid_frame.duration is not None:
+                duration_s = float(last_valid_frame.duration * stream.time_base)
+                if last_valid_frame.time <= pts_float < last_valid_frame.time + duration_s:
+                    return last_valid_frame
 
         raise ValueError(f"Frame not found at {pts_float:.2f}s in {self.source}")
 
