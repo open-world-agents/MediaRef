@@ -282,7 +282,10 @@ class PyAVVideoDecoder(BaseVideoDecoder):
                     # prev_frame.time <= Q < frame.time (query falls within prev_frame's playback range)
                     # Use EPSILON on lower bound to handle floating point, but strict < on upper bound
                     if prev_frame_in_segment is not None:
-                        while query_idx < len(queries) and prev_frame_in_segment.time - EPSILON <= queries[query_idx][0] < frame_time:
+                        while (
+                            query_idx < len(queries)
+                            and prev_frame_in_segment.time - EPSILON <= queries[query_idx][0] < frame_time
+                        ):
                             if frames[queries[query_idx][1]] is None:
                                 frames[queries[query_idx][1]] = prev_frame_in_segment
                             query_idx += 1
