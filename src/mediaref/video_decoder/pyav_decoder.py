@@ -220,13 +220,14 @@ class PyAVVideoDecoder(BaseVideoDecoder):
         queries = sorted([(s, i) for i, s in enumerate(seconds)])
         frames: list[av.VideoFrame] = [None] * len(queries)  # type: ignore
 
+        # Epsilon for floating-point comparison (handles pts_ns conversion precision loss)
+        EPSILON = 1e-6
+
         # Read all frames in one go (floor semantics: for query Q, find last frame F where F.time <= Q)
         if strategy == BatchDecodingStrategy.SEQUENTIAL:
             start_pts = queries[0][0]
             found = 0
             prev_frame: Optional[av.VideoFrame] = None
-            # Epsilon for floating-point comparison (handles pts_ns conversion precision loss)
-            EPSILON = 1e-6
 
             # Use include_preceding=True to get frames before start_pts for proper floor semantics
             for frame in self._read_frames(start_pts, include_preceding=True):
@@ -255,8 +256,6 @@ class PyAVVideoDecoder(BaseVideoDecoder):
         # Restart-on-keyframe logic (floor semantics)
         elif strategy == BatchDecodingStrategy.SEQUENTIAL_PER_KEYFRAME_BLOCK:
             query_idx = 0
-            # Epsilon for floating-point comparison (handles pts_ns conversion precision loss)
-            EPSILON = 1e-6
 
             # Outer loop: restart/resume for each segment
             while query_idx < len(queries):
@@ -398,6 +397,9 @@ class PyAVVideoDecoder(BaseVideoDecoder):
         self._container.seek(timestamp_ts, any_frame=False)
 
         stream = self._container.streams.video[0]
+
+        # Track last valid frame for fallback logic (when frame.duration is None)
+        last_valid_frame: Optional[av.VideoFrame] = None
 
         # Find the frame where pts falls within [frame.time, frame.time + duration)
         for frame in self._container.decode(video=0):
