@@ -5,10 +5,11 @@
 **Properties:** `is_embedded`, `is_video`, `is_remote`, `is_relative_path`
 
 **Methods:**
-- `to_ndarray(format="rgb", **kwargs) -> np.ndarray` - Load as numpy array
+- `to_ndarray(format="rgb") -> np.ndarray` - Load as numpy array
   - Formats: `"rgb"` (default), `"bgr"`, `"rgba"`, `"bgra"`, `"gray"`
   - Returns: (H, W, 3) for RGB/BGR, (H, W, 4) for RGBA/BGRA, (H, W) for grayscale
-- `to_pil_image(**kwargs) -> PIL.Image` - Load as PIL Image
+- `to_pil_image(format="rgb") -> PIL.Image` - Load as PIL Image
+  - Formats: `"rgb"` (default), `"rgba"`, `"gray"`
 - `resolve_relative_path(base_path, on_unresolvable="warn") -> MediaRef` - Resolve relative paths
   - `on_unresolvable`: How to handle embedded/remote URIs: `"error"`, `"warn"` (default), or `"ignore"`
 - `validate_uri() -> bool` - Check if URI exists (local files only)
@@ -43,9 +44,9 @@
 
 ## Functions
 
-- `batch_decode(refs, strategy=None, decoder="pyav", **kwargs) -> list[np.ndarray]` - Batch decode using optimized batch decoding API
+- `batch_decode(refs, strategy=None, decoder="pyav") -> list[np.ndarray]` - Batch decode using optimized batch decoding API
   - `refs`: List of MediaRef objects to decode
-  - `strategy`: Batch decoding strategy (PyAV only): `SEPARATE`, `SEQUENTIAL`, or `SEQUENTIAL_PER_KEYFRAME_BLOCK` (default)
+  - `strategy`: Batch decoding strategy (PyAV only): `SEPARATE`, `SEQUENTIAL`, or `SEQUENTIAL_PER_KEYFRAME_BLOCK`. Default: `None` (auto-selects `SEQUENTIAL_PER_KEYFRAME_BLOCK`)
   - `decoder`: Decoder backend (`"pyav"` or `"torchcodec"`)
 - `cleanup_cache()` - Clear video container cache (PyAV only)
 
@@ -69,3 +70,28 @@
 | Backend | PyAV (FFmpeg) | TorchCodec (FFmpeg) |
 | Installation | `pip install mediaref[video]` | `pip install torchcodec>=0.4.0` |
 
+## Playback Semantics
+
+MediaRef uses **playback semantics** for video frame retrieval. For a query timestamp `T`, it returns the frame that would be visible at time `T` during normal video playback:
+
+```
+frame.time <= T < frame.time + frame.duration
+```
+
+This ensures consistent behavior with video players and differs from simple "floor semantics" (which returns the last frame with `frame.time <= T` regardless of duration).
+
+**Key behaviors:**
+- Query within a frame's playback range → returns that frame
+- Query exactly at `frame.time` → returns the **previous** frame (whose duration range contains the query)
+- Query beyond the last frame's `time + duration` → raises `ValueError`
+
+**Example:**
+```
+Frame 0: time=0.000s, duration=0.033s → visible during [0.000, 0.033)
+Frame 1: time=0.033s, duration=0.033s → visible during [0.033, 0.067)
+
+Query 0.000s → Frame 0
+Query 0.032s → Frame 0
+Query 0.033s → Frame 1
+Query 0.050s → Frame 1
+```

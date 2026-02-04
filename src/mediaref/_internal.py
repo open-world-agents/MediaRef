@@ -2,7 +2,6 @@
 
 import gc
 import os
-from fractions import Fraction
 from pathlib import Path
 from typing import TYPE_CHECKING, Union
 
@@ -14,7 +13,6 @@ import requests
 
 if TYPE_CHECKING:
     import av
-    import av.container
 
 # Constants
 REQUEST_TIMEOUT = 60  # HTTP request timeout in seconds
@@ -37,7 +35,9 @@ def _frame_to_rgba(frame: "av.VideoFrame") -> npt.NDArray[np.uint8]:
     Direct RGBA conversion causes memory corruption on certain videos:
       Error: "malloc_consolidate(): invalid chunk size; Fatal Python error: Aborted"
       Example: https://huggingface.co/datasets/open-world-agents/example_dataset/resolve/main/example.mkv (pts_ns=1_000_000_000)
-    Possibly related to PyAV issue: https://github.com/PyAV-Org/PyAV/issues/1269
+    Possibly related to:
+      - PyAV issue: https://github.com/PyAV-Org/PyAV/issues/1269
+      - FFmpeg ticket: https://trac.ffmpeg.org/ticket/9254
 
     Args:
         frame: PyAV VideoFrame to convert
@@ -136,15 +136,12 @@ def _load_pil_image(
 def load_video_frame_as_rgba(
     path_or_url: str,
     pts_ns: int,
-    *,
-    keep_av_open: bool = False,
 ) -> npt.NDArray[np.uint8]:
     """Load video frame and return as RGBA numpy array.
 
     Args:
         path_or_url: File path or URL to video
         pts_ns: Presentation timestamp in nanoseconds
-        keep_av_open: Keep AV container open in cache
 
     Returns:
         RGBA numpy array
@@ -154,7 +151,7 @@ def load_video_frame_as_rgba(
         ValueError: If loading fails
         FileNotFoundError: If local file doesn't exist
     """
-    from . import cached_av
+    from .video_decoder import PyAVVideoDecoder
 
     global _CALLED_TIMES
     _CALLED_TIMES += 1
@@ -175,40 +172,22 @@ def load_video_frame_as_rgba(
             if not Path(actual_path).exists():
                 raise FileNotFoundError(f"Video file not found: {actual_path}")
 
-        # Convert nanoseconds to fraction
-        pts_fraction = Fraction(pts_ns, NANOSECOND)
+        # Convert nanoseconds to seconds
+        pts_seconds = pts_ns / NANOSECOND
 
-        # Open video and read frame
-        container = cached_av.open(actual_path, "r", keep_av_open=keep_av_open)
-        try:
-            frame = _read_frame_at_pts(container, pts_fraction)
-            return _frame_to_rgba(frame)
-        finally:
-            if not keep_av_open:
-                container.close()
+        # Use PyAVVideoDecoder for consistent playback semantics with batch_decode
+        with PyAVVideoDecoder(actual_path) as decoder:
+            batch = decoder.get_frames_played_at([pts_seconds])
+            # batch.data is NCHW format (1, 3, H, W) with RGB channels
+            # Convert to RGBA HWC format (H, W, 4)
+            rgb_nchw = batch.data[0]  # (3, H, W)
+            rgb_hwc = np.transpose(rgb_nchw, (1, 2, 0))  # (H, W, 3)
+            # Add alpha channel (fully opaque)
+            alpha = np.full((*rgb_hwc.shape[:2], 1), 255, dtype=np.uint8)
+            rgba_hwc: npt.NDArray[np.uint8] = np.concatenate([rgb_hwc, alpha], axis=2)
+            return rgba_hwc
     except FileNotFoundError:
         raise
     except Exception as e:
         pts_seconds = pts_ns / NANOSECOND
         raise ValueError(f"Failed to load frame at {pts_seconds:.3f}s from {path_or_url}: {e}") from e
-
-
-def _read_frame_at_pts(
-    container: "av.container.InputContainer",
-    pts: Fraction,
-) -> "av.VideoFrame":
-    """Read single frame at or after given timestamp."""
-    if not container.streams.video:
-        raise ValueError("No video streams found")
-
-    stream = container.streams.video[0]
-
-    # Seek to the timestamp
-    container.seek(int(pts / stream.time_base), stream=stream)
-
-    # Decode frames until we find the right one
-    for frame in container.decode(stream):
-        if frame.time >= float(pts):
-            return frame
-
-    raise ValueError(f"Frame not found at {float(pts):.2f}s")

@@ -2,7 +2,7 @@
 
 These tests verify internal implementation details not exposed by the public API:
 - Internal RGBA format handling (load_image_as_rgba)
-- Video frame caching behavior (keep_av_open parameter)
+- Playback semantics for video frame seeking
 """
 
 from pathlib import Path
@@ -71,55 +71,180 @@ class TestInternalRGBAHandling:
 
 
 @pytest.mark.video
-class TestVideoFrameCaching:
-    """Test video frame caching with keep_av_open parameter.
+class TestPlaybackSemantics:
+    """Test playback-accurate frame seeking.
 
-    This tests internal caching behavior not exposed by the public API.
+    For video playback, the frame visible at time T should be the frame where:
+        frame.time <= T < frame.time + frame.duration
+
+    This means querying at any time within a frame's duration should return that frame.
     """
 
-    def test_keep_av_open_caches_container(self, sample_video_file: tuple[Path, list[int]]):
-        """Test that keep_av_open=True caches video containers and increments refs."""
-        from mediaref import cached_av
-        from mediaref._internal import load_video_frame_as_rgba
+    @pytest.fixture
+    def known_framerate_video(self, tmp_path: Path) -> tuple[Path, float, int]:
+        """Create a video with a well-defined framerate for precise timing tests.
 
-        video_path, timestamps = sample_video_file
-        cache_key = str(video_path)
+        Creates a 10fps video with 10 frames (1 second duration).
+        Each frame has a distinct color intensity to enable identification.
 
-        # Clear cache first
-        cached_av.cleanup_cache()
-        assert cache_key not in cached_av._container_cache
+        Returns:
+            Tuple of (video_path, frame_duration_seconds, num_frames)
+        """
+        import av
+        from fractions import Fraction
 
-        # First load with keep_av_open=True (should add to cache with refs=1)
-        rgba1 = load_video_frame_as_rgba(str(video_path), timestamps[1], keep_av_open=True)
-        assert cache_key in cached_av._container_cache
-        assert cached_av._container_cache[cache_key].refs == 1
+        video_path = tmp_path / "test_10fps.mp4"
+        fps = 10
+        num_frames = 10
+        frame_duration = 1.0 / fps
 
-        # Second load (should reuse cached container and increment refs to 2)
-        rgba2 = load_video_frame_as_rgba(str(video_path), timestamps[2], keep_av_open=True)
-        assert cache_key in cached_av._container_cache
-        assert cached_av._container_cache[cache_key].refs == 2
+        container = av.open(str(video_path), "w")
+        stream = container.add_stream("h264", rate=fps)
+        stream.width = 64
+        stream.height = 48
+        stream.pix_fmt = "yuv420p"
 
-        # Results should be valid RGBA arrays
-        assert rgba1.shape[2] == 4  # RGBA
-        assert rgba2.shape[2] == 4  # RGBA
-        assert rgba1.dtype == np.uint8
-        assert rgba2.dtype == np.uint8
+        for i in range(num_frames):
+            frame = av.VideoFrame(64, 48, "rgb24")
+            # Create distinct intensity for each frame (0, 25, 50, 75, ...)
+            intensity = i * 25
+            arr = np.full((48, 64, 3), intensity, dtype=np.uint8)
+            frame.planes[0].update(arr)
+            frame.pts = i
+            frame.time_base = Fraction(1, fps)
+            for packet in stream.encode(frame):
+                container.mux(packet)
 
-    def test_keep_av_open_false_does_not_cache(self, sample_video_file: tuple[Path, list[int]]):
-        """Test that keep_av_open=False does not cache containers."""
-        from mediaref import cached_av
-        from mediaref._internal import load_video_frame_as_rgba
+        for packet in stream.encode():
+            container.mux(packet)
+        container.close()
 
-        video_path, timestamps = sample_video_file
-        cache_key = str(video_path)
+        return video_path, frame_duration, num_frames
 
-        # Clear cache first
-        cached_av.cleanup_cache()
-        assert cache_key not in cached_av._container_cache
+    def test_query_at_exact_frame_start_returns_that_frame(self, known_framerate_video: tuple[Path, float, int]):
+        """Test that querying at exact frame start time returns that frame."""
+        from mediaref.video_decoder import PyAVVideoDecoder, BatchDecodingStrategy
 
-        # Load with keep_av_open=False (should NOT cache)
-        rgba = load_video_frame_as_rgba(str(video_path), timestamps[1], keep_av_open=False)
+        video_path, frame_duration, num_frames = known_framerate_video
 
-        # Verify container is NOT in cache
-        assert cache_key not in cached_av._container_cache
-        assert rgba.shape[2] == 4  # RGBA
+        with PyAVVideoDecoder(video_path) as decoder:
+            for frame_idx in range(num_frames):
+                expected_intensity = frame_idx * 25
+                query_time = frame_idx * frame_duration
+
+                batch = decoder.get_frames_played_at([query_time], strategy=BatchDecodingStrategy.SEPARATE)
+
+                actual_intensity = batch.data[0].mean()
+                assert abs(actual_intensity - expected_intensity) < 5, (
+                    f"Query at {query_time:.3f}s (frame {frame_idx}) expected intensity "
+                    f"~{expected_intensity}, got {actual_intensity:.1f}"
+                )
+
+    def test_query_at_mid_frame_returns_that_frame(self, known_framerate_video: tuple[Path, float, int]):
+        """Test that querying at middle of frame duration returns that frame."""
+        from mediaref.video_decoder import PyAVVideoDecoder, BatchDecodingStrategy
+
+        video_path, frame_duration, num_frames = known_framerate_video
+
+        with PyAVVideoDecoder(video_path) as decoder:
+            for frame_idx in range(num_frames):
+                expected_intensity = frame_idx * 25
+                query_time = frame_idx * frame_duration + frame_duration / 2
+
+                batch = decoder.get_frames_played_at([query_time], strategy=BatchDecodingStrategy.SEPARATE)
+
+                actual_intensity = batch.data[0].mean()
+                assert abs(actual_intensity - expected_intensity) < 5, (
+                    f"Query at {query_time:.3f}s (mid-frame {frame_idx}) expected intensity "
+                    f"~{expected_intensity}, got {actual_intensity:.1f}"
+                )
+
+    def test_query_just_before_next_frame_returns_current_frame(self, known_framerate_video: tuple[Path, float, int]):
+        """Test that querying just before next frame starts returns current frame."""
+        from mediaref.video_decoder import PyAVVideoDecoder, BatchDecodingStrategy
+
+        video_path, frame_duration, num_frames = known_framerate_video
+        epsilon = 0.0001
+
+        with PyAVVideoDecoder(video_path) as decoder:
+            for frame_idx in range(num_frames - 1):
+                expected_intensity = frame_idx * 25
+                query_time = (frame_idx + 1) * frame_duration - epsilon
+
+                batch = decoder.get_frames_played_at([query_time], strategy=BatchDecodingStrategy.SEPARATE)
+
+                actual_intensity = batch.data[0].mean()
+                assert abs(actual_intensity - expected_intensity) < 5, (
+                    f"Query at {query_time:.3f}s (just before frame {frame_idx + 1}) "
+                    f"expected intensity ~{expected_intensity}, got {actual_intensity:.1f}"
+                )
+
+    def test_all_strategies_return_same_frame(self, known_framerate_video: tuple[Path, float, int]):
+        """Test that all decoding strategies return the same frame for a given query."""
+        from mediaref.video_decoder import PyAVVideoDecoder, BatchDecodingStrategy
+
+        video_path, frame_duration, num_frames = known_framerate_video
+        strategies = [
+            BatchDecodingStrategy.SEPARATE,
+            BatchDecodingStrategy.SEQUENTIAL,
+            BatchDecodingStrategy.SEQUENTIAL_PER_KEYFRAME_BLOCK,
+        ]
+
+        with PyAVVideoDecoder(video_path) as decoder:
+            for frame_idx in range(num_frames):
+                query_time = frame_idx * frame_duration + frame_duration / 2
+
+                results = {}
+                for strategy in strategies:
+                    batch = decoder.get_frames_played_at([query_time], strategy=strategy)
+                    results[strategy.name] = batch.data[0].mean()
+
+                intensities = list(results.values())
+                intensity_range = max(intensities) - min(intensities)
+                assert intensity_range < 5, f"Strategies disagree at {query_time:.3f}s: {results}"
+
+    def test_batch_query_returns_correct_frames(self, known_framerate_video: tuple[Path, float, int]):
+        """Test that batch queries return correct frames in correct order."""
+        from mediaref.video_decoder import PyAVVideoDecoder, BatchDecodingStrategy
+
+        video_path, frame_duration, num_frames = known_framerate_video
+
+        query_times = [i * frame_duration + frame_duration / 2 for i in range(num_frames)]
+        expected_intensities = [i * 25 for i in range(num_frames)]
+
+        for strategy in [
+            BatchDecodingStrategy.SEPARATE,
+            BatchDecodingStrategy.SEQUENTIAL,
+            BatchDecodingStrategy.SEQUENTIAL_PER_KEYFRAME_BLOCK,
+        ]:
+            with PyAVVideoDecoder(video_path) as decoder:
+                batch = decoder.get_frames_played_at(query_times, strategy=strategy)
+
+                for i, (expected, frame) in enumerate(zip(expected_intensities, batch.data)):
+                    actual = frame.mean()
+                    assert abs(actual - expected) < 5, (
+                        f"Strategy {strategy.name}: Frame {i} at {query_times[i]:.3f}s "
+                        f"expected intensity ~{expected}, got {actual:.1f}"
+                    )
+
+    def test_individual_and_batch_return_same_frames(self, known_framerate_video: tuple[Path, float, int]):
+        """Test that individual to_ndarray() and batch_decode() return same frames."""
+        from mediaref import MediaRef, batch_decode, cleanup_cache
+
+        video_path, frame_duration, num_frames = known_framerate_video
+
+        pts_ns_list = [int((i * frame_duration + frame_duration / 2) * 1_000_000_000) for i in range(num_frames)]
+        refs = [MediaRef(uri=str(video_path), pts_ns=pts_ns) for pts_ns in pts_ns_list]
+
+        cleanup_cache()
+        batch_results = batch_decode(refs)
+
+        cleanup_cache()
+        individual_results = [ref.to_ndarray() for ref in refs]
+
+        for i, (batch_frame, individual_frame) in enumerate(zip(batch_results, individual_results)):
+            np.testing.assert_array_equal(
+                batch_frame,
+                individual_frame,
+                err_msg=f"Frame {i}: batch and individual decode returned different frames",
+            )
