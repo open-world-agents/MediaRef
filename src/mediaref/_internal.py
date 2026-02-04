@@ -35,7 +35,9 @@ def _frame_to_rgba(frame: "av.VideoFrame") -> npt.NDArray[np.uint8]:
     Direct RGBA conversion causes memory corruption on certain videos:
       Error: "malloc_consolidate(): invalid chunk size; Fatal Python error: Aborted"
       Example: https://huggingface.co/datasets/open-world-agents/example_dataset/resolve/main/example.mkv (pts_ns=1_000_000_000)
-    Possibly related to PyAV issue: https://github.com/PyAV-Org/PyAV/issues/1269
+    Possibly related to:
+      - PyAV issue: https://github.com/PyAV-Org/PyAV/issues/1269
+      - FFmpeg ticket: https://trac.ffmpeg.org/ticket/9254
 
     Args:
         frame: PyAV VideoFrame to convert
