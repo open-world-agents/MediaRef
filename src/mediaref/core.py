@@ -165,7 +165,7 @@ class MediaRef(BaseModel):
     # ========== Loading Methods ==========
 
     def to_ndarray(
-        self, format: Literal["rgb", "bgr", "rgba", "bgra", "gray"] = "rgb", **kwargs
+        self, format: Literal["rgb", "bgr", "rgba", "bgra", "gray"] = "rgb"
     ) -> npt.NDArray[np.uint8]:
         """Load and return media as numpy ndarray in specified format.
 
@@ -176,8 +176,6 @@ class MediaRef(BaseModel):
                 - "rgba": RGB with alpha (H, W, 4)
                 - "bgra": BGR with alpha (H, W, 4)
                 - "gray": Grayscale (H, W)
-            **kwargs: Additional options (e.g., keep_av_open for videos)
-
         Returns:
             Numpy ndarray in requested format
 
@@ -192,7 +190,7 @@ class MediaRef(BaseModel):
             >>> ref = MediaRef(uri="video.mp4", pts_ns=1_000_000_000)
             >>> frame = ref.to_ndarray()  # Requires: pip install mediaref[video]
         """
-        rgba = self._load_as_rgba(**kwargs)
+        rgba = self._load_as_rgba()
 
         CONVERSION_MAP = {
             "rgb": cv2.COLOR_RGBA2RGB,
@@ -207,36 +205,38 @@ class MediaRef(BaseModel):
 
         raise ValueError(f"Unsupported format: {format}. Must be one of: rgb, bgr, rgba, bgra, gray")
 
-    def to_pil_image(self, **kwargs) -> PIL.Image.Image:
+    def to_pil_image(
+        self, format: Literal["rgb", "rgba", "gray"] = "rgb"
+    ) -> PIL.Image.Image:
         """Load and return media as PIL Image.
 
         Args:
-            **kwargs: Additional options (e.g., keep_av_open for videos)
+            format: Output format (default: "rgb")
+                - "rgb": RGB color
+                - "rgba": RGB with alpha
+                - "gray": Grayscale
 
         Returns:
             PIL Image object
 
         Raises:
             ImportError: If video dependencies are not installed (for video frames)
+            ValueError: If format is invalid
 
         Examples:
             >>> ref = MediaRef(uri="image.png")
             >>> img = ref.to_pil_image()
         """
-        # Extract 'format' from kwargs to handle it specifically
-        req_format = kwargs.pop("format", "rgb")  # Default to 'rgb' if not provided
-
-        if req_format in ("bgr", "bgra"):
+        if format in ("bgr", "bgra"):
             raise ValueError(
-                f"Format '{req_format}' is not compatible with to_pil_image. Use 'rgb', 'rgba', or 'gray'."
+                f"Format '{format}' is not compatible with to_pil_image. Use 'rgb', 'rgba', or 'gray'."
             )
 
-        # Pass the determined format and remaining kwargs to to_ndarray
-        return PIL.Image.fromarray(self.to_ndarray(format=req_format, **kwargs))
+        return PIL.Image.fromarray(self.to_ndarray(format=format))
 
     # ========== Internal ==========
 
-    def _load_as_rgba(self, **kwargs) -> npt.NDArray[np.uint8]:
+    def _load_as_rgba(self) -> npt.NDArray[np.uint8]:
         """Internal: Load media as RGBA array.
 
         Raises:
@@ -246,6 +246,6 @@ class MediaRef(BaseModel):
 
         if self.is_video:
             assert self.pts_ns is not None  # Type guard: is_video ensures pts_ns is not None
-            return load_video_frame_as_rgba(self.uri, self.pts_ns, **kwargs)
+            return load_video_frame_as_rgba(self.uri, self.pts_ns)
         else:
             return load_image_as_rgba(self.uri)
