@@ -189,4 +189,3 @@ def load_video_frame_as_rgba(
     except Exception as e:
         pts_seconds = pts_ns / NANOSECOND
         raise ValueError(f"Failed to load frame at {pts_seconds:.3f}s from {path_or_url}: {e}") from e
-

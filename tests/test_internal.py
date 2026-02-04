@@ -121,9 +121,7 @@ class TestPlaybackSemantics:
 
         return video_path, frame_duration, num_frames
 
-    def test_query_at_exact_frame_start_returns_that_frame(
-        self, known_framerate_video: tuple[Path, float, int]
-    ):
+    def test_query_at_exact_frame_start_returns_that_frame(self, known_framerate_video: tuple[Path, float, int]):
         """Test that querying at exact frame start time returns that frame."""
         from mediaref.video_decoder import PyAVVideoDecoder, BatchDecodingStrategy
 
@@ -134,9 +132,7 @@ class TestPlaybackSemantics:
                 expected_intensity = frame_idx * 25
                 query_time = frame_idx * frame_duration
 
-                batch = decoder.get_frames_played_at(
-                    [query_time], strategy=BatchDecodingStrategy.SEPARATE
-                )
+                batch = decoder.get_frames_played_at([query_time], strategy=BatchDecodingStrategy.SEPARATE)
 
                 actual_intensity = batch.data[0].mean()
                 assert abs(actual_intensity - expected_intensity) < 5, (
@@ -144,9 +140,7 @@ class TestPlaybackSemantics:
                     f"~{expected_intensity}, got {actual_intensity:.1f}"
                 )
 
-    def test_query_at_mid_frame_returns_that_frame(
-        self, known_framerate_video: tuple[Path, float, int]
-    ):
+    def test_query_at_mid_frame_returns_that_frame(self, known_framerate_video: tuple[Path, float, int]):
         """Test that querying at middle of frame duration returns that frame."""
         from mediaref.video_decoder import PyAVVideoDecoder, BatchDecodingStrategy
 
@@ -157,9 +151,7 @@ class TestPlaybackSemantics:
                 expected_intensity = frame_idx * 25
                 query_time = frame_idx * frame_duration + frame_duration / 2
 
-                batch = decoder.get_frames_played_at(
-                    [query_time], strategy=BatchDecodingStrategy.SEPARATE
-                )
+                batch = decoder.get_frames_played_at([query_time], strategy=BatchDecodingStrategy.SEPARATE)
 
                 actual_intensity = batch.data[0].mean()
                 assert abs(actual_intensity - expected_intensity) < 5, (
@@ -167,9 +159,7 @@ class TestPlaybackSemantics:
                     f"~{expected_intensity}, got {actual_intensity:.1f}"
                 )
 
-    def test_query_just_before_next_frame_returns_current_frame(
-        self, known_framerate_video: tuple[Path, float, int]
-    ):
+    def test_query_just_before_next_frame_returns_current_frame(self, known_framerate_video: tuple[Path, float, int]):
         """Test that querying just before next frame starts returns current frame."""
         from mediaref.video_decoder import PyAVVideoDecoder, BatchDecodingStrategy
 
@@ -181,9 +171,7 @@ class TestPlaybackSemantics:
                 expected_intensity = frame_idx * 25
                 query_time = (frame_idx + 1) * frame_duration - epsilon
 
-                batch = decoder.get_frames_played_at(
-                    [query_time], strategy=BatchDecodingStrategy.SEPARATE
-                )
+                batch = decoder.get_frames_played_at([query_time], strategy=BatchDecodingStrategy.SEPARATE)
 
                 actual_intensity = batch.data[0].mean()
                 assert abs(actual_intensity - expected_intensity) < 5, (
@@ -191,9 +179,7 @@ class TestPlaybackSemantics:
                     f"expected intensity ~{expected_intensity}, got {actual_intensity:.1f}"
                 )
 
-    def test_all_strategies_return_same_frame(
-        self, known_framerate_video: tuple[Path, float, int]
-    ):
+    def test_all_strategies_return_same_frame(self, known_framerate_video: tuple[Path, float, int]):
         """Test that all decoding strategies return the same frame for a given query."""
         from mediaref.video_decoder import PyAVVideoDecoder, BatchDecodingStrategy
 
@@ -217,9 +203,7 @@ class TestPlaybackSemantics:
                 intensity_range = max(intensities) - min(intensities)
                 assert intensity_range < 5, f"Strategies disagree at {query_time:.3f}s: {results}"
 
-    def test_batch_query_returns_correct_frames(
-        self, known_framerate_video: tuple[Path, float, int]
-    ):
+    def test_batch_query_returns_correct_frames(self, known_framerate_video: tuple[Path, float, int]):
         """Test that batch queries return correct frames in correct order."""
         from mediaref.video_decoder import PyAVVideoDecoder, BatchDecodingStrategy
 
@@ -243,18 +227,13 @@ class TestPlaybackSemantics:
                         f"expected intensity ~{expected}, got {actual:.1f}"
                     )
 
-    def test_individual_and_batch_return_same_frames(
-        self, known_framerate_video: tuple[Path, float, int]
-    ):
+    def test_individual_and_batch_return_same_frames(self, known_framerate_video: tuple[Path, float, int]):
         """Test that individual to_ndarray() and batch_decode() return same frames."""
         from mediaref import MediaRef, batch_decode, cleanup_cache
 
         video_path, frame_duration, num_frames = known_framerate_video
 
-        pts_ns_list = [
-            int((i * frame_duration + frame_duration / 2) * 1_000_000_000)
-            for i in range(num_frames)
-        ]
+        pts_ns_list = [int((i * frame_duration + frame_duration / 2) * 1_000_000_000) for i in range(num_frames)]
         refs = [MediaRef(uri=str(video_path), pts_ns=pts_ns) for pts_ns in pts_ns_list]
 
         cleanup_cache()
@@ -265,6 +244,7 @@ class TestPlaybackSemantics:
 
         for i, (batch_frame, individual_frame) in enumerate(zip(batch_results, individual_results)):
             np.testing.assert_array_equal(
-                batch_frame, individual_frame,
-                err_msg=f"Frame {i}: batch and individual decode returned different frames"
+                batch_frame,
+                individual_frame,
+                err_msg=f"Frame {i}: batch and individual decode returned different frames",
             )
