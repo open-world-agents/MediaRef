@@ -55,7 +55,7 @@ When loading multiple frames from the same video, `batch_decode()` opens the vid
 
 > **Benchmark details**: Decoding throughput = decoded frames per second during dataloading; I/O efficiency = inverse of disk I/O operations per frame loaded. Measured on real ML dataloader workloads (Minecraft dataset: 64×5 min episodes, 640×360 @ 20Hz, FSLDataset with 4096 token sequences). See [D2E paper](https://worv-ai.github.io/d2e/) Section 3 and Appendix A for full methodology.
 
-[^1]: The benchmark was conducted against TorchCodec v0.6.0, which only supported `seek_mode=exact` for `.mkv` files, forcing full sequential scans and causing significant I/O overhead. While `seek_mode=approximate` was added in v0.9.0 ([pytorch/torchcodec#989](https://github.com/pytorch/torchcodec/pull/989)), TorchCodec still has fundamental stability issues with certain container formats (see [pytorch/torchcodec#1223](https://github.com/pytorch/torchcodec/issues/1223)). MediaRef provides PyAV as a stable fallback decoder.
+[^1]: The benchmark was conducted against TorchCodec v0.6.0, which only supported `seek_mode=exact` for `.mkv` files, forcing full sequential scans. While `seek_mode=approximate` was added in v0.9.0, TorchCodec still exhibits severe performance issues with `.mkv` files—up to 42× slower than `.mp4` when seeking to non-zero positions, even in v0.10.0 (see [pytorch/torchcodec#1223](https://github.com/pytorch/torchcodec/issues/1223)). MediaRef provides PyAV as a stable alternative.
 
 ## Installation
 
