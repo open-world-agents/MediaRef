@@ -45,17 +45,9 @@ The MediaRef schema(`uri`, `pts_ns`) is designed to be **permanent**, built enti
 
 **3. Optimized performance where it matters**
 
-Due to lazy lazy loading, MediaRef has **zero CPU and I/O overhead** when the media is not accessed. When you do need to load the media, convenient APIs handle the complexity of multi-source media (local files, URLs, embedded data) with a single unified interface.
+Due to lazy loading, MediaRef has **zero CPU and I/O overhead** when the media is not accessed. When you do need to load the media, convenient APIs handle the complexity of multi-source media (local files, URLs, embedded data) with a single unified interface.
 
-When loading multiple frames from the same video, `batch_decode()` opens the video file once and reuses the handle with **adaptive batching strategies**[^1] that automatically optimize decoding based on frame access patterns, achieving **4.9× faster throughput** and **41× better I/O efficiency** compared to existing methods.
-
-[^1]: **Adaptive Batching Strategies** are our novel contribution (first introduced in the [D2E paper](https://arxiv.org/abs/2510.05684)) addressing a fundamental video codec constraint: reading any frame requires sequential decoding from its preceding keyframe. Existing approaches either (1) seek separately for each frame, causing redundant I/O and repeated decoding when multiple frames share a keyframe block, or (2) decode everything sequentially from first to last request, wasting computation on unwanted intermediate frames for sparse queries. Our `SEQUENTIAL_PER_KEYFRAME_BLOCK` strategy: sort requested timestamps, seek to the first target, decode and collect all matching frames until reaching the next keyframe block boundary, then seek directly to the next unprocessed target. This ensures each keyframe block is visited at most once—eliminating redundant seeks and duplicate decoding—while skipping unwanted frames between distant requests.
-
-<p align="center">
-  <img src=".github/assets/decoding_benchmark.png" alt="Decoding Benchmark" width="800">
-</p>
-
-> **Benchmark details**: Decoding throughput = decoded frames per second during dataloading; I/O efficiency = inverse of disk I/O operations per frame loaded. Measured on real ML dataloader workloads (Minecraft dataset: 64×5 min episodes, 640×360 @ 20Hz, FSLDataset with 4096 token sequences) vs baseline and TorchCodec v0.6.0. See [D2E paper](https://worv-ai.github.io/d2e/) Section 3 and Appendix A for full methodology.
+When loading multiple frames from the same video, `batch_decode()` opens the video file once and reuses the handle for efficient decoding.
 
 ## Installation
 
@@ -121,7 +113,7 @@ refs = [MediaRef(uri="video.mp4", pts_ns=int(i*1e9)) for i in range(10)]
 frames = batch_decode(refs)
 
 # Or use TorchCodec for GPU-accelerated decoding
-frames = batch_decode(refs, decoder="torchcodec")  # Requires: pip install torchcodec>=0.9.0
+frames = batch_decode(refs, decoder="torchcodec")  # Requires: pip install torchcodec
 ```
 
 Both decoders follow unified [playback semantics](docs/playback_semantics.md)—querying a timestamp returns the frame being displayed at that moment, ensuring consistent behavior across backends.
@@ -220,20 +212,7 @@ ref = MediaRef.model_validate_json(json_str)           # From JSON
 
 **Optional dependencies**:
 - `[video]` extra: `av>=15.0` (PyAV for video frame extraction)
-- TorchCodec: `torchcodec>=0.9.0` (install separately for GPU-accelerated decoding)
-
-## Citation
-
-If you find the our batch decode API useful, please cite the D2E paper where it was first introduced:
-
-```bibtex
-@article{choi2025d2e,
-  title={D2E: Scaling Vision-Action Pretraining on Desktop Data for Transfer to Embodied AI},
-  author={Choi, Suhwan and Jung, Jaeyoon and Seong, Haebin and Kim, Minchan and Kim, Minyeong and Cho, Yongjun and Kim, Yoonshik and Park, Yubeen and Yu, Youngjae and Lee, Yunsung},
-  journal={arXiv preprint arXiv:2510.05684},
-  year={2025}
-}
-```
+- TorchCodec: `torchcodec` (install separately for GPU-accelerated decoding)
 
 ## Acknowledgments
 

@@ -57,7 +57,7 @@ Both decoders follow the same [playback semantics](playback_semantics.md), ensur
   - CPU-based decoding using FFmpeg
   - Automatic container caching with reference counting
 - `TorchCodecVideoDecoder(source)` - TorchCodec-based decoder
-  - Requires `torchcodec>=0.9.0` (install separately)
+  - Requires `torchcodec` (install separately)
   - GPU-accelerated decoding with CUDA support
 
 **Decoder Comparison:**
@@ -67,5 +67,5 @@ Both decoders follow the same [playback semantics](playback_semantics.md), ensur
 | Playback semantics | ✅ Unified | ✅ Unified |
 | GPU acceleration | ❌ CPU only | ✅ CUDA support |
 | Backend | PyAV (FFmpeg) | TorchCodec (FFmpeg) |
-| Installation | `pip install mediaref[video]` | `pip install torchcodec>=0.9.0` |
+| Installation | `pip install mediaref[video]` | `pip install torchcodec` |
 
