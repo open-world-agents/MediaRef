@@ -286,6 +286,67 @@ class TestPropertyInteractions:
         assert not image_ref.is_embedded
 
 
+@pytest.mark.video
+class TestRGBADecoding:
+    """Test RGBA decoding stability.
+
+    Regression tests for RGBA format crash issue.
+    PR: https://github.com/open-world-agents/MediaRef/pull/10
+    Related: https://github.com/PyAV-Org/PyAV/issues/1269
+    """
+
+    # The specific video that caused crashes in v0.4.2-0.4.3
+    # Originally from: https://huggingface.co/datasets/open-world-agents/example_dataset/resolve/main/example.mkv
+    PROBLEMATIC_VIDEO_PATH = Path(__file__).parent / "assets" / "example.mkv"
+
+    def test_rgba_format_no_crash(self):
+        """Test that RGBA decoding doesn't crash on problematic videos.
+
+        This is a regression test for the malloc_consolidate crash that occurred
+        when using to_ndarray(format="rgba") on certain videos.
+
+        Root cause: PyAV's to_rgb() with dst_format="rgba" produced ARGB instead
+        of RGBA, causing memory corruption when the buffer was interpreted as RGBA.
+
+        Fix: Decode using dst_format="argb" and manually reorder channels.
+        """
+        if not self.PROBLEMATIC_VIDEO_PATH.exists():
+            pytest.skip("example.mkv not found")
+
+        # This specific timestamp caused crashes in v0.4.2-0.4.3
+        pts_ns = 1_000_000_000
+
+        ref = MediaRef(uri=str(self.PROBLEMATIC_VIDEO_PATH), pts_ns=pts_ns)
+
+        # Should not crash with malloc_consolidate error
+        rgba = ref.to_ndarray(format="rgba")
+
+        # Verify output is valid
+        assert isinstance(rgba, np.ndarray)
+        assert rgba.dtype == np.uint8
+        assert len(rgba.shape) == 3
+        assert rgba.shape[2] == 4  # RGBA channels
+
+    def test_rgba_format_multiple_frames(self):
+        """Test RGBA decoding stability across multiple frames."""
+        if not self.PROBLEMATIC_VIDEO_PATH.exists():
+            pytest.skip("example.mkv not found")
+
+        # Test multiple timestamps including the problematic one
+        timestamps_ns = [0, 500_000_000, 1_000_000_000, 1_500_000_000]
+
+        refs = [MediaRef(uri=str(self.PROBLEMATIC_VIDEO_PATH), pts_ns=ts) for ts in timestamps_ns]
+
+        # Batch decode should not crash
+        results = batch_decode(refs)
+
+        assert len(results) == len(timestamps_ns)
+        for rgb in results:
+            assert isinstance(rgb, np.ndarray)
+            assert rgb.dtype == np.uint8
+            assert rgb.shape[2] == 3
+
+
 @pytest.mark.integration
 class TestErrorRecovery:
     """Test error recovery and cleanup."""
