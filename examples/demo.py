@@ -89,30 +89,14 @@ if video_available:
     print(f"   ✓ Individual: {time_individual * 1000:.1f}ms, Batch: {time_batch * 1000:.1f}ms → {speedup:.1f}x faster")
 
 # ============================================================================
-# Batch Decoding - Optimized Video Frame Loading
+# Batch Decoding - TorchCodec Backend
 # ============================================================================
 
 if video_available:
-    print("\n5. Batch decoding strategies - Performance comparison")
-    from mediaref.video_decoder import BatchDecodingStrategy
-
-    refs = [MediaRef(uri=str(video_path), pts_ns=int(i * 0.1e9)) for i in range(10)]
-
-    # Strategy 1: SEQUENTIAL (simple, always works)
-    start = time.perf_counter()
-    frames = batch_decode(refs, decoder="pyav", strategy=BatchDecodingStrategy.SEQUENTIAL)
-    time_sequential = time.perf_counter() - start
-
-    # Strategy 2: SEQUENTIAL_PER_KEYFRAME_BLOCK (adaptive, recommended)
-    start = time.perf_counter()
-    frames = batch_decode(refs, decoder="pyav", strategy=BatchDecodingStrategy.SEQUENTIAL_PER_KEYFRAME_BLOCK)
-    time_adaptive = time.perf_counter() - start
-
-    print(f"   ✓ SEQUENTIAL: {time_sequential * 1000:.1f}ms")
-    print(f"   ✓ SEQUENTIAL_PER_KEYFRAME_BLOCK: {time_adaptive * 1000:.1f}ms (adaptive, recommended)")
-
+    print("\n5. TorchCodec backend (GPU-accelerated)")
     # Or use TorchCodec for GPU-accelerated decoding
-    # frames = batch_decode(refs, decoder="torchcodec")  # Requires: pip install torchcodec>=0.4.0
+    # frames = batch_decode(refs, decoder="torchcodec")  # Requires: pip install torchcodec
+    print("   ⚠️  TorchCodec not demonstrated (install separately for GPU acceleration)")
 
 # ============================================================================
 # Embedding Media Directly in MediaRef

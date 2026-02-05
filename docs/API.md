@@ -5,10 +5,11 @@
 **Properties:** `is_embedded`, `is_video`, `is_remote`, `is_relative_path`
 
 **Methods:**
-- `to_ndarray(format="rgb", **kwargs) -> np.ndarray` - Load as numpy array
+- `to_ndarray(format="rgb") -> np.ndarray` - Load as numpy array
   - Formats: `"rgb"` (default), `"bgr"`, `"rgba"`, `"bgra"`, `"gray"`
   - Returns: (H, W, 3) for RGB/BGR, (H, W, 4) for RGBA/BGRA, (H, W) for grayscale
-- `to_pil_image(**kwargs) -> PIL.Image` - Load as PIL Image
+- `to_pil_image(format="rgb") -> PIL.Image` - Load as PIL Image
+  - Formats: `"rgb"` (default), `"rgba"`, `"gray"`
 - `resolve_relative_path(base_path, on_unresolvable="warn") -> MediaRef` - Resolve relative paths
   - `on_unresolvable`: How to handle embedded/remote URIs: `"error"`, `"warn"` (default), or `"ignore"`
 - `validate_uri() -> bool` - Check if URI exists (local files only)
@@ -43,29 +44,28 @@
 
 ## Functions
 
-- `batch_decode(refs, strategy=None, decoder="pyav", **kwargs) -> list[np.ndarray]` - Batch decode using optimized batch decoding API
+- `batch_decode(refs, decoder="pyav") -> list[np.ndarray]` - Batch decode video frames
   - `refs`: List of MediaRef objects to decode
-  - `strategy`: Batch decoding strategy (PyAV only): `SEPARATE`, `SEQUENTIAL`, or `SEQUENTIAL_PER_KEYFRAME_BLOCK` (default)
   - `decoder`: Decoder backend (`"pyav"` or `"torchcodec"`)
 - `cleanup_cache()` - Clear video container cache (PyAV only)
 
 ## Video Decoders (requires `[video]` extra)
 
-- `PyAVVideoDecoder(source)` - PyAV-based decoder with batch decoding strategies
-  - Supports batch decoding strategies: `SEPARATE`, `SEQUENTIAL`, `SEQUENTIAL_PER_KEYFRAME_BLOCK`
+Both decoders follow the same [playback semantics](playback_semantics.md), ensuring consistent frame selection regardless of backend.
+
+- `PyAVVideoDecoder(source)` - PyAV-based decoder
   - CPU-based decoding using FFmpeg
   - Automatic container caching with reference counting
-- `TorchCodecVideoDecoder(source)` - TorchCodec-based decoder for GPU acceleration
-  - Requires `torchcodec>=0.4.0` (install separately)
+- `TorchCodecVideoDecoder(source)` - TorchCodec-based decoder
+  - Requires `torchcodec` (install separately)
   - GPU-accelerated decoding with CUDA support
-  - Does not support batch decoding strategies (parameter ignored)
 
 **Decoder Comparison:**
 
 | Feature | PyAVVideoDecoder | TorchCodecVideoDecoder |
 |---------|------------------|------------------------|
-| Batch decoding strategies | ✅ Full support | ❌ Not supported (ignored) |
+| Playback semantics | ✅ Unified | ✅ Unified |
 | GPU acceleration | ❌ CPU only | ✅ CUDA support |
 | Backend | PyAV (FFmpeg) | TorchCodec (FFmpeg) |
-| Installation | `pip install mediaref[video]` | `pip install torchcodec>=0.4.0` |
+| Installation | `pip install mediaref[video]` | `pip install torchcodec` |
 

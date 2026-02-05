@@ -228,7 +228,9 @@ class TestRemoteURLIntegration:
     @pytest.mark.video
     def test_remote_video_loading(self):
         """Test loading video frame from remote URL."""
-        remote_video_url = "https://huggingface.co/datasets/open-world-agents/example_dataset/resolve/main/example.mkv"
+        remote_video_url = (
+            "https://raw.githubusercontent.com/open-world-agents/MediaRef/main/tests/assets/example_video.mkv"
+        )
         pts_ns = 1_000_000_000
 
         ref = MediaRef(uri=remote_video_url, pts_ns=pts_ns)

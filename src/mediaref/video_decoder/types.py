@@ -1,13 +1,11 @@
 """Type definitions for video decoding."""
 
-import enum
 from dataclasses import dataclass
 from fractions import Fraction
-from typing import Literal, Union
+from typing import Optional, Union
 
 # Type aliases
 SECOND_TYPE = Union[float, Fraction]
-PTSUnit = Literal["pts", "sec"]
 
 
 @dataclass
@@ -20,6 +18,8 @@ class VideoStreamMetadata:
         average_rate: Average frame rate (as Fraction for precision)
         width: Frame width in pixels
         height: Frame height in pixels
+        begin_stream_seconds: First frame's PTS in seconds (default 0)
+        end_stream_seconds: End of stream in seconds (last_frame.pts + last_frame.duration)
 
     Examples:
         >>> metadata = VideoStreamMetadata(
@@ -38,42 +38,16 @@ class VideoStreamMetadata:
     average_rate: Fraction
     width: int
     height: int
+    begin_stream_seconds: Fraction = Fraction(0)
+    end_stream_seconds: Optional[Fraction] = None
 
-
-class BatchDecodingStrategy(str, enum.Enum):
-    """Batch decoding strategy for video frames.
-
-    Different strategies optimize for different access patterns:
-
-    - SEPARATE: Decode each frame independently by seeking to each timestamp.
-      Best for sparse queries (e.g., frames [0, 100, 200, 300]).
-
-    - SEQUENTIAL_PER_KEYFRAME_BLOCK: Decode frames in batches, one batch per
-      keyframe interval. Balanced approach that works well for both sparse
-      and dense queries.
-
-    - SEQUENTIAL: Decode all frames in one sequential pass from the first
-      requested frame to the last. Best for dense queries (e.g., frames [0-100]).
-
-    Examples:
-        >>> # Sparse query - use SEPARATE
-        >>> decoder.get_frames_at([0, 100, 200], strategy=BatchDecodingStrategy.SEPARATE)
-        >>>
-        >>> # Dense query - use SEQUENTIAL
-        >>> decoder.get_frames_at(list(range(100)), strategy=BatchDecodingStrategy.SEQUENTIAL)
-        >>>
-        >>> # Mixed query - use SEQUENTIAL_PER_KEYFRAME_BLOCK (default)
-        >>> decoder.get_frames_at([0, 10, 20, 100, 110], strategy=BatchDecodingStrategy.SEQUENTIAL_PER_KEYFRAME_BLOCK)
-    """
-
-    SEPARATE = "separate"
-    SEQUENTIAL_PER_KEYFRAME_BLOCK = "sequential_per_keyframe_block"
-    SEQUENTIAL = "sequential"
+    def __post_init__(self):
+        """Set end_stream_seconds to begin + duration if not provided."""
+        if self.end_stream_seconds is None:
+            self.end_stream_seconds = self.begin_stream_seconds + self.duration_seconds
 
 
 __all__ = [
     "SECOND_TYPE",
-    "PTSUnit",
     "VideoStreamMetadata",
-    "BatchDecodingStrategy",
 ]

@@ -10,7 +10,6 @@ import numpy.typing as npt
 if TYPE_CHECKING:
     from .core import MediaRef
     from .video_decoder import BaseVideoDecoder
-    from .video_decoder.types import BatchDecodingStrategy
 
 NANOSECOND = 1_000_000_000  # 1 second in nanoseconds
 
@@ -32,7 +31,7 @@ def _get_decoder_class(backend: DecoderBackend) -> Type["BaseVideoDecoder"]:
         except ImportError as e:
             raise ImportError(
                 "TorchCodec decoder requested but torchcodec is not installed. "
-                "Install it with: pip install torchcodec>=0.4.0"
+                "Install it separately: pip install torchcodec"
             ) from e
     else:
         raise ValueError(f"Unknown decoder backend: {backend}. Must be 'pyav' or 'torchcodec'")
@@ -40,7 +39,6 @@ def _get_decoder_class(backend: DecoderBackend) -> Type["BaseVideoDecoder"]:
 
 def batch_decode(
     refs: list["MediaRef"],
-    strategy: "BatchDecodingStrategy | None" = None,
     decoder: DecoderBackend = "pyav",
     **kwargs,
 ) -> list[npt.NDArray[np.uint8]]:
@@ -51,7 +49,6 @@ def batch_decode(
 
     Args:
         refs: List of MediaRef objects to decode
-        strategy: Batch decoding strategy (PyAV only): SEPARATE, SEQUENTIAL_PER_KEYFRAME_BLOCK, or SEQUENTIAL
         decoder: Decoder backend ('pyav' or 'torchcodec'). Default: 'pyav'
         **kwargs: Additional options passed to to_ndarray() for image loading
 
@@ -116,12 +113,7 @@ def batch_decode(
         # Use selected decoder for batch decoding
         try:
             with decoder_class(uri) as video_decoder:
-                # Get frames as FrameBatch
-                # Pass strategy only if explicitly provided
-                if strategy is not None:
-                    batch = video_decoder.get_frames_played_at(pts_seconds, strategy=strategy)
-                else:
-                    batch = video_decoder.get_frames_played_at(pts_seconds)
+                batch = video_decoder.get_frames_played_at(pts_seconds)
 
                 # Convert from NCHW to HWC format
                 for idx, frame_nchw in zip(indices, batch.data):
