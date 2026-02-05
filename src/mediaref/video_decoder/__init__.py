@@ -41,10 +41,10 @@ except ImportError:
         """Placeholder for TorchCodec decoder when dependency is not installed."""
 
         def __init__(self, source: PathLike, **kwargs):
-            raise ImportError("TorchCodec is not available. Please install it with: pip install torchcodec>=0.4.0")
+            raise ImportError("TorchCodec is not available. Install it separately: pip install torchcodec")
 
         def __new__(cls, source: PathLike, **kwargs):
-            raise ImportError("TorchCodec is not available. Please install it with: pip install torchcodec>=0.4.0")
+            raise ImportError("TorchCodec is not available. Install it separately: pip install torchcodec")
 
     __all__ = [
         "BaseVideoDecoder",

@@ -31,7 +31,7 @@ def _get_decoder_class(backend: DecoderBackend) -> Type["BaseVideoDecoder"]:
         except ImportError as e:
             raise ImportError(
                 "TorchCodec decoder requested but torchcodec is not installed. "
-                "Install it with: pip install torchcodec>=0.4.0"
+                "Install it separately: pip install torchcodec"
             ) from e
     else:
         raise ValueError(f"Unknown decoder backend: {backend}. Must be 'pyav' or 'torchcodec'")
