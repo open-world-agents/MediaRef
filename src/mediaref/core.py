@@ -164,9 +164,7 @@ class MediaRef(BaseModel):
 
     # ========== Loading Methods ==========
 
-    def to_ndarray(
-        self, format: Literal["rgb", "bgr", "rgba", "bgra", "gray"] = "rgb"
-    ) -> npt.NDArray[np.uint8]:
+    def to_ndarray(self, format: Literal["rgb", "bgr", "rgba", "bgra", "gray"] = "rgb") -> npt.NDArray[np.uint8]:
         """Load and return media as numpy ndarray in specified format.
 
         Args:
@@ -205,9 +203,7 @@ class MediaRef(BaseModel):
 
         raise ValueError(f"Unsupported format: {format}. Must be one of: rgb, bgr, rgba, bgra, gray")
 
-    def to_pil_image(
-        self, format: Literal["rgb", "rgba", "gray"] = "rgb"
-    ) -> PIL.Image.Image:
+    def to_pil_image(self, format: Literal["rgb", "rgba", "gray"] = "rgb") -> PIL.Image.Image:
         """Load and return media as PIL Image.
 
         Args:
@@ -228,9 +224,7 @@ class MediaRef(BaseModel):
             >>> img = ref.to_pil_image()
         """
         if format in ("bgr", "bgra"):
-            raise ValueError(
-                f"Format '{format}' is not compatible with to_pil_image. Use 'rgb', 'rgba', or 'gray'."
-            )
+            raise ValueError(f"Format '{format}' is not compatible with to_pil_image. Use 'rgb', 'rgba', or 'gray'.")
 
         return PIL.Image.fromarray(self.to_ndarray(format=format))
 
