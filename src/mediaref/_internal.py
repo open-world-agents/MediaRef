@@ -1,9 +1,8 @@
 """Internal loading and encoding utilities."""
 
-import gc
 import os
 from pathlib import Path
-from typing import TYPE_CHECKING, Union
+from typing import Union
 
 import numpy as np
 import numpy.typing as npt
@@ -11,44 +10,9 @@ import PIL.Image
 import PIL.ImageOps
 import requests
 
-if TYPE_CHECKING:
-    import av
-
 # Constants
 REQUEST_TIMEOUT = 60  # HTTP request timeout in seconds
 NANOSECOND = 1_000_000_000  # 1 second in nanoseconds
-
-# Garbage collection for PyAV reference cycles
-_CALLED_TIMES = 0
-GC_COLLECTION_INTERVAL = 10
-
-
-# ============================================================================
-# PyAV Frame Conversion
-# ============================================================================
-
-
-def _frame_to_rgba(frame: "av.VideoFrame") -> npt.NDArray[np.uint8]:
-    """Convert PyAV frame to RGBA numpy array.
-
-    NOTE: Convert ARGB to RGBA manually instead of using `to_ndarray(format="rgba")`.
-    Direct RGBA conversion causes memory corruption on certain videos:
-      Error: "malloc_consolidate(): invalid chunk size; Fatal Python error: Aborted"
-      Example: https://huggingface.co/datasets/open-world-agents/example_dataset/resolve/main/example.mkv (pts_ns=1_000_000_000)
-    Possibly related to:
-      - PyAV issue: https://github.com/PyAV-Org/PyAV/issues/1269
-      - FFmpeg ticket: https://trac.ffmpeg.org/ticket/9254
-
-    Args:
-        frame: PyAV VideoFrame to convert
-
-    Returns:
-        RGBA numpy array (H, W, 4) with uint8 dtype
-    """
-    argb_array = frame.to_ndarray(format="argb")
-    # ARGB format stores channels as [A, R, G, B], so we reorder to [R, G, B, A]
-    rgba_array: npt.NDArray[np.uint8] = argb_array[:, :, [1, 2, 3, 0]]
-    return rgba_array
 
 
 # ============================================================================
@@ -152,11 +116,6 @@ def load_video_frame_as_rgba(
         FileNotFoundError: If local file doesn't exist
     """
     from .video_decoder import PyAVVideoDecoder
-
-    global _CALLED_TIMES
-    _CALLED_TIMES += 1
-    if _CALLED_TIMES % GC_COLLECTION_INTERVAL == 0:
-        gc.collect()
 
     try:
         # Convert file:// URI to local path if needed

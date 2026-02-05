@@ -1,6 +1,6 @@
 """Video decoder module providing unified interface for video decoding.
 
-This module provides a unified interface for video decoding through the
+This module provides a minimal interface for video decoding through the
 BaseVideoDecoder abstract class, with implementations for PyAV and TorchCodec.
 
 Classes:
@@ -10,15 +10,7 @@ Classes:
     TorchCodecVideoDecoder: TorchCodec-based decoder implementation (optional)
 
 Examples:
-    >>> # Using PyAV decoder
-    >>> from mediaref.video_decoder import PyAVVideoDecoder
-    >>> decoder = PyAVVideoDecoder("video.mp4")
-    >>> batch = decoder.get_frames_at([0, 10, 20])
-    >>> decoder.close()
-    >>>
-    >>> # Using TorchCodec decoder (if available)
-    >>> from mediaref.video_decoder import TorchCodecVideoDecoder
-    >>> with TorchCodecVideoDecoder("video.mp4") as decoder:
+    >>> with PyAVVideoDecoder("video.mp4") as decoder:
     ...     batch = decoder.get_frames_played_at([0.0, 1.0, 2.0])
 """
 
@@ -27,7 +19,7 @@ from .._typing import PathLike
 from .base import BaseVideoDecoder
 from .frame_batch import FrameBatch
 from .pyav_decoder import PyAVVideoDecoder
-from .types import BatchDecodingStrategy, VideoStreamMetadata
+from .types import VideoStreamMetadata
 
 # Ensure video dependencies are available
 require_video()
@@ -41,7 +33,6 @@ try:
         "FrameBatch",
         "PyAVVideoDecoder",
         "TorchCodecVideoDecoder",
-        "BatchDecodingStrategy",
         "VideoStreamMetadata",
     ]
 except ImportError:
@@ -60,6 +51,5 @@ except ImportError:
         "FrameBatch",
         "PyAVVideoDecoder",
         "TorchCodecVideoDecoder",
-        "BatchDecodingStrategy",
         "VideoStreamMetadata",
     ]

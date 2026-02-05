@@ -1,13 +1,11 @@
 """Type definitions for video decoding."""
 
-import enum
 from dataclasses import dataclass
 from fractions import Fraction
-from typing import Literal, Union
+from typing import Union
 
 # Type aliases
 SECOND_TYPE = Union[float, Fraction]
-PTSUnit = Literal["pts", "sec"]
 
 
 @dataclass
@@ -40,40 +38,7 @@ class VideoStreamMetadata:
     height: int
 
 
-class BatchDecodingStrategy(str, enum.Enum):
-    """Batch decoding strategy for video frames.
-
-    Different strategies optimize for different access patterns:
-
-    - SEPARATE: Decode each frame independently by seeking to each timestamp.
-      Best for sparse queries (e.g., frames [0, 100, 200, 300]).
-
-    - SEQUENTIAL_PER_KEYFRAME_BLOCK: Decode frames in batches, one batch per
-      keyframe interval. Balanced approach that works well for both sparse
-      and dense queries.
-
-    - SEQUENTIAL: Decode all frames in one sequential pass from the first
-      requested frame to the last. Best for dense queries (e.g., frames [0-100]).
-
-    Examples:
-        >>> # Sparse query - use SEPARATE
-        >>> decoder.get_frames_at([0, 100, 200], strategy=BatchDecodingStrategy.SEPARATE)
-        >>>
-        >>> # Dense query - use SEQUENTIAL
-        >>> decoder.get_frames_at(list(range(100)), strategy=BatchDecodingStrategy.SEQUENTIAL)
-        >>>
-        >>> # Mixed query - use SEQUENTIAL_PER_KEYFRAME_BLOCK (default)
-        >>> decoder.get_frames_at([0, 10, 20, 100, 110], strategy=BatchDecodingStrategy.SEQUENTIAL_PER_KEYFRAME_BLOCK)
-    """
-
-    SEPARATE = "separate"
-    SEQUENTIAL_PER_KEYFRAME_BLOCK = "sequential_per_keyframe_block"
-    SEQUENTIAL = "sequential"
-
-
 __all__ = [
     "SECOND_TYPE",
-    "PTSUnit",
     "VideoStreamMetadata",
-    "BatchDecodingStrategy",
 ]

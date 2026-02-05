@@ -1,41 +1,26 @@
 """Base interface for video decoders."""
 
 from abc import ABC, abstractmethod
-from typing import List, Optional, Union
-
-import numpy.typing as npt
+from typing import List
 
 from .._typing import PathLike
 from .frame_batch import FrameBatch
-from .types import BatchDecodingStrategy, VideoStreamMetadata
 
 
 class BaseVideoDecoder(ABC):
-    """Abstract base class defining the unified interface for all video decoders.
+    """Abstract base class defining the minimal interface for video decoders.
 
-    This interface is designed to be compatible with TorchCodec's VideoDecoder API
-    while providing flexibility for different decoder implementations (PyAV, TorchCodec, etc.).
+    This interface provides the essential functionality required by batch_decode:
+    - get_frames_played_at: Retrieve frames at specific timestamps
+    - Context manager protocol for resource management
 
-    All decoders must implement:
-    - Frame access by index or timestamp
-    - Batch decoding with configurable strategies
-    - Metadata access
-    - Resource management (context manager protocol)
+    The design follows TorchCodec's playback semantics where frames are displayed
+    from their pts until the next frame's pts.
 
     Examples:
-        >>> # Using PyAV decoder
-        >>> decoder = PyAVVideoDecoder("video.mp4")
-        >>> frames = decoder.get_frames_at([0, 10, 20])
-        >>> print(frames.data.shape)  # (3, C, H, W)
-        >>>
-        >>> # Using TorchCodec decoder
-        >>> decoder = TorchCodecVideoDecoder("video.mp4")
-        >>> frames = decoder.get_frames_played_at([0.0, 1.0, 2.0])
-        >>> decoder.close()
-        >>>
-        >>> # Context manager usage
         >>> with PyAVVideoDecoder("video.mp4") as decoder:
-        ...     frame = decoder[0]  # Array-like indexing
+        ...     batch = decoder.get_frames_played_at([0.0, 1.0, 2.0])
+        ...     print(batch.data.shape)  # (3, 3, H, W)
     """
 
     def __init__(self, source: PathLike, **kwargs):
@@ -47,66 +32,16 @@ class BaseVideoDecoder(ABC):
         """
         self.source = source
 
-    @property
     @abstractmethod
-    def metadata(self) -> VideoStreamMetadata:
-        """Access video stream metadata.
+    def get_frames_played_at(self, seconds: List[float]) -> FrameBatch:
+        """Retrieve frames that would be displayed at specific timestamps.
 
-        Returns:
-            VideoStreamMetadata containing:
-                - num_frames: Total number of frames
-                - duration_seconds: Video duration
-                - average_rate: Average frame rate
-                - width: Frame width in pixels
-                - height: Frame height in pixels
-
-        Examples:
-            >>> decoder = PyAVVideoDecoder("video.mp4")
-            >>> print(decoder.metadata.num_frames)
-            >>> print(decoder.metadata.duration_seconds)
-        """
-        pass
-
-    @abstractmethod
-    def __getitem__(self, key: Union[int, slice]) -> npt.NDArray:
-        """Enable array-like indexing for frame access.
+        Follows TorchCodec's playback semantics: a frame is displayed from its pts
+        until the next frame's pts. For a given timestamp t, returns the frame where
+        frame[i].pts <= t < frame[i+1].pts.
 
         Args:
-            key: Frame index (int) or slice
-
-        Returns:
-            Frame data as numpy array in NCHW format
-            - Single frame: (C, H, W)
-            - Multiple frames: (N, C, H, W)
-
-        Raises:
-            TypeError: If key is not int or slice
-            IndexError: If index is out of bounds
-
-        Examples:
-            >>> decoder = PyAVVideoDecoder("video.mp4")
-            >>> frame = decoder[0]  # First frame
-            >>> frames = decoder[10:20]  # Frames 10-19
-            >>> frames = decoder[::10]  # Every 10th frame
-        """
-        pass
-
-    @abstractmethod
-    def get_frames_at(
-        self,
-        indices: List[int],
-        *,
-        strategy: Optional[BatchDecodingStrategy] = None,
-    ) -> FrameBatch:
-        """Retrieve frames at specific frame indices.
-
-        Args:
-            indices: List of frame indices to retrieve
-            strategy: Batch decoding strategy (optional, only supported on some decoders):
-                - SEPARATE: Decode each frame separately (best for sparse queries)
-                - SEQUENTIAL_PER_KEYFRAME_BLOCK: Decode in batches per keyframe block (balanced)
-                - SEQUENTIAL: Decode all frames in one pass (best for dense queries)
-                - None: Use decoder's default strategy
+            seconds: List of timestamps in seconds to retrieve frames at
 
         Returns:
             FrameBatch containing:
@@ -114,37 +49,13 @@ class BaseVideoDecoder(ABC):
                 - pts_seconds: Presentation timestamps in seconds
                 - duration_seconds: Frame durations in seconds
 
-        Examples:
-            >>> decoder = PyAVVideoDecoder("video.mp4")
-            >>> batch = decoder.get_frames_at([0, 10, 20, 30])
-            >>> print(batch.data.shape)  # (4, 3, H, W)
-            >>> print(batch.pts_seconds)  # [0.0, 0.333..., 0.666..., 1.0]
-        """
-        pass
-
-    @abstractmethod
-    def get_frames_played_at(
-        self,
-        seconds: List[float],
-        *,
-        strategy: Optional[BatchDecodingStrategy] = None,
-    ) -> FrameBatch:
-        """Retrieve frames at specific timestamps.
-
-        Args:
-            seconds: List of timestamps in seconds to retrieve frames at
-            strategy: Batch decoding strategy (optional, see get_frames_at for details)
-
-        Returns:
-            FrameBatch containing frame data and timing information
-
         Raises:
-            ValueError: If any timestamp exceeds video duration
+            ValueError: If timestamp < 0 or timestamp >= end_stream_seconds
 
         Examples:
-            >>> decoder = PyAVVideoDecoder("video.mp4")
-            >>> batch = decoder.get_frames_played_at([0.0, 1.0, 2.0])
-            >>> print(batch.data.shape)  # (3, 3, H, W)
+            >>> with PyAVVideoDecoder("video.mp4") as decoder:
+            ...     batch = decoder.get_frames_played_at([0.0, 1.0, 2.0])
+            ...     print(batch.data.shape)  # (3, 3, H, W)
         """
         pass
 
@@ -154,34 +65,15 @@ class BaseVideoDecoder(ABC):
 
         Should be called when done with the decoder to free up resources.
         Safe to call multiple times.
-
-        Examples:
-            >>> decoder = PyAVVideoDecoder("video.mp4")
-            >>> frames = decoder.get_frames_at([0, 1, 2])
-            >>> decoder.close()
         """
         pass
 
     def __enter__(self):
-        """Enter context manager.
-
-        Returns:
-            self
-
-        Examples:
-            >>> with PyAVVideoDecoder("video.mp4") as decoder:
-            ...     frames = decoder.get_frames_at([0, 1, 2])
-        """
+        """Enter context manager."""
         return self
 
     def __exit__(self, exc_type, exc_val, exc_tb):  # noqa: ANN001
-        """Exit context manager and release resources.
-
-        Args:
-            exc_type: Exception type (if any)
-            exc_val: Exception value (if any)
-            exc_tb: Exception traceback (if any)
-        """
+        """Exit context manager and release resources."""
         self.close()
 
 
