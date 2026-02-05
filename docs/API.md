@@ -5,10 +5,11 @@
 **Properties:** `is_embedded`, `is_video`, `is_remote`, `is_relative_path`
 
 **Methods:**
-- `to_ndarray(format="rgb", **kwargs) -> np.ndarray` - Load as numpy array
+- `to_ndarray(format="rgb") -> np.ndarray` - Load as numpy array
   - Formats: `"rgb"` (default), `"bgr"`, `"rgba"`, `"bgra"`, `"gray"`
   - Returns: (H, W, 3) for RGB/BGR, (H, W, 4) for RGBA/BGRA, (H, W) for grayscale
-- `to_pil_image(**kwargs) -> PIL.Image` - Load as PIL Image
+- `to_pil_image(format="rgb") -> PIL.Image` - Load as PIL Image
+  - Formats: `"rgb"` (default), `"rgba"`, `"gray"`
 - `resolve_relative_path(base_path, on_unresolvable="warn") -> MediaRef` - Resolve relative paths
   - `on_unresolvable`: How to handle embedded/remote URIs: `"error"`, `"warn"` (default), or `"ignore"`
 - `validate_uri() -> bool` - Check if URI exists (local files only)
@@ -43,9 +44,9 @@
 
 ## Functions
 
-- `batch_decode(refs, strategy=None, decoder="pyav", **kwargs) -> list[np.ndarray]` - Batch decode using optimized batch decoding API
+- `batch_decode(refs, strategy=None, decoder="pyav") -> list[np.ndarray]` - Batch decode using optimized batch decoding API
   - `refs`: List of MediaRef objects to decode
-  - `strategy`: Batch decoding strategy (PyAV only): `SEPARATE`, `SEQUENTIAL`, or `SEQUENTIAL_PER_KEYFRAME_BLOCK` (default)
+  - `strategy`: Batch decoding strategy (PyAV only): `SEPARATE`, `SEQUENTIAL`, or `SEQUENTIAL_PER_KEYFRAME_BLOCK`. Default: `None` (auto-selects `SEQUENTIAL_PER_KEYFRAME_BLOCK`)
   - `decoder`: Decoder backend (`"pyav"` or `"torchcodec"`)
 - `cleanup_cache()` - Clear video container cache (PyAV only)
 
