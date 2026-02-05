@@ -2,7 +2,7 @@
 
 from dataclasses import dataclass
 from fractions import Fraction
-from typing import Union
+from typing import Optional, Union
 
 # Type aliases
 SECOND_TYPE = Union[float, Fraction]
@@ -18,6 +18,8 @@ class VideoStreamMetadata:
         average_rate: Average frame rate (as Fraction for precision)
         width: Frame width in pixels
         height: Frame height in pixels
+        begin_stream_seconds: First frame's PTS in seconds (default 0)
+        end_stream_seconds: End of stream in seconds (last_frame.pts + last_frame.duration)
 
     Examples:
         >>> metadata = VideoStreamMetadata(
@@ -36,6 +38,13 @@ class VideoStreamMetadata:
     average_rate: Fraction
     width: int
     height: int
+    begin_stream_seconds: Fraction = Fraction(0)
+    end_stream_seconds: Optional[Fraction] = None
+
+    def __post_init__(self):
+        """Set end_stream_seconds to begin + duration if not provided."""
+        if self.end_stream_seconds is None:
+            self.end_stream_seconds = self.begin_stream_seconds + self.duration_seconds
 
 
 __all__ = [

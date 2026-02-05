@@ -67,13 +67,23 @@ class PyAVVideoDecoder(BaseVideoDecoder):
         self._metadata = self._extract_metadata()
 
     def _extract_metadata(self) -> VideoStreamMetadata:
-        """Extract video stream metadata from container."""
+        """Extract video stream metadata from container.
+
+        Decodes only the first frame to get accurate begin_stream_seconds.
+        Uses header metadata for duration/end_stream_seconds.
+        """
         container = self._container
         if not container.streams.video:
             raise ValueError(f"No video streams found in {self.source}")
         stream = container.streams.video[0]
 
-        # Determine video duration
+        # Determine frame rate
+        if stream.average_rate:
+            average_rate = Fraction(stream.average_rate)
+        else:
+            raise ValueError("Failed to determine average rate")
+
+        # Determine video duration from header metadata
         if stream.duration and stream.time_base:
             duration_seconds = Fraction(stream.duration * stream.time_base)
         elif container.duration:
@@ -81,11 +91,24 @@ class PyAVVideoDecoder(BaseVideoDecoder):
         else:
             raise ValueError("Failed to determine duration")
 
-        # Determine frame rate
-        if stream.average_rate:
-            average_rate = Fraction(stream.average_rate)
-        else:
-            raise ValueError("Failed to determine average rate")
+        # Decode first frame to get accurate begin_stream_seconds
+        # This is fast - just one seek + one decode
+        container.seek(0)
+        first_pts = Fraction(0)
+        for frame in container.decode(video=0):
+            if frame.time is not None:
+                first_pts = Fraction(frame.time).limit_denominator(1000000)
+            break
+
+        # Reset container position
+        container.seek(0)
+
+        # begin_stream_seconds is the first frame's PTS
+        begin_stream_seconds = first_pts
+
+        # end_stream_seconds = begin + duration (from header)
+        # Note: This assumes header duration is relative to stream start
+        end_stream_seconds = begin_stream_seconds + duration_seconds
 
         # Determine frame count
         num_frames = stream.frames if stream.frames else int(duration_seconds * average_rate)
@@ -96,6 +119,8 @@ class PyAVVideoDecoder(BaseVideoDecoder):
             average_rate=average_rate,
             width=stream.width,
             height=stream.height,
+            begin_stream_seconds=begin_stream_seconds,
+            end_stream_seconds=end_stream_seconds,
         )
 
     @property
@@ -116,7 +141,7 @@ class PyAVVideoDecoder(BaseVideoDecoder):
             FrameBatch with frame data in NCHW format
 
         Raises:
-            ValueError: If any timestamp is negative or >= video duration
+            ValueError: If any timestamp is outside [begin_stream_seconds, end_stream_seconds)
         """
         if not seconds:
             return FrameBatch(
@@ -126,10 +151,13 @@ class PyAVVideoDecoder(BaseVideoDecoder):
             )
 
         # Validate timestamps per torchcodec_design.md boundary conditions
-        end_stream = float(self._metadata.duration_seconds)
+        begin_stream = float(self._metadata.begin_stream_seconds)
+        end_stream = float(self._metadata.end_stream_seconds)  # type: ignore[arg-type]
         for t in seconds:
-            if t < 0:
-                raise ValueError(f"Timestamp {t}s is negative")
+            if t < begin_stream:
+                raise ValueError(
+                    f"Timestamp {t}s < begin_stream_seconds ({begin_stream}s)"
+                )
             if t >= end_stream:
                 raise ValueError(f"Timestamp {t}s >= end_stream_seconds ({end_stream}s)")
 
@@ -173,11 +201,11 @@ class PyAVVideoDecoder(BaseVideoDecoder):
 
         query_idx = 0
         prev_frame: av.VideoFrame | None = None
+        prev_frame_pts: float = float("-inf")
 
-        # Seek to before the first query
+        # Smart seek: try to seek to first query, fall back to start if we overshoot
         first_query_time = indexed_queries[0][1]
-        seek_ts = int(av.time_base * first_query_time)
-        self._container.seek(seek_ts, any_frame=False)
+        self._seek_to_or_before(first_query_time)
 
         # Decode frames and match to queries using nextPts logic
         for frame in self._container.decode(video=0):
@@ -186,36 +214,45 @@ class PyAVVideoDecoder(BaseVideoDecoder):
 
             frame_pts = float(frame.time)
 
-            # Process all queries that fall before this frame's pts
-            # These queries are "played" by the previous frame
+            # Process all queries where: prev_frame.pts <= query < frame.pts
             while query_idx < len(indexed_queries):
                 orig_idx, query_time = indexed_queries[query_idx]
                 if query_time < frame_pts:
                     # This query's timestamp is before current frame's pts
-                    # So the previous frame is what would be displayed
-                    if prev_frame is not None:
+                    # Verify prev_frame.pts <= query_time (should always be true if validated)
+                    if prev_frame is not None and prev_frame_pts <= query_time:
                         results[orig_idx] = prev_frame
                         query_idx += 1
+                    elif prev_frame is None:
+                        # Query is before first frame - this should have been caught by validation
+                        raise ValueError(
+                            f"Timestamp {query_time}s is before first frame (pts={frame_pts}s)"
+                        )
                     else:
-                        # No previous frame - query is before first frame
-                        # Assign current frame as it's the first available
-                        results[orig_idx] = frame
-                        query_idx += 1
+                        # prev_frame_pts > query_time - should not happen with correct validation
+                        raise ValueError(
+                            f"Internal error: query {query_time}s not in range "
+                            f"[{prev_frame_pts}, {frame_pts})"
+                        )
                 else:
                     break
 
             prev_frame = frame
+            prev_frame_pts = frame_pts
 
             # Check if we've processed all queries
             if query_idx >= len(indexed_queries):
                 break
 
         # Handle remaining queries (timestamps at or after last decoded frame)
+        # These should satisfy: prev_frame.pts <= query < end_stream_seconds
         while query_idx < len(indexed_queries):
-            orig_idx, _ = indexed_queries[query_idx]
-            if prev_frame is not None:
+            orig_idx, query_time = indexed_queries[query_idx]
+            if prev_frame is not None and prev_frame_pts <= query_time:
                 results[orig_idx] = prev_frame
-            query_idx += 1
+                query_idx += 1
+            else:
+                raise ValueError(f"Could not find frame for timestamp {query_time}s")
 
         # Verify all queries were satisfied
         for i, result in enumerate(results):
@@ -223,6 +260,47 @@ class PyAVVideoDecoder(BaseVideoDecoder):
                 raise ValueError(f"Could not find frame for timestamp {seconds[i]}s")
 
         return results
+
+    def _seek_to_or_before(self, target_seconds: float) -> None:
+        """Seek to target time or before it, using exponential backoff if needed.
+
+        PyAV seeks to keyframes, which may land past the target if keyframes are sparse.
+        This method detects overshooting and backs off exponentially until we find a
+        valid seek point before the target.
+        """
+        stream = self._container.streams.video[0]
+        time_base = float(stream.time_base)
+        begin_stream = float(self._metadata.begin_stream_seconds)
+
+        # Start with seeking to the target
+        seek_target = target_seconds
+        buffer = 1.0  # Initial backoff buffer in seconds
+
+        while True:
+            seek_pts = int(seek_target / time_base)
+            self._container.seek(seek_pts, stream=stream, any_frame=False, backward=True)
+
+            # Check if we overshot by peeking at the first frame
+            try:
+                frame = next(self._container.decode(video=0))
+            except StopIteration:
+                # No frames at all - nothing we can do
+                return
+
+            if frame.time is not None and frame.time <= target_seconds:
+                # Good! We landed at or before the target
+                # Re-seek to restore position (we consumed one frame)
+                self._container.seek(seek_pts, stream=stream, any_frame=False, backward=True)
+                return
+
+            # We overshot! Back off and try again
+            seek_target = target_seconds - buffer
+            buffer *= 2  # Exponential backoff
+
+            # If we've backed off past the stream start, seek to start
+            if seek_target <= begin_stream:
+                self._container.seek(0)
+                return
 
     def close(self):
         """Release video decoder resources."""
