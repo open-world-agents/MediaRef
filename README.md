@@ -111,25 +111,20 @@ json_str = ref.model_dump_json()                       # Lightweight JSON string
 
 ### Batch Decoding - Optimized Video Frame Loading
 
-When loading multiple frames from the same video, use `batch_decode()` to open the video file once and reuse the handle with **adaptive batching strategies**[^1] that automatically optimize decoding based on frame access patterns—achieving significantly better performance than loading frames individually.
+When loading multiple frames from the same video, use `batch_decode()` to open the video file once and reuse the handle—achieving significantly better performance than loading frames individually.
 
 ```python
 from mediaref import MediaRef, batch_decode
-from mediaref.video_decoder import BatchDecodingStrategy
 
-# Use optimized batch decoding with adaptive strategy (default, recommended)
+# Use optimized batch decoding (default: PyAV backend)
 refs = [MediaRef(uri="video.mp4", pts_ns=int(i*1e9)) for i in range(10)]
-frames = batch_decode(
-    refs,
-    # Our optimized implementation based on PyAV
-    decoder="pyav",
-    # Our adaptive strategy for optimal performance
-    strategy=BatchDecodingStrategy.SEQUENTIAL_PER_KEYFRAME_BLOCK
-)
+frames = batch_decode(refs)
 
 # Or use TorchCodec for GPU-accelerated decoding
-frames = batch_decode(refs, decoder="torchcodec")  # Requires: pip install torchcodec>=0.4.0
+frames = batch_decode(refs, decoder="torchcodec")  # Requires: pip install torchcodec>=0.9.0
 ```
+
+Both decoders follow unified [playback semantics](docs/playback_semantics.md)—querying a timestamp returns the frame being displayed at that moment, ensuring consistent behavior across backends.
 
 ### Embedding Media Directly in MediaRef
 
@@ -199,9 +194,10 @@ ref = MediaRef.model_validate(data)                    # From dict
 ref = MediaRef.model_validate_json(json_str)           # From JSON
 ```
 
-## API Reference
+## Documentation
 
-See [API Documentation](docs/API.md) for detailed API reference.
+- **[API Reference](docs/API.md)** - Detailed API documentation
+- **[Playback Semantics](docs/playback_semantics.md)** - How frame selection works at specific timestamps
 
 ## Potential Future Enhancements
 
@@ -224,7 +220,7 @@ See [API Documentation](docs/API.md) for detailed API reference.
 
 **Optional dependencies**:
 - `[video]` extra: `av>=15.0` (PyAV for video frame extraction)
-- TorchCodec: `torchcodec>=0.4.0` (install separately for GPU-accelerated decoding)
+- TorchCodec: `torchcodec>=0.9.0` (install separately for GPU-accelerated decoding)
 
 ## Citation
 

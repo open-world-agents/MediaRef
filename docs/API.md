@@ -44,29 +44,28 @@
 
 ## Functions
 
-- `batch_decode(refs, strategy=None, decoder="pyav") -> list[np.ndarray]` - Batch decode using optimized batch decoding API
+- `batch_decode(refs, decoder="pyav") -> list[np.ndarray]` - Batch decode video frames
   - `refs`: List of MediaRef objects to decode
-  - `strategy`: Batch decoding strategy (PyAV only): `SEPARATE`, `SEQUENTIAL`, or `SEQUENTIAL_PER_KEYFRAME_BLOCK`. Default: `None` (auto-selects `SEQUENTIAL_PER_KEYFRAME_BLOCK`)
   - `decoder`: Decoder backend (`"pyav"` or `"torchcodec"`)
 - `cleanup_cache()` - Clear video container cache (PyAV only)
 
 ## Video Decoders (requires `[video]` extra)
 
-- `PyAVVideoDecoder(source)` - PyAV-based decoder with batch decoding strategies
-  - Supports batch decoding strategies: `SEPARATE`, `SEQUENTIAL`, `SEQUENTIAL_PER_KEYFRAME_BLOCK`
+Both decoders follow the same [playback semantics](playback_semantics.md), ensuring consistent frame selection regardless of backend.
+
+- `PyAVVideoDecoder(source)` - PyAV-based decoder
   - CPU-based decoding using FFmpeg
   - Automatic container caching with reference counting
-- `TorchCodecVideoDecoder(source)` - TorchCodec-based decoder for GPU acceleration
-  - Requires `torchcodec>=0.4.0` (install separately)
+- `TorchCodecVideoDecoder(source)` - TorchCodec-based decoder
+  - Requires `torchcodec>=0.9.0` (install separately)
   - GPU-accelerated decoding with CUDA support
-  - Does not support batch decoding strategies (parameter ignored)
 
 **Decoder Comparison:**
 
 | Feature | PyAVVideoDecoder | TorchCodecVideoDecoder |
 |---------|------------------|------------------------|
-| Batch decoding strategies | ✅ Full support | ❌ Not supported (ignored) |
+| Playback semantics | ✅ Unified | ✅ Unified |
 | GPU acceleration | ❌ CPU only | ✅ CUDA support |
 | Backend | PyAV (FFmpeg) | TorchCodec (FFmpeg) |
-| Installation | `pip install mediaref[video]` | `pip install torchcodec>=0.4.0` |
+| Installation | `pip install mediaref[video]` | `pip install torchcodec>=0.9.0` |
 
