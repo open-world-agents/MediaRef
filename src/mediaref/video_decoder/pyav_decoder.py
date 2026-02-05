@@ -155,9 +155,7 @@ class PyAVVideoDecoder(BaseVideoDecoder):
         end_stream = float(self._metadata.end_stream_seconds)  # type: ignore[arg-type]
         for t in seconds:
             if t < begin_stream:
-                raise ValueError(
-                    f"Timestamp {t}s < begin_stream_seconds ({begin_stream}s)"
-                )
+                raise ValueError(f"Timestamp {t}s < begin_stream_seconds ({begin_stream}s)")
             if t >= end_stream:
                 raise ValueError(f"Timestamp {t}s >= end_stream_seconds ({end_stream}s)")
 
@@ -225,14 +223,11 @@ class PyAVVideoDecoder(BaseVideoDecoder):
                         query_idx += 1
                     elif prev_frame is None:
                         # Query is before first frame - this should have been caught by validation
-                        raise ValueError(
-                            f"Timestamp {query_time}s is before first frame (pts={frame_pts}s)"
-                        )
+                        raise ValueError(f"Timestamp {query_time}s is before first frame (pts={frame_pts}s)")
                     else:
                         # prev_frame_pts > query_time - should not happen with correct validation
                         raise ValueError(
-                            f"Internal error: query {query_time}s not in range "
-                            f"[{prev_frame_pts}, {frame_pts})"
+                            f"Internal error: query {query_time}s not in range [{prev_frame_pts}, {frame_pts})"
                         )
                 else:
                     break

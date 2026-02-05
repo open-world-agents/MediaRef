@@ -430,4 +430,3 @@ class TestPyAVVideoDecoderEdgeCases:
             # 0.5s and 1.0s should return frame at 0.480s (frame 11)
             assert batch2.pts_seconds[2] == pytest.approx(0.480, abs=0.001)
             assert batch2.pts_seconds[3] == pytest.approx(0.480, abs=0.001)
-
