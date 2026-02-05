@@ -53,7 +53,7 @@ When loading multiple frames from the same video, `batch_decode()` opens the vid
   <img src=".github/assets/decoding_benchmark.png" alt="Decoding Benchmark" width="800">
 </p>
 
-> **Benchmark details**: Decoding throughput = decoded frames per second during dataloading; I/O efficiency = inverse of disk I/O operations per frame loaded. Measured on real ML dataloader workloads (Minecraft dataset: 64×5 min episodes, 640×360 @ 20Hz, FSLDataset with 4096 token sequences).
+> **Benchmark details**: Decoding throughput = decoded frames per second during dataloading; I/O efficiency = inverse of disk I/O operations per frame loaded. Measured on real ML dataloader workloads (Minecraft dataset: 64×5 min episodes, 640×360 @ 20Hz, FSLDataset with 4096 token sequences). See [D2E paper](https://worv-ai.github.io/d2e/) Section 3 and Appendix A for full methodology.
 
 [^1]: The benchmark was conducted against TorchCodec v0.6.0, which only supported `seek_mode=exact` for `.mkv` files. This limitation forced full sequential scans of the video, causing significant I/O overhead. This issue has since been fixed in TorchCodec 0.9.0 (see [pytorch/torchcodec#989](https://github.com/pytorch/torchcodec/pull/989)).
 
