@@ -2,6 +2,7 @@
 
 from typing import ClassVar, List
 
+import numpy as np
 from torchcodec.decoders import VideoDecoder
 
 from .._typing import PathLike
@@ -46,20 +47,11 @@ class TorchCodecVideoDecoder(VideoDecoder, BaseVideoDecoder):
         self._cache_key = str(source)
         self.cache.add_entry(self._cache_key, self, lambda: None)
 
-    @property
-    def metadata(self):
-        """Access video stream metadata."""
-        return self.__dict__["metadata"]
-
-    @metadata.setter
-    def metadata(self, value):
-        self.__dict__["metadata"] = value
-
     def get_frames_played_at(self, seconds: List[float]) -> FrameBatch:
         """Retrieve frames at specific timestamps.
 
-        Delegates to TorchCodec's native get_frames_played_at implementation
-        which already implements the correct playback semantics.
+        Delegates to TorchCodec's native get_frames_displayed_at_timestamps
+        which implements the correct playback semantics.
 
         Args:
             seconds: List of timestamps in seconds
@@ -67,7 +59,13 @@ class TorchCodecVideoDecoder(VideoDecoder, BaseVideoDecoder):
         Returns:
             FrameBatch containing frame data and timing information
         """
-        return super().get_frames_played_at(seconds)
+        # TorchCodec returns its own FrameBatch (namedtuple), convert to ours (dataclass)
+        torchcodec_batch = super().get_frames_displayed_at_timestamps(seconds)
+        return FrameBatch(
+            data=torchcodec_batch.data.numpy(),
+            pts_seconds=np.array(torchcodec_batch.pts_seconds, dtype=np.float64),
+            duration_seconds=np.array(torchcodec_batch.duration_seconds, dtype=np.float64),
+        )
 
     def close(self):
         """Release cache reference."""
