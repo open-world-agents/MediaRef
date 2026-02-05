@@ -150,7 +150,7 @@ class PyAVVideoDecoder(BaseVideoDecoder):
                 duration_seconds=np.array([], dtype=np.float64),
             )
 
-        # Validate timestamps per torchcodec_design.md boundary conditions
+        # Validate timestamps per playback_semantics.md boundary conditions
         begin_stream = float(self._metadata.begin_stream_seconds)
         end_stream = float(self._metadata.end_stream_seconds)  # type: ignore[arg-type]
         for t in seconds:

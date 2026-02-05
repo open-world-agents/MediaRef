@@ -1,6 +1,6 @@
 """Tests for PyAVVideoDecoder with TorchCodec playback semantics.
 
-These tests verify the implementation follows torchcodec_design.md:
+These tests verify the implementation follows playback_semantics.md:
 - Playback semantics: frame[i].pts <= timestamp < frame[i+1].pts
 - Boundary conditions: negative timestamps, timestamps >= duration
 - Frame selection logic using nextPts
@@ -14,7 +14,7 @@ import pytest
 
 @pytest.mark.video
 class TestPyAVVideoDecoderBoundaryConditions:
-    """Test boundary condition handling per torchcodec_design.md."""
+    """Test boundary condition handling per playback_semantics.md."""
 
     def test_negative_timestamp_raises_value_error(self, sample_video_file: tuple[Path, list[int]]):
         """Test that timestamp < 0 raises ValueError."""
