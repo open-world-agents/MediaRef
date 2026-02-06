@@ -173,6 +173,50 @@ def sample_video_file_large(tmp_path: Path) -> tuple[Path, list[int]]:
     return video_path, timestamps_ns
 
 
+@pytest.fixture
+def sample_video_file_long(tmp_path: Path) -> tuple[Path, float]:
+    """Create a longer video file (10 seconds) for testing various start positions.
+
+    Returns:
+        Tuple of (video_path, duration_seconds).
+    """
+    try:
+        import av
+    except ImportError:
+        pytest.skip("Video dependencies not installed (av)")
+
+    from fractions import Fraction
+
+    video_path = tmp_path / "test_video_long.mp4"
+    # 100 frames at 10fps = 10 seconds of video
+    num_frames = 100
+    fps = 10
+    duration = num_frames / fps
+
+    container = av.open(str(video_path), "w")
+    stream = container.add_stream("h264", rate=fps)
+    stream.width = 64
+    stream.height = 48
+    stream.pix_fmt = "yuv420p"
+
+    for i in range(num_frames):
+        frame = av.VideoFrame(64, 48, "rgb24")
+        # Create frame with varying intensity based on frame number
+        color = (i * 2) % 256
+        arr = np.full((48, 64, 3), color, dtype=np.uint8)
+        frame.planes[0].update(arr)
+        frame.pts = i
+        frame.time_base = Fraction(1, fps)
+        for packet in stream.encode(frame):
+            container.mux(packet)
+
+    for packet in stream.encode():
+        container.mux(packet)
+    container.close()
+
+    return video_path, duration
+
+
 # ============================================================================
 # URI Fixtures
 # ============================================================================
