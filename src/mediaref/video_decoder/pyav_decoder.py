@@ -128,6 +128,25 @@ class PyAVVideoDecoder(BaseVideoDecoder):
         """Access video stream metadata."""
         return self._metadata
 
+
+    def _create_empty_batch(self) -> FrameBatch:
+        """Create an empty FrameBatch with correct spatial dimensions."""
+        return FrameBatch(
+            data=np.empty((0, 3, self._metadata.height, self._metadata.width), dtype=np.uint8),
+            pts_seconds=np.array([], dtype=np.float64),
+            duration_seconds=np.array([], dtype=np.float64),
+        )
+
+    def _convert_av_frames_to_nchw(self, av_frames: List[av.VideoFrame]) -> List[npt.NDArray[np.uint8]]:
+        """Convert a list of PyAV frames to NCHW numpy arrays (RGB)."""
+        frames = []
+        for frame in av_frames:
+            rgba_array = _frame_to_rgba(frame)
+            rgb_array = cv2.cvtColor(rgba_array, cv2.COLOR_RGBA2RGB)
+            frame_nchw = np.transpose(rgb_array, (2, 0, 1)).astype(np.uint8)
+            frames.append(frame_nchw)
+        return frames
+
     def get_frames_played_at(self, seconds: List[float]) -> FrameBatch:
         """Retrieve frames that would be displayed at specific timestamps.
 
@@ -144,11 +163,7 @@ class PyAVVideoDecoder(BaseVideoDecoder):
             ValueError: If any timestamp is outside [begin_stream_seconds, end_stream_seconds)
         """
         if not seconds:
-            return FrameBatch(
-                data=np.empty((0, 3, self._metadata.height, self._metadata.width), dtype=np.uint8),
-                pts_seconds=np.array([], dtype=np.float64),
-                duration_seconds=np.array([], dtype=np.float64),
-            )
+            return self._create_empty_batch()
 
         # Validate timestamps per playback_semantics.md boundary conditions
         begin_stream = float(self._metadata.begin_stream_seconds)
@@ -163,12 +178,7 @@ class PyAVVideoDecoder(BaseVideoDecoder):
         av_frames = self._get_frames_played_at(seconds)
 
         # Convert to RGB numpy arrays in NCHW format
-        frames = []
-        for frame in av_frames:
-            rgba_array = _frame_to_rgba(frame)
-            rgb_array = cv2.cvtColor(rgba_array, cv2.COLOR_RGBA2RGB)
-            frame_nchw = np.transpose(rgb_array, (2, 0, 1)).astype(np.uint8)
-            frames.append(frame_nchw)
+        frames = self._convert_av_frames_to_nchw(av_frames)
 
         pts_list = [float(frame.time) for frame in av_frames]
         duration = float(1.0 / self._metadata.average_rate)
@@ -216,17 +226,9 @@ class PyAVVideoDecoder(BaseVideoDecoder):
 
         if fps is not None:
             # Resample: generate timestamps at the given fps and get frames
-            timestamps = []
-            t = start_seconds
-            while t < stop_seconds:
-                timestamps.append(t)
-                t += 1.0 / fps
+            timestamps = np.arange(start_seconds, stop_seconds, 1.0 / fps).tolist()
             if not timestamps:
-                return FrameBatch(
-                    data=np.empty((0, 3, self._metadata.height, self._metadata.width), dtype=np.uint8),
-                    pts_seconds=np.array([], dtype=np.float64),
-                    duration_seconds=np.array([], dtype=np.float64),
-                )
+                return self._create_empty_batch()
             return self.get_frames_played_at(timestamps)
 
         # Native frame rate: decode all frames with pts in [start_seconds, stop_seconds)
@@ -243,18 +245,9 @@ class PyAVVideoDecoder(BaseVideoDecoder):
                 av_frames.append(frame)
 
         if not av_frames:
-            return FrameBatch(
-                data=np.empty((0, 3, self._metadata.height, self._metadata.width), dtype=np.uint8),
-                pts_seconds=np.array([], dtype=np.float64),
-                duration_seconds=np.array([], dtype=np.float64),
-            )
+            return self._create_empty_batch()
 
-        frames = []
-        for frame in av_frames:
-            rgba_array = _frame_to_rgba(frame)
-            rgb_array = cv2.cvtColor(rgba_array, cv2.COLOR_RGBA2RGB)
-            frame_nchw = np.transpose(rgb_array, (2, 0, 1)).astype(np.uint8)
-            frames.append(frame_nchw)
+        frames = self._convert_av_frames_to_nchw(av_frames)
 
         pts_list = [float(frame.time) for frame in av_frames]
         duration = float(1.0 / self._metadata.average_rate)

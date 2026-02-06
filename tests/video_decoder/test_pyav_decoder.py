@@ -571,8 +571,7 @@ class TestPyAVVideoDecoderGetFramesPlayedInRange:
             end_stream = float(decoder.metadata.end_stream_seconds)
             batch = decoder.get_frames_played_in_range(0.0, end_stream, fps=5.0)
             # At 5fps, interval=0.2s, range [0.0, 0.5): 0.0, 0.2, 0.4 → 3 frames
-            # (exact count depends on end_stream precision, but should be ~2-3)
-            assert batch.data.shape[0] >= 2
+            assert batch.data.shape[0] == 3
 
     def test_fps_higher_than_source(self, sample_video_file: tuple[Path, list[int]]):
         """Test fps higher than source duplicates frames."""
