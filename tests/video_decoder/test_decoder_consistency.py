@@ -108,15 +108,11 @@ class TestDecoderConsistency:
         assert pyav_batch.data.shape == torchcodec_batch.data.shape
 
         # Verify PTS values are the same
-        np.testing.assert_array_almost_equal(
-            pyav_batch.pts_seconds, torchcodec_batch.pts_seconds, decimal=2
-        )
+        np.testing.assert_array_almost_equal(pyav_batch.pts_seconds, torchcodec_batch.pts_seconds, decimal=2)
 
         # Verify frame data is consistent (allowing small codec differences)
         for i in range(len(timestamps)):
-            max_diff = np.max(
-                np.abs(pyav_batch.data[i].astype(int) - torchcodec_batch.data[i].astype(int))
-            )
+            max_diff = np.max(np.abs(pyav_batch.data[i].astype(int) - torchcodec_batch.data[i].astype(int)))
             assert max_diff <= self.MAX_PIXEL_DIFF, (
                 f"Frame {i} differs too much between PyAV and TorchCodec: max_diff={max_diff}"
             )
@@ -138,14 +134,10 @@ class TestDecoderConsistency:
         # Both should return frames at: 0.0, 0.1, 0.2, 0.3
         assert pyav_batch.data.shape == torchcodec_batch.data.shape
 
-        np.testing.assert_array_almost_equal(
-            pyav_batch.pts_seconds, torchcodec_batch.pts_seconds, decimal=2
-        )
+        np.testing.assert_array_almost_equal(pyav_batch.pts_seconds, torchcodec_batch.pts_seconds, decimal=2)
 
         for i in range(len(timestamps)):
-            max_diff = np.max(
-                np.abs(pyav_batch.data[i].astype(int) - torchcodec_batch.data[i].astype(int))
-            )
+            max_diff = np.max(np.abs(pyav_batch.data[i].astype(int) - torchcodec_batch.data[i].astype(int)))
             assert max_diff <= self.MAX_PIXEL_DIFF, (
                 f"Frame {i} differs too much between PyAV and TorchCodec: max_diff={max_diff}"
             )
@@ -165,14 +157,10 @@ class TestDecoderConsistency:
 
         assert pyav_batch.data.shape == torchcodec_batch.data.shape
 
-        np.testing.assert_array_almost_equal(
-            pyav_batch.pts_seconds, torchcodec_batch.pts_seconds, decimal=2
-        )
+        np.testing.assert_array_almost_equal(pyav_batch.pts_seconds, torchcodec_batch.pts_seconds, decimal=2)
 
         for i in range(len(timestamps)):
-            max_diff = np.max(
-                np.abs(pyav_batch.data[i].astype(int) - torchcodec_batch.data[i].astype(int))
-            )
+            max_diff = np.max(np.abs(pyav_batch.data[i].astype(int) - torchcodec_batch.data[i].astype(int)))
             assert max_diff <= self.MAX_PIXEL_DIFF, (
                 f"Frame {i} differs too much between PyAV and TorchCodec: max_diff={max_diff}"
             )
@@ -192,14 +180,10 @@ class TestDecoderConsistency:
 
         assert pyav_batch.data.shape == torchcodec_batch.data.shape
 
-        np.testing.assert_array_almost_equal(
-            pyav_batch.pts_seconds, torchcodec_batch.pts_seconds, decimal=2
-        )
+        np.testing.assert_array_almost_equal(pyav_batch.pts_seconds, torchcodec_batch.pts_seconds, decimal=2)
 
         for i in range(len(timestamps)):
-            max_diff = np.max(
-                np.abs(pyav_batch.data[i].astype(int) - torchcodec_batch.data[i].astype(int))
-            )
+            max_diff = np.max(np.abs(pyav_batch.data[i].astype(int) - torchcodec_batch.data[i].astype(int)))
             assert max_diff <= self.MAX_PIXEL_DIFF, (
                 f"Frame {i} differs too much between PyAV and TorchCodec: max_diff={max_diff}"
             )
@@ -217,9 +201,7 @@ class TestDecoderConsistency:
             torchcodec_batch = torchcodec_decoder.get_frames_played_at([0.0])
 
         assert pyav_batch.data.shape == torchcodec_batch.data.shape
-        max_diff = np.max(
-            np.abs(pyav_batch.data[0].astype(int) - torchcodec_batch.data[0].astype(int))
-        )
+        max_diff = np.max(np.abs(pyav_batch.data[0].astype(int) - torchcodec_batch.data[0].astype(int)))
         assert max_diff <= self.MAX_PIXEL_DIFF, f"Single frame differs too much: max_diff={max_diff}"
 
     def test_same_last_frame(self, sample_video_file: tuple[Path, list[int]]):
@@ -238,13 +220,9 @@ class TestDecoderConsistency:
 
         assert pyav_batch.data.shape == torchcodec_batch.data.shape
 
-        np.testing.assert_array_almost_equal(
-            pyav_batch.pts_seconds, torchcodec_batch.pts_seconds, decimal=2
-        )
+        np.testing.assert_array_almost_equal(pyav_batch.pts_seconds, torchcodec_batch.pts_seconds, decimal=2)
 
-        max_diff = np.max(
-            np.abs(pyav_batch.data[0].astype(int) - torchcodec_batch.data[0].astype(int))
-        )
+        max_diff = np.max(np.abs(pyav_batch.data[0].astype(int) - torchcodec_batch.data[0].astype(int)))
         assert max_diff <= self.MAX_PIXEL_DIFF, f"Last frame differs too much: max_diff={max_diff}"
 
     def test_timestamp_patterns(self, sample_video_file: tuple[Path, list[int]], subtests: "SubTests"):
@@ -265,9 +243,7 @@ class TestDecoderConsistency:
 
         for name, timestamps in patterns:
             with subtests.test(msg=name):
-                success, error, stats = _compare_decoder_outputs(
-                    str(video_path), timestamps, self.MAX_PIXEL_DIFF
-                )
+                success, error, stats = _compare_decoder_outputs(str(video_path), timestamps, self.MAX_PIXEL_DIFF)
                 assert success, f"{name}: {error} (stats: {stats})"
 
     def test_single_frame_positions(self, sample_video_file: tuple[Path, list[int]], subtests: "SubTests"):
@@ -286,9 +262,7 @@ class TestDecoderConsistency:
 
         for name, timestamps in positions:
             with subtests.test(msg=name):
-                success, error, stats = _compare_decoder_outputs(
-                    str(video_path), timestamps, self.MAX_PIXEL_DIFF
-                )
+                success, error, stats = _compare_decoder_outputs(str(video_path), timestamps, self.MAX_PIXEL_DIFF)
                 assert success, f"{name}: {error} (stats: {stats})"
 
     def test_batch_sizes(self, sample_video_file: tuple[Path, list[int]], subtests: "SubTests"):
@@ -308,9 +282,7 @@ class TestDecoderConsistency:
             # Generate evenly distributed timestamps
             timestamps = [i * 0.4 / batch_size for i in range(batch_size)]
             with subtests.test(msg=name):
-                success, error, stats = _compare_decoder_outputs(
-                    str(video_path), timestamps, self.MAX_PIXEL_DIFF
-                )
+                success, error, stats = _compare_decoder_outputs(str(video_path), timestamps, self.MAX_PIXEL_DIFF)
                 assert success, f"{name}: {error} (stats: {stats})"
 
     def test_edge_case_timestamps(self, sample_video_file: tuple[Path, list[int]], subtests: "SubTests"):
@@ -328,11 +300,8 @@ class TestDecoderConsistency:
 
         for name, timestamps in edge_cases:
             with subtests.test(msg=name):
-                success, error, stats = _compare_decoder_outputs(
-                    str(video_path), timestamps, self.MAX_PIXEL_DIFF
-                )
+                success, error, stats = _compare_decoder_outputs(str(video_path), timestamps, self.MAX_PIXEL_DIFF)
                 assert success, f"{name}: {error} (stats: {stats})"
-
 
 
 @pytest.mark.video
@@ -342,9 +311,7 @@ class TestDecoderConsistencyAdvanced:
 
     MAX_PIXEL_DIFF = 3
 
-    def test_random_timestamp_sampling(
-        self, sample_video_file: tuple[Path, list[int]], subtests: "SubTests"
-    ):
+    def test_random_timestamp_sampling(self, sample_video_file: tuple[Path, list[int]], subtests: "SubTests"):
         """Test random timestamp sampling with fixed seeds for reproducibility."""
         import random
 
@@ -363,14 +330,10 @@ class TestDecoderConsistencyAdvanced:
             # Video is 0.5s, use 0.0-0.45 range to stay within bounds
             timestamps = sorted([rng.uniform(0, 0.45) for _ in range(num_samples)])
             with subtests.test(msg=name):
-                success, error, stats = _compare_decoder_outputs(
-                    str(video_path), timestamps, self.MAX_PIXEL_DIFF
-                )
+                success, error, stats = _compare_decoder_outputs(str(video_path), timestamps, self.MAX_PIXEL_DIFF)
                 assert success, f"{name}: {error} (stats: {stats})"
 
-    def test_interleaved_timestamps(
-        self, sample_video_file: tuple[Path, list[int]], subtests: "SubTests"
-    ):
+    def test_interleaved_timestamps(self, sample_video_file: tuple[Path, list[int]], subtests: "SubTests"):
         """Test interleaved timestamp patterns using subtests."""
         video_path, _ = sample_video_file
 
@@ -383,14 +346,10 @@ class TestDecoderConsistencyAdvanced:
 
         for name, timestamps in patterns:
             with subtests.test(msg=name):
-                success, error, stats = _compare_decoder_outputs(
-                    str(video_path), timestamps, self.MAX_PIXEL_DIFF
-                )
+                success, error, stats = _compare_decoder_outputs(str(video_path), timestamps, self.MAX_PIXEL_DIFF)
                 assert success, f"{name}: {error} (stats: {stats})"
 
-    def test_many_duplicates(
-        self, sample_video_file: tuple[Path, list[int]], subtests: "SubTests"
-    ):
+    def test_many_duplicates(self, sample_video_file: tuple[Path, list[int]], subtests: "SubTests"):
         """Test many duplicate timestamps using subtests."""
         video_path, _ = sample_video_file
 
@@ -403,14 +362,10 @@ class TestDecoderConsistencyAdvanced:
 
         for name, timestamps in patterns:
             with subtests.test(msg=name):
-                success, error, stats = _compare_decoder_outputs(
-                    str(video_path), timestamps, self.MAX_PIXEL_DIFF
-                )
+                success, error, stats = _compare_decoder_outputs(str(video_path), timestamps, self.MAX_PIXEL_DIFF)
                 assert success, f"{name}: {error} (stats: {stats})"
 
-    def test_dense_sampling(
-        self, sample_video_file: tuple[Path, list[int]], subtests: "SubTests"
-    ):
+    def test_dense_sampling(self, sample_video_file: tuple[Path, list[int]], subtests: "SubTests"):
         """Test dense timestamp sampling at different video regions."""
         video_path, _ = sample_video_file
 
@@ -422,14 +377,10 @@ class TestDecoderConsistencyAdvanced:
 
         for name, timestamps in regions:
             with subtests.test(msg=name):
-                success, error, stats = _compare_decoder_outputs(
-                    str(video_path), timestamps, self.MAX_PIXEL_DIFF
-                )
+                success, error, stats = _compare_decoder_outputs(str(video_path), timestamps, self.MAX_PIXEL_DIFF)
                 assert success, f"{name}: {error} (stats: {stats})"
 
-    def test_large_jumps(
-        self, sample_video_file: tuple[Path, list[int]], subtests: "SubTests"
-    ):
+    def test_large_jumps(self, sample_video_file: tuple[Path, list[int]], subtests: "SubTests"):
         """Test large timestamp jumps (start to end, end to start)."""
         video_path, _ = sample_video_file
 
@@ -442,9 +393,7 @@ class TestDecoderConsistencyAdvanced:
 
         for name, timestamps in patterns:
             with subtests.test(msg=name):
-                success, error, stats = _compare_decoder_outputs(
-                    str(video_path), timestamps, self.MAX_PIXEL_DIFF
-                )
+                success, error, stats = _compare_decoder_outputs(str(video_path), timestamps, self.MAX_PIXEL_DIFF)
                 assert success, f"{name}: {error} (stats: {stats})"
 
     def test_sequential_calls_same_decoder(self, sample_video_file: tuple[Path, list[int]]):
@@ -469,18 +418,12 @@ class TestDecoderConsistencyAdvanced:
                     tc_batch = tc.get_frames_played_at(timestamps)
 
                     # Verify PTS match
-                    np.testing.assert_array_almost_equal(
-                        pyav_batch.pts_seconds, tc_batch.pts_seconds, decimal=2
-                    )
+                    np.testing.assert_array_almost_equal(pyav_batch.pts_seconds, tc_batch.pts_seconds, decimal=2)
 
                     # Verify pixel values
                     for i in range(len(timestamps)):
-                        max_diff = np.max(
-                            np.abs(pyav_batch.data[i].astype(int) - tc_batch.data[i].astype(int))
-                        )
-                        assert max_diff <= self.MAX_PIXEL_DIFF, (
-                            f"Sequential call {timestamps}: max_diff={max_diff}"
-                        )
+                        max_diff = np.max(np.abs(pyav_batch.data[i].astype(int) - tc_batch.data[i].astype(int)))
+                        assert max_diff <= self.MAX_PIXEL_DIFF, f"Sequential call {timestamps}: max_diff={max_diff}"
 
 
 @pytest.mark.video
@@ -490,9 +433,7 @@ class TestDecoderConsistencyLongVideo:
 
     MAX_PIXEL_DIFF = 3
 
-    def test_various_start_positions(
-        self, sample_video_file_long: tuple[Path, float], subtests: "SubTests"
-    ):
+    def test_various_start_positions(self, sample_video_file_long: tuple[Path, float], subtests: "SubTests"):
         """Test consistency when starting from various positions in a longer video."""
         video_path, duration = sample_video_file_long
 
@@ -508,14 +449,10 @@ class TestDecoderConsistencyLongVideo:
 
         for name, timestamps in start_positions:
             with subtests.test(msg=name):
-                success, error, stats = _compare_decoder_outputs(
-                    str(video_path), timestamps, self.MAX_PIXEL_DIFF
-                )
+                success, error, stats = _compare_decoder_outputs(str(video_path), timestamps, self.MAX_PIXEL_DIFF)
                 assert success, f"{name}: {error} (stats: {stats})"
 
-    def test_large_jumps_long_video(
-        self, sample_video_file_long: tuple[Path, float], subtests: "SubTests"
-    ):
+    def test_large_jumps_long_video(self, sample_video_file_long: tuple[Path, float], subtests: "SubTests"):
         """Test large timestamp jumps in longer video."""
         video_path, duration = sample_video_file_long
 
@@ -529,14 +466,10 @@ class TestDecoderConsistencyLongVideo:
 
         for name, timestamps in patterns:
             with subtests.test(msg=name):
-                success, error, stats = _compare_decoder_outputs(
-                    str(video_path), timestamps, self.MAX_PIXEL_DIFF
-                )
+                success, error, stats = _compare_decoder_outputs(str(video_path), timestamps, self.MAX_PIXEL_DIFF)
                 assert success, f"{name}: {error} (stats: {stats})"
 
-    def test_random_sampling_long_video(
-        self, sample_video_file_long: tuple[Path, float], subtests: "SubTests"
-    ):
+    def test_random_sampling_long_video(self, sample_video_file_long: tuple[Path, float], subtests: "SubTests"):
         """Test random timestamp sampling across longer video."""
         import random
 
@@ -552,9 +485,7 @@ class TestDecoderConsistencyLongVideo:
             rng = random.Random(seed)
             timestamps = sorted([rng.uniform(0, duration - 0.5) for _ in range(num_samples)])
             with subtests.test(msg=name):
-                success, error, stats = _compare_decoder_outputs(
-                    str(video_path), timestamps, self.MAX_PIXEL_DIFF
-                )
+                success, error, stats = _compare_decoder_outputs(str(video_path), timestamps, self.MAX_PIXEL_DIFF)
                 assert success, f"{name}: {error} (stats: {stats})"
 
     def test_sequential_calls_long_video(self, sample_video_file_long: tuple[Path, float]):
@@ -565,13 +496,13 @@ class TestDecoderConsistencyLongVideo:
 
         # Simulate real usage: jumping around the video
         call_sequences = [
-            [0.5],      # Start near beginning
-            [5.0],      # Jump to middle
-            [2.0],      # Jump backward
-            [8.0],      # Jump to near end
-            [1.0],      # Jump backward again
-            [9.0],      # Jump to end
-            [0.0],      # Jump to start
+            [0.5],  # Start near beginning
+            [5.0],  # Jump to middle
+            [2.0],  # Jump backward
+            [8.0],  # Jump to near end
+            [1.0],  # Jump backward again
+            [9.0],  # Jump to end
+            [0.0],  # Jump to start
         ]
 
         with PyAVVideoDecoder(str(video_path)) as pyav:
@@ -581,18 +512,12 @@ class TestDecoderConsistencyLongVideo:
                     tc_batch = tc.get_frames_played_at(timestamps)
 
                     # Verify PTS match
-                    np.testing.assert_array_almost_equal(
-                        pyav_batch.pts_seconds, tc_batch.pts_seconds, decimal=2
-                    )
+                    np.testing.assert_array_almost_equal(pyav_batch.pts_seconds, tc_batch.pts_seconds, decimal=2)
 
                     # Verify pixel values
                     for i in range(len(timestamps)):
-                        max_diff = np.max(
-                            np.abs(pyav_batch.data[i].astype(int) - tc_batch.data[i].astype(int))
-                        )
-                        assert max_diff <= self.MAX_PIXEL_DIFF, (
-                            f"Sequential call {timestamps}: max_diff={max_diff}"
-                        )
+                        max_diff = np.max(np.abs(pyav_batch.data[i].astype(int) - tc_batch.data[i].astype(int)))
+                        assert max_diff <= self.MAX_PIXEL_DIFF, f"Sequential call {timestamps}: max_diff={max_diff}"
 
 
 @pytest.mark.video
@@ -620,18 +545,14 @@ class TestDecoderConsistencyRealVideos:
     )
     def test_real_video_hevc(self, example_mkv_path: Path, name: str, timestamps: list[float]):
         """Test consistency with real HEVC video (example.mkv)."""
-        success, error, stats = _compare_decoder_outputs(
-            str(example_mkv_path), timestamps, self.MAX_PIXEL_DIFF
-        )
+        success, error, stats = _compare_decoder_outputs(str(example_mkv_path), timestamps, self.MAX_PIXEL_DIFF)
         assert success, f"{name}: {error} (stats: {stats})"
 
     def test_sparse_keyframe_video_early(self, example_video_path: Path):
         """Test consistency at video start (before keyframe issues)."""
         # Early frames work correctly on both decoders
         timestamps = [0.01, 0.02, 0.03]
-        success, error, stats = _compare_decoder_outputs(
-            str(example_video_path), timestamps, self.MAX_PIXEL_DIFF
-        )
+        success, error, stats = _compare_decoder_outputs(str(example_video_path), timestamps, self.MAX_PIXEL_DIFF)
         assert success, f"early_frames: {error} (stats: {stats})"
 
     # NOTE: Using parametrize instead of subtests for proper xfail behavior
@@ -643,13 +564,9 @@ class TestDecoderConsistencyRealVideos:
             ("dense_middle", [2.0, 2.1, 2.2, 2.3, 2.4]),
         ],
     )
-    def test_sparse_keyframe_video_across_gap(
-        self, example_video_path: Path, name: str, timestamps: list[float]
-    ):
+    def test_sparse_keyframe_video_across_gap(self, example_video_path: Path, name: str, timestamps: list[float]):
         """Test consistency across sparse keyframe gaps."""
-        success, error, stats = _compare_decoder_outputs(
-            str(example_video_path), timestamps, self.MAX_PIXEL_DIFF
-        )
+        success, error, stats = _compare_decoder_outputs(str(example_video_path), timestamps, self.MAX_PIXEL_DIFF)
         assert success, f"{name}: {error} (stats: {stats})"
 
 

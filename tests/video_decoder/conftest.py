@@ -36,4 +36,3 @@ def example_mkv_path() -> Path:
     if not video_path.exists():
         pytest.skip("example.mkv not found")
     return video_path
-
