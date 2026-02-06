@@ -14,15 +14,12 @@ import pytest
 
 from mediaref import MediaRef, batch_decode, cleanup_cache
 
+try:
+    from torchcodec.decoders import VideoDecoder  # noqa: F401
 
-def _torchcodec_available() -> bool:
-    """Check if TorchCodec is available and functional."""
-    try:
-        from torchcodec.decoders import VideoDecoder  # noqa: F401
-
-        return True
-    except (ImportError, RuntimeError, OSError):
-        return False
+    _TORCHCODEC_AVAILABLE = True
+except (ImportError, RuntimeError, OSError):
+    _TORCHCODEC_AVAILABLE = False
 
 
 @pytest.mark.video
@@ -203,7 +200,7 @@ class TestBatchDecodeDecoders:
         with pytest.raises(ValueError, match="Unknown decoder backend"):
             batch_decode(refs, decoder="invalid")  # type: ignore
 
-    @pytest.mark.skipif(_torchcodec_available(), reason="TorchCodec is installed")
+    @pytest.mark.skipif(_TORCHCODEC_AVAILABLE, reason="TorchCodec is installed")
     def test_batch_decode_torchcodec_not_installed(self, sample_video_file: tuple[Path, list[int]]):
         """Test that TorchCodec decoder raises ImportError when not installed."""
         video_path, timestamps = sample_video_file

@@ -32,7 +32,7 @@ class TorchCodecVideoDecoder(VideoDecoder, BaseVideoDecoder):
         """Create or retrieve cached decoder instance."""
         cache_key = str(source)
         if cache_key in cls.cache:
-            instance = cls.cache[cache_key].obj
+            instance = cls.cache.acquire_entry(cache_key)
             instance._skip_init = True
         else:
             instance = super().__new__(cls)
@@ -70,6 +70,6 @@ class TorchCodecVideoDecoder(VideoDecoder, BaseVideoDecoder):
         )
 
     def close(self):
-        """Release cache reference."""
-        if hasattr(self, "_cache_key"):
+        """Release cache reference. Safe to call multiple times."""
+        if hasattr(self, "_cache_key") and self._cache_key in self.cache and self.cache[self._cache_key].refs > 0:
             self.cache.release_entry(self._cache_key)

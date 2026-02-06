@@ -86,7 +86,7 @@ def sample_rgb_array() -> npt.NDArray[np.uint8]:
 
 
 @pytest.fixture
-def sample_video_file(tmp_path: Path) -> tuple[Path, list[float]]:
+def sample_video_file(tmp_path: Path) -> tuple[Path, list[int]]:
     """Create a sample video file with known frames at specific timestamps.
 
     Returns:
