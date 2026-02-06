@@ -28,7 +28,7 @@ class TestTorchCodecVideoDecoderBoundaryConditions:
         video_path, _ = sample_video_file
 
         with TorchCodecVideoDecoder(str(video_path)) as decoder:
-            with pytest.raises(Exception):
+            with pytest.raises(RuntimeError):
                 decoder.get_frames_played_at([-0.1])
 
     def test_timestamp_at_or_beyond_duration_raises(self, sample_video_file: tuple[Path, list[int]]):
@@ -39,9 +39,9 @@ class TestTorchCodecVideoDecoderBoundaryConditions:
 
         with TorchCodecVideoDecoder(str(video_path)) as decoder:
             end_stream = float(decoder.metadata.end_stream_seconds)
-            with pytest.raises(Exception):
+            with pytest.raises(RuntimeError):
                 decoder.get_frames_played_at([end_stream])
-            with pytest.raises(Exception):
+            with pytest.raises(RuntimeError):
                 decoder.get_frames_played_at([end_stream + 1.0])
 
     def test_timestamp_just_before_duration_succeeds(self, sample_video_file: tuple[Path, list[int]]):
@@ -278,7 +278,7 @@ class TestTorchCodecVideoDecoderCaching:
         decoder1.close()
         assert TorchCodecVideoDecoder.cache[cache_key].refs == 1
         decoder2.close()
-        # After both closes, refs should be 0
+        assert TorchCodecVideoDecoder.cache[cache_key].refs == 0
 
     def test_close_releases_cache_entry(self, sample_video_file: tuple[Path, list[int]]):
         """Test that close() releases the cache reference."""
@@ -289,9 +289,10 @@ class TestTorchCodecVideoDecoderCaching:
 
         decoder = TorchCodecVideoDecoder(str(video_path))
         assert cache_key in TorchCodecVideoDecoder.cache
+        assert TorchCodecVideoDecoder.cache[cache_key].refs == 1
 
         decoder.close()
-        # After close, refs should be decremented (entry may still exist if refs > 0)
+        assert TorchCodecVideoDecoder.cache[cache_key].refs == 0
 
     def test_reopen_after_close(self, sample_video_file: tuple[Path, list[int]]):
         """Test that a decoder can be re-opened after closing."""
