@@ -72,8 +72,9 @@ class MockedInputContainer(InputContainerMixin):
         return self
 
     def close(self):
-        """Release container reference and cleanup when no longer needed."""
-        _container_cache.release_entry(self._cache_key)
+        """Release container reference and cleanup when no longer needed. Safe to call multiple times."""
+        if self._cache_key in _container_cache and _container_cache[self._cache_key].refs > 0:
+            _container_cache.release_entry(self._cache_key)
 
 
 __all__ = ["open", "cleanup_cache"]
