@@ -7,4 +7,3 @@ try:
     TORCHCODEC_AVAILABLE = True
 except (ImportError, RuntimeError, OSError):
     TORCHCODEC_AVAILABLE = False
-

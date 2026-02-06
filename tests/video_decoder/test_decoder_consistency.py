@@ -53,9 +53,7 @@ def _compare_decoder_outputs(
     pixel_diffs = np.abs(pyav_batch.data.astype(np.int16) - torchcodec_batch.data.astype(np.int16))
     max_diffs = np.max(pixel_diffs, axis=(1, 2, 3))
     for i, diff in enumerate(max_diffs):
-        assert diff <= max_pixel_diff, (
-            f"Frame {i} pixel diff too large: {diff} > {max_pixel_diff}"
-        )
+        assert diff <= max_pixel_diff, f"Frame {i} pixel diff too large: {diff} > {max_pixel_diff}"
 
 
 @pytest.mark.video

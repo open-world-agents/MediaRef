@@ -132,7 +132,6 @@ class TestTorchCodecVideoDecoderPlaybackSemantics:
             assert batch.pts_seconds[0] == pytest.approx(0.4, abs=0.01)
 
 
-
 class TestTorchCodecVideoDecoderMetadata:
     """Test metadata extraction."""
 
