@@ -362,9 +362,7 @@ class TestTorchCodecVideoDecoderGetFramesPlayedInRange:
             with pytest.raises((ValueError, RuntimeError)):
                 decoder.get_frames_played_in_range(0.3, 0.1)
 
-    def test_fps_raises_not_implemented_on_old_torchcodec(
-        self, sample_video_file: tuple[Path, list[int]]
-    ):
+    def test_fps_raises_not_implemented_on_old_torchcodec(self, sample_video_file: tuple[Path, list[int]]):
         """Test that fps parameter raises NotImplementedError on TorchCodec <=0.10.0."""
         from mediaref.video_decoder import TorchCodecVideoDecoder
 

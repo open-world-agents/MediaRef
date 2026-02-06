@@ -212,10 +212,7 @@ class PyAVVideoDecoder(BaseVideoDecoder):
                 f"and less than {end_stream}."
             )
         if not stop_seconds <= end_stream:
-            raise ValueError(
-                f"Invalid stop seconds: {stop_seconds}. "
-                f"It must be less than or equal to {end_stream}."
-            )
+            raise ValueError(f"Invalid stop seconds: {stop_seconds}. It must be less than or equal to {end_stream}.")
 
         if fps is not None:
             # Resample: generate timestamps at the given fps and get frames
