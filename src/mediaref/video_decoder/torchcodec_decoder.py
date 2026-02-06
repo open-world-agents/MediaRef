@@ -1,6 +1,6 @@
 """TorchCodec-based video decoder."""
 
-from typing import ClassVar, List
+from typing import ClassVar, List, Optional
 
 import numpy as np
 from torchcodec.decoders import VideoDecoder
@@ -70,7 +70,7 @@ class TorchCodecVideoDecoder(VideoDecoder, BaseVideoDecoder):
         )
 
     def get_frames_played_in_range(
-        self, start_seconds: float, stop_seconds: float, fps: float | None = None
+        self, start_seconds: float, stop_seconds: float, fps: Optional[float] = None
     ) -> FrameBatch:
         """Return multiple frames in the given range.
 

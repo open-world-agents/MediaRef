@@ -1,7 +1,7 @@
 """Base interface for video decoders."""
 
 from abc import ABC, abstractmethod
-from typing import List
+from typing import List, Optional
 
 from .._typing import PathLike
 from .frame_batch import FrameBatch
@@ -61,7 +61,7 @@ class BaseVideoDecoder(ABC):
 
     @abstractmethod
     def get_frames_played_in_range(
-        self, start_seconds: float, stop_seconds: float, fps: float | None = None
+        self, start_seconds: float, stop_seconds: float, fps: Optional[float] = None
     ) -> FrameBatch:
         """Return multiple frames in the given range.
 

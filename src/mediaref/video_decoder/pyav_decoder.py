@@ -2,7 +2,7 @@
 
 import gc
 from fractions import Fraction
-from typing import List
+from typing import List, Optional
 
 import av
 import cv2
@@ -139,7 +139,6 @@ class PyAVVideoDecoder(BaseVideoDecoder):
         """Access video stream metadata."""
         return self._metadata
 
-
     def _create_empty_batch(self) -> FrameBatch:
         """Create an empty FrameBatch with correct spatial dimensions."""
         return FrameBatch(
@@ -191,7 +190,7 @@ class PyAVVideoDecoder(BaseVideoDecoder):
         )
 
     def get_frames_played_in_range(
-        self, start_seconds: float, stop_seconds: float, fps: float | None = None
+        self, start_seconds: float, stop_seconds: float, fps: Optional[float] = None
     ) -> FrameBatch:
         """Return multiple frames in the given range [start_seconds, stop_seconds).
 
