@@ -71,13 +71,13 @@ pip install mediaref[video]
 **Add to your project:**
 ```bash
 # Core package
-uv add mediaref~=0.4.1
+uv add mediaref~=0.5.0
 
 # With video decoding support
-uv add 'mediaref[video]~=0.4.1'
+uv add 'mediaref[video]~=0.5.0'
 ```
 
-**Versioning Policy**: MediaRef follows [semantic versioning](https://semver.org/). Patch releases (e.g., 0.4.1 → 0.4.2) contain only bug fixes and performance improvements with **no API changes**. Minor releases (e.g., 0.4.x → 0.5.0) may introduce new features while maintaining backward compatibility. Use `~=0.4.1` to automatically receive patch updates.
+**Versioning Policy**: MediaRef follows [semantic versioning](https://semver.org/). Patch releases (e.g., 0.5.0 → 0.5.1) contain only bug fixes and performance improvements with **no API changes**. Minor releases (e.g., 0.5.x → 0.6.0) may introduce new features while maintaining backward compatibility. Use `~=0.5.0` to automatically receive patch updates.
 
 ## Quick Start
 
