@@ -44,6 +44,17 @@ def _frame_to_rgba(frame: av.VideoFrame) -> npt.NDArray[np.uint8]:
     return rgba_array
 
 
+def _convert_av_frames_to_nchw(av_frames: List[av.VideoFrame]) -> List[npt.NDArray[np.uint8]]:
+    """Convert a list of PyAV frames to NCHW numpy arrays (RGB)."""
+    frames = []
+    for frame in av_frames:
+        rgba_array = _frame_to_rgba(frame)
+        rgb_array = cv2.cvtColor(rgba_array, cv2.COLOR_RGBA2RGB)
+        frame_nchw = np.transpose(rgb_array, (2, 0, 1)).astype(np.uint8)
+        frames.append(frame_nchw)
+    return frames
+
+
 class PyAVVideoDecoder(BaseVideoDecoder):
     """Video decoder using PyAV with TorchCodec-compatible playback semantics.
 
@@ -137,16 +148,6 @@ class PyAVVideoDecoder(BaseVideoDecoder):
             duration_seconds=np.array([], dtype=np.float64),
         )
 
-    def _convert_av_frames_to_nchw(self, av_frames: List[av.VideoFrame]) -> List[npt.NDArray[np.uint8]]:
-        """Convert a list of PyAV frames to NCHW numpy arrays (RGB)."""
-        frames = []
-        for frame in av_frames:
-            rgba_array = _frame_to_rgba(frame)
-            rgb_array = cv2.cvtColor(rgba_array, cv2.COLOR_RGBA2RGB)
-            frame_nchw = np.transpose(rgb_array, (2, 0, 1)).astype(np.uint8)
-            frames.append(frame_nchw)
-        return frames
-
     def get_frames_played_at(self, seconds: List[float]) -> FrameBatch:
         """Retrieve frames that would be displayed at specific timestamps.
 
@@ -178,7 +179,7 @@ class PyAVVideoDecoder(BaseVideoDecoder):
         av_frames = self._get_frames_played_at(seconds)
 
         # Convert to RGB numpy arrays in NCHW format
-        frames = self._convert_av_frames_to_nchw(av_frames)
+        frames = _convert_av_frames_to_nchw(av_frames)
 
         pts_list = [float(frame.time) for frame in av_frames]
         duration = float(1.0 / self._metadata.average_rate)
@@ -247,7 +248,7 @@ class PyAVVideoDecoder(BaseVideoDecoder):
         if not av_frames:
             return self._create_empty_batch()
 
-        frames = self._convert_av_frames_to_nchw(av_frames)
+        frames = _convert_av_frames_to_nchw(av_frames)
 
         pts_list = [float(frame.time) for frame in av_frames]
         duration = float(1.0 / self._metadata.average_rate)
