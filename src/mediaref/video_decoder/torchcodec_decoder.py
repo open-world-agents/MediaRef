@@ -50,7 +50,7 @@ class TorchCodecVideoDecoder(VideoDecoder, BaseVideoDecoder):
     def get_frames_played_at(self, seconds: List[float]) -> FrameBatch:
         """Retrieve frames at specific timestamps.
 
-        Delegates to TorchCodec's native get_frames_displayed_at_timestamps
+        Delegates to TorchCodec's native get_frames_played_at
         which implements the correct playback semantics.
 
         Args:
@@ -59,8 +59,8 @@ class TorchCodecVideoDecoder(VideoDecoder, BaseVideoDecoder):
         Returns:
             FrameBatch containing frame data and timing information
         """
-        # TorchCodec returns its own FrameBatch (namedtuple), convert to ours (dataclass)
-        torchcodec_batch = super().get_frames_displayed_at_timestamps(seconds)
+        # TorchCodec returns its own FrameBatch (dataclass), convert to ours
+        torchcodec_batch = VideoDecoder.get_frames_played_at(self, seconds)
         return FrameBatch(
             data=torchcodec_batch.data.numpy(),
             pts_seconds=np.array(torchcodec_batch.pts_seconds, dtype=np.float64),
