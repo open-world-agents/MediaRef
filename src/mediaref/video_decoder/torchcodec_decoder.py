@@ -63,8 +63,10 @@ class TorchCodecVideoDecoder(VideoDecoder, BaseVideoDecoder):
         torchcodec_batch = VideoDecoder.get_frames_played_at(self, seconds)
         return FrameBatch(
             data=torchcodec_batch.data.numpy(),
-            pts_seconds=np.array(torchcodec_batch.pts_seconds, dtype=np.float64),
-            duration_seconds=np.array(torchcodec_batch.duration_seconds, dtype=np.float64),
+            # Use .numpy() first to avoid DeprecationWarning from numpy 2.0
+            # about __array__ not accepting the 'copy' keyword
+            pts_seconds=torchcodec_batch.pts_seconds.numpy().astype(np.float64),
+            duration_seconds=torchcodec_batch.duration_seconds.numpy().astype(np.float64),
         )
 
     def close(self):
