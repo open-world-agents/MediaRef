@@ -36,7 +36,7 @@ dependencies = [
 
 [project.optional-dependencies]
 video = [
-    "av>=15.0",
+    "av>=15.0",  # FFmpeg 7.0 support
 ]
 
 [dependency-groups]

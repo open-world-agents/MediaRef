@@ -301,6 +301,18 @@ class TestPyAVVideoDecoderContextManager:
             batch = decoder.get_frames_played_at([0.0, 0.1])
             assert batch.data.shape[0] == 2
 
+    def test_double_close(self, sample_video_file: tuple[Path, list[int]]):
+        """Test that calling close() twice does not raise an error."""
+        from mediaref.video_decoder import PyAVVideoDecoder
+
+        video_path, _ = sample_video_file
+
+        decoder = PyAVVideoDecoder(str(video_path))
+        batch = decoder.get_frames_played_at([0.0])
+        assert batch.data.shape[0] == 1
+        decoder.close()
+        decoder.close()  # Should not raise
+
 
 @pytest.mark.video
 class TestPyAVVideoDecoderEdgeCases:
@@ -401,7 +413,7 @@ class TestPyAVVideoDecoderEdgeCases:
             assert batch.data.shape[0] == 1
             assert batch.pts_seconds[0] == pytest.approx(0.5, abs=0.01)
 
-    def test_sparse_keyframes_seek_fallback(self):
+    def test_sparse_keyframes_seek_fallback(self, example_video_path: Path):
         """Test that videos with sparse keyframes are handled correctly.
 
         The example_video.mkv has only 2 keyframes (at 0.010s and 3.690s).
@@ -410,9 +422,7 @@ class TestPyAVVideoDecoderEdgeCases:
         """
         from mediaref.video_decoder import PyAVVideoDecoder
 
-        video_path = Path(__file__).parent / "assets" / "example_video.mkv"
-        if not video_path.exists():
-            pytest.skip("example_video.mkv not found")
+        video_path = example_video_path
 
         with PyAVVideoDecoder(str(video_path)) as decoder:
             # Query for timestamp 0.018s - should return frame at 0.017s
@@ -430,3 +440,7 @@ class TestPyAVVideoDecoderEdgeCases:
             # 0.5s and 1.0s should return frame at 0.480s (frame 11)
             assert batch2.pts_seconds[2] == pytest.approx(0.480, abs=0.001)
             assert batch2.pts_seconds[3] == pytest.approx(0.480, abs=0.001)
+
+
+# Note: Decoder consistency tests (PyAV vs TorchCodec) have been moved to
+# tests/video_decoder/test_decoder_consistency.py

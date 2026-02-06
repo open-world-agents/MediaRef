@@ -32,7 +32,7 @@ class TorchCodecVideoDecoder(VideoDecoder, BaseVideoDecoder):
         """Create or retrieve cached decoder instance."""
         cache_key = str(source)
         if cache_key in cls.cache:
-            instance = cls.cache[cache_key].obj
+            instance = cls.cache.acquire_entry(cache_key)
             instance._skip_init = True
         else:
             instance = super().__new__(cls)
@@ -50,7 +50,7 @@ class TorchCodecVideoDecoder(VideoDecoder, BaseVideoDecoder):
     def get_frames_played_at(self, seconds: List[float]) -> FrameBatch:
         """Retrieve frames at specific timestamps.
 
-        Delegates to TorchCodec's native get_frames_displayed_at_timestamps
+        Delegates to TorchCodec's native get_frames_played_at
         which implements the correct playback semantics.
 
         Args:
@@ -59,15 +59,17 @@ class TorchCodecVideoDecoder(VideoDecoder, BaseVideoDecoder):
         Returns:
             FrameBatch containing frame data and timing information
         """
-        # TorchCodec returns its own FrameBatch (namedtuple), convert to ours (dataclass)
-        torchcodec_batch = super().get_frames_displayed_at_timestamps(seconds)
+        # TorchCodec returns its own FrameBatch (dataclass), convert to ours
+        torchcodec_batch = VideoDecoder.get_frames_played_at(self, seconds)
         return FrameBatch(
             data=torchcodec_batch.data.numpy(),
-            pts_seconds=np.array(torchcodec_batch.pts_seconds, dtype=np.float64),
-            duration_seconds=np.array(torchcodec_batch.duration_seconds, dtype=np.float64),
+            # Use .numpy() first to avoid DeprecationWarning from numpy 2.0
+            # about __array__ not accepting the 'copy' keyword
+            pts_seconds=torchcodec_batch.pts_seconds.numpy().astype(np.float64),
+            duration_seconds=torchcodec_batch.duration_seconds.numpy().astype(np.float64),
         )
 
     def close(self):
-        """Release cache reference."""
-        if hasattr(self, "_cache_key"):
+        """Release cache reference. Safe to call multiple times."""
+        if hasattr(self, "_cache_key") and self._cache_key in self.cache and self.cache[self._cache_key].refs > 0:
             self.cache.release_entry(self._cache_key)
