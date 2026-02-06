@@ -1,6 +1,6 @@
 """TorchCodec-based video decoder."""
 
-from typing import ClassVar, List
+from typing import ClassVar, List, Optional
 
 import numpy as np
 from torchcodec.decoders import VideoDecoder
@@ -65,6 +65,47 @@ class TorchCodecVideoDecoder(VideoDecoder, BaseVideoDecoder):
             data=torchcodec_batch.data.numpy(),
             # Use .numpy() first to avoid DeprecationWarning from numpy 2.0
             # about __array__ not accepting the 'copy' keyword
+            pts_seconds=torchcodec_batch.pts_seconds.numpy().astype(np.float64),
+            duration_seconds=torchcodec_batch.duration_seconds.numpy().astype(np.float64),
+        )
+
+    def get_frames_played_in_range(
+        self, start_seconds: float, stop_seconds: float, fps: Optional[float] = None
+    ) -> FrameBatch:
+        """Return multiple frames in the given range.
+
+        Delegates to TorchCodec's native get_frames_played_in_range.
+
+        Args:
+            start_seconds: Time, in seconds, of the start of the range.
+            stop_seconds: Time, in seconds, of the end of the range (excluded).
+            fps: If specified, resample output to this frame rate. If None,
+                returns frames at the source video's frame rate.
+
+        Returns:
+            FrameBatch containing frame data and timing information.
+
+        Raises:
+            NotImplementedError: If ``fps`` is specified but the installed
+                TorchCodec version (<=0.10.0) does not support it.
+        """
+        if fps is not None:
+            try:
+                torchcodec_batch = VideoDecoder.get_frames_played_in_range(
+                    self, start_seconds=start_seconds, stop_seconds=stop_seconds, fps=fps
+                )
+            except TypeError:
+                raise NotImplementedError(
+                    "The installed version of TorchCodec (<=0.10.0) does not support "
+                    "the 'fps' parameter in get_frames_played_in_range. "
+                    "Upgrade TorchCodec or use fps=None."
+                )
+        else:
+            torchcodec_batch = VideoDecoder.get_frames_played_in_range(
+                self, start_seconds=start_seconds, stop_seconds=stop_seconds
+            )
+        return FrameBatch(
+            data=torchcodec_batch.data.numpy(),
             pts_seconds=torchcodec_batch.pts_seconds.numpy().astype(np.float64),
             duration_seconds=torchcodec_batch.duration_seconds.numpy().astype(np.float64),
         )

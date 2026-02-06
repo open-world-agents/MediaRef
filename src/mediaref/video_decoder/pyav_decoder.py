@@ -2,7 +2,7 @@
 
 import gc
 from fractions import Fraction
-from typing import List
+from typing import List, Optional
 
 import av
 import cv2
@@ -42,6 +42,17 @@ def _frame_to_rgba(frame: av.VideoFrame) -> npt.NDArray[np.uint8]:
     # ARGB format stores channels as [A, R, G, B], so we reorder to [R, G, B, A]
     rgba_array: npt.NDArray[np.uint8] = argb_array[:, :, [1, 2, 3, 0]]
     return rgba_array
+
+
+def _convert_av_frames_to_nchw(av_frames: List[av.VideoFrame]) -> List[npt.NDArray[np.uint8]]:
+    """Convert a list of PyAV frames to NCHW numpy arrays (RGB)."""
+    frames = []
+    for frame in av_frames:
+        rgba_array = _frame_to_rgba(frame)
+        rgb_array = cv2.cvtColor(rgba_array, cv2.COLOR_RGBA2RGB)
+        frame_nchw = np.transpose(rgb_array, (2, 0, 1)).astype(np.uint8)
+        frames.append(frame_nchw)
+    return frames
 
 
 class PyAVVideoDecoder(BaseVideoDecoder):
@@ -128,6 +139,14 @@ class PyAVVideoDecoder(BaseVideoDecoder):
         """Access video stream metadata."""
         return self._metadata
 
+    def _create_empty_batch(self) -> FrameBatch:
+        """Create an empty FrameBatch with correct spatial dimensions."""
+        return FrameBatch(
+            data=np.empty((0, 3, self._metadata.height, self._metadata.width), dtype=np.uint8),
+            pts_seconds=np.array([], dtype=np.float64),
+            duration_seconds=np.array([], dtype=np.float64),
+        )
+
     def get_frames_played_at(self, seconds: List[float]) -> FrameBatch:
         """Retrieve frames that would be displayed at specific timestamps.
 
@@ -144,11 +163,7 @@ class PyAVVideoDecoder(BaseVideoDecoder):
             ValueError: If any timestamp is outside [begin_stream_seconds, end_stream_seconds)
         """
         if not seconds:
-            return FrameBatch(
-                data=np.empty((0, 3, self._metadata.height, self._metadata.width), dtype=np.uint8),
-                pts_seconds=np.array([], dtype=np.float64),
-                duration_seconds=np.array([], dtype=np.float64),
-            )
+            return self._create_empty_batch()
 
         # Validate timestamps per playback_semantics.md boundary conditions
         begin_stream = float(self._metadata.begin_stream_seconds)
@@ -163,12 +178,7 @@ class PyAVVideoDecoder(BaseVideoDecoder):
         av_frames = self._get_frames_played_at(seconds)
 
         # Convert to RGB numpy arrays in NCHW format
-        frames = []
-        for frame in av_frames:
-            rgba_array = _frame_to_rgba(frame)
-            rgb_array = cv2.cvtColor(rgba_array, cv2.COLOR_RGBA2RGB)
-            frame_nchw = np.transpose(rgb_array, (2, 0, 1)).astype(np.uint8)
-            frames.append(frame_nchw)
+        frames = _convert_av_frames_to_nchw(av_frames)
 
         pts_list = [float(frame.time) for frame in av_frames]
         duration = float(1.0 / self._metadata.average_rate)
@@ -177,6 +187,75 @@ class PyAVVideoDecoder(BaseVideoDecoder):
             data=np.stack(frames, axis=0),
             pts_seconds=np.array(pts_list, dtype=np.float64),
             duration_seconds=np.full(len(seconds), duration, dtype=np.float64),
+        )
+
+    def get_frames_played_in_range(
+        self, start_seconds: float, stop_seconds: float, fps: Optional[float] = None
+    ) -> FrameBatch:
+        """Return multiple frames in the given range [start_seconds, stop_seconds).
+
+        Args:
+            start_seconds: Time, in seconds, of the start of the range.
+            stop_seconds: Time, in seconds, of the end of the range (excluded).
+            fps: If specified, resample output to this frame rate by
+                duplicating or dropping frames as necessary. If None,
+                returns frames at the source video's frame rate.
+
+        Returns:
+            FrameBatch with frame data in NCHW format.
+
+        Raises:
+            ValueError: If the range parameters are invalid.
+        """
+        begin_stream = float(self._metadata.begin_stream_seconds)
+        end_stream = float(self._metadata.end_stream_seconds)
+
+        if not start_seconds <= stop_seconds:
+            raise ValueError(
+                f"Invalid start seconds: {start_seconds}. "
+                f"It must be less than or equal to stop seconds ({stop_seconds})."
+            )
+        if not begin_stream <= start_seconds < end_stream:
+            raise ValueError(
+                f"Invalid start seconds: {start_seconds}. "
+                f"It must be greater than or equal to {begin_stream} "
+                f"and less than {end_stream}."
+            )
+        if not stop_seconds <= end_stream:
+            raise ValueError(f"Invalid stop seconds: {stop_seconds}. It must be less than or equal to {end_stream}.")
+
+        if fps is not None:
+            # Resample: generate timestamps at the given fps and get frames
+            timestamps = np.arange(start_seconds, stop_seconds, 1.0 / fps).tolist()
+            if not timestamps:
+                return self._create_empty_batch()
+            return self.get_frames_played_at(timestamps)
+
+        # Native frame rate: decode all frames with pts in [start_seconds, stop_seconds)
+        self._seek_to_or_before(start_seconds)
+
+        av_frames: List[av.VideoFrame] = []
+        for frame in self._container.decode(video=0):
+            if frame.time is None:
+                raise ValueError("Frame time is None")
+            frame_pts = float(frame.time)
+            if frame_pts >= stop_seconds:
+                break
+            if frame_pts >= start_seconds:
+                av_frames.append(frame)
+
+        if not av_frames:
+            return self._create_empty_batch()
+
+        frames = _convert_av_frames_to_nchw(av_frames)
+
+        pts_list = [float(frame.time) for frame in av_frames]
+        duration = float(1.0 / self._metadata.average_rate)
+
+        return FrameBatch(
+            data=np.stack(frames, axis=0),
+            pts_seconds=np.array(pts_list, dtype=np.float64),
+            duration_seconds=np.full(len(av_frames), duration, dtype=np.float64),
         )
 
     def _get_frames_played_at(self, seconds: List[float]) -> List[av.VideoFrame]:

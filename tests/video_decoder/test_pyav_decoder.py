@@ -442,5 +442,161 @@ class TestPyAVVideoDecoderEdgeCases:
             assert batch2.pts_seconds[3] == pytest.approx(0.480, abs=0.001)
 
 
+@pytest.mark.video
+class TestPyAVVideoDecoderGetFramesPlayedInRange:
+    """Test get_frames_played_in_range for PyAVVideoDecoder."""
+
+    def test_basic_range(self, sample_video_file: tuple[Path, list[int]]):
+        """Test basic range query returns frames within [start, stop)."""
+        from mediaref.video_decoder import PyAVVideoDecoder
+
+        video_path, _ = sample_video_file
+        # Video: 5 frames at 10fps, pts = 0.0, 0.1, 0.2, 0.3, 0.4
+
+        with PyAVVideoDecoder(str(video_path)) as decoder:
+            batch = decoder.get_frames_played_in_range(0.0, 0.3)
+            # Should return frames at pts 0.0, 0.1, 0.2 (0.3 excluded)
+            assert batch.data.shape[0] == 3
+            np.testing.assert_array_almost_equal(batch.pts_seconds, [0.0, 0.1, 0.2], decimal=2)
+
+    def test_full_range(self, sample_video_file: tuple[Path, list[int]]):
+        """Test range covering entire video."""
+        from mediaref.video_decoder import PyAVVideoDecoder
+
+        video_path, _ = sample_video_file
+
+        with PyAVVideoDecoder(str(video_path)) as decoder:
+            end_stream = float(decoder.metadata.end_stream_seconds)
+            batch = decoder.get_frames_played_in_range(0.0, end_stream)
+            # Should return all 5 frames
+            assert batch.data.shape[0] == 5
+
+    def test_single_frame_range(self, sample_video_file: tuple[Path, list[int]]):
+        """Test range that contains exactly one frame."""
+        from mediaref.video_decoder import PyAVVideoDecoder
+
+        video_path, _ = sample_video_file
+
+        with PyAVVideoDecoder(str(video_path)) as decoder:
+            batch = decoder.get_frames_played_in_range(0.0, 0.1)
+            # Only frame at pts=0.0 is in [0.0, 0.1)
+            assert batch.data.shape[0] == 1
+            assert batch.pts_seconds[0] == pytest.approx(0.0, abs=0.01)
+
+    def test_range_mid_video(self, sample_video_file: tuple[Path, list[int]]):
+        """Test range in the middle of the video."""
+        from mediaref.video_decoder import PyAVVideoDecoder
+
+        video_path, _ = sample_video_file
+
+        with PyAVVideoDecoder(str(video_path)) as decoder:
+            batch = decoder.get_frames_played_in_range(0.1, 0.4)
+            # Frames at pts 0.1, 0.2, 0.3
+            assert batch.data.shape[0] == 3
+            np.testing.assert_array_almost_equal(batch.pts_seconds, [0.1, 0.2, 0.3], decimal=2)
+
+    def test_nchw_format(self, sample_video_file: tuple[Path, list[int]]):
+        """Test that returned frames are in NCHW format."""
+        from mediaref.video_decoder import PyAVVideoDecoder
+
+        video_path, _ = sample_video_file
+
+        with PyAVVideoDecoder(str(video_path)) as decoder:
+            batch = decoder.get_frames_played_in_range(0.0, 0.2)
+            assert batch.data.shape == (2, 3, 48, 64)
+            assert batch.data.dtype == np.uint8
+            assert batch.pts_seconds.dtype == np.float64
+            assert batch.duration_seconds.dtype == np.float64
+
+    def test_equal_start_stop_returns_empty(self, sample_video_file: tuple[Path, list[int]]):
+        """Test that start == stop returns empty batch."""
+        from mediaref.video_decoder import PyAVVideoDecoder
+
+        video_path, _ = sample_video_file
+
+        with PyAVVideoDecoder(str(video_path)) as decoder:
+            batch = decoder.get_frames_played_in_range(0.1, 0.1)
+            assert batch.data.shape[0] == 0
+
+    def test_start_greater_than_stop_raises(self, sample_video_file: tuple[Path, list[int]]):
+        """Test that start > stop raises ValueError."""
+        from mediaref.video_decoder import PyAVVideoDecoder
+
+        video_path, _ = sample_video_file
+
+        with PyAVVideoDecoder(str(video_path)) as decoder:
+            with pytest.raises(ValueError, match="less than or equal to stop"):
+                decoder.get_frames_played_in_range(0.3, 0.1)
+
+    def test_start_before_begin_stream_raises(self, sample_video_file: tuple[Path, list[int]]):
+        """Test that start before begin_stream raises ValueError."""
+        from mediaref.video_decoder import PyAVVideoDecoder
+
+        video_path, _ = sample_video_file
+
+        with PyAVVideoDecoder(str(video_path)) as decoder:
+            with pytest.raises(ValueError, match="Invalid start seconds"):
+                decoder.get_frames_played_in_range(-0.1, 0.3)
+
+    def test_start_at_end_stream_raises(self, sample_video_file: tuple[Path, list[int]]):
+        """Test that start at end_stream raises ValueError."""
+        from mediaref.video_decoder import PyAVVideoDecoder
+
+        video_path, _ = sample_video_file
+
+        with PyAVVideoDecoder(str(video_path)) as decoder:
+            end_stream = float(decoder.metadata.end_stream_seconds)
+            with pytest.raises(ValueError, match="Invalid start seconds"):
+                decoder.get_frames_played_in_range(end_stream, end_stream + 1.0)
+
+    def test_stop_beyond_end_stream_raises(self, sample_video_file: tuple[Path, list[int]]):
+        """Test that stop beyond end_stream raises ValueError."""
+        from mediaref.video_decoder import PyAVVideoDecoder
+
+        video_path, _ = sample_video_file
+
+        with PyAVVideoDecoder(str(video_path)) as decoder:
+            end_stream = float(decoder.metadata.end_stream_seconds)
+            with pytest.raises(ValueError, match="Invalid stop seconds"):
+                decoder.get_frames_played_in_range(0.0, end_stream + 0.1)
+
+    def test_fps_resampling(self, sample_video_file: tuple[Path, list[int]]):
+        """Test fps resampling returns correct number of frames."""
+        from mediaref.video_decoder import PyAVVideoDecoder
+
+        video_path, _ = sample_video_file
+
+        with PyAVVideoDecoder(str(video_path)) as decoder:
+            # 0.0 to 0.5 at 5fps → timestamps at 0.0, 0.2, 0.4 → 3 frames
+            end_stream = float(decoder.metadata.end_stream_seconds)
+            batch = decoder.get_frames_played_in_range(0.0, end_stream, fps=5.0)
+            # At 5fps, interval=0.2s, range [0.0, 0.5): 0.0, 0.2, 0.4 → 3 frames
+            assert batch.data.shape[0] == 3
+
+    def test_fps_higher_than_source(self, sample_video_file: tuple[Path, list[int]]):
+        """Test fps higher than source duplicates frames."""
+        from mediaref.video_decoder import PyAVVideoDecoder
+
+        video_path, _ = sample_video_file
+        # Source is 10fps
+
+        with PyAVVideoDecoder(str(video_path)) as decoder:
+            # 0.0 to 0.2 at 20fps → timestamps at 0.0, 0.05, 0.1, 0.15 → 4 frames
+            batch = decoder.get_frames_played_in_range(0.0, 0.2, fps=20.0)
+            assert batch.data.shape[0] == 4
+
+    def test_fps_none_returns_native_rate(self, sample_video_file: tuple[Path, list[int]]):
+        """Test that fps=None returns frames at native rate."""
+        from mediaref.video_decoder import PyAVVideoDecoder
+
+        video_path, _ = sample_video_file
+
+        with PyAVVideoDecoder(str(video_path)) as decoder:
+            batch_none = decoder.get_frames_played_in_range(0.0, 0.3, fps=None)
+            batch_default = decoder.get_frames_played_in_range(0.0, 0.3)
+            assert batch_none.data.shape == batch_default.data.shape
+            np.testing.assert_array_equal(batch_none.pts_seconds, batch_default.pts_seconds)
+
+
 # Note: Decoder consistency tests (PyAV vs TorchCodec) have been moved to
 # tests/video_decoder/test_decoder_consistency.py
