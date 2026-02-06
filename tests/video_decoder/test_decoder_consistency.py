@@ -5,21 +5,17 @@ Due to differences in codec implementations, pixel values may differ slightly
 (typically by 1-2 values). Tests allow for small tolerances where appropriate.
 """
 
+import random
 from pathlib import Path
 from typing import TYPE_CHECKING
 
 import numpy as np
 import pytest
 
+from tests import TORCHCODEC_AVAILABLE
+
 if TYPE_CHECKING:
     from pytest_subtests import SubTests
-
-try:
-    from torchcodec.decoders import VideoDecoder  # noqa: F401
-
-    _TORCHCODEC_AVAILABLE = True
-except (ImportError, RuntimeError, OSError):
-    _TORCHCODEC_AVAILABLE = False
 
 
 def _compare_decoder_outputs(
@@ -53,16 +49,17 @@ def _compare_decoder_outputs(
     duration_diff = np.max(np.abs(pyav_batch.duration_seconds - torchcodec_batch.duration_seconds))
     assert duration_diff <= 0.01, f"Duration mismatch: max diff = {duration_diff:.4f}s"
 
-    # Check pixel values
-    for i in range(len(timestamps)):
-        diff = np.max(np.abs(pyav_batch.data[i].astype(int) - torchcodec_batch.data[i].astype(int)))
+    # Check pixel values — use int16 to avoid overflow when subtracting uint8 arrays
+    pixel_diffs = np.abs(pyav_batch.data.astype(np.int16) - torchcodec_batch.data.astype(np.int16))
+    max_diffs = np.max(pixel_diffs, axis=(1, 2, 3))
+    for i, diff in enumerate(max_diffs):
         assert diff <= max_pixel_diff, (
             f"Frame {i} pixel diff too large: {diff} > {max_pixel_diff}"
         )
 
 
 @pytest.mark.video
-@pytest.mark.skipif(not _TORCHCODEC_AVAILABLE, reason="TorchCodec not installed")
+@pytest.mark.skipif(not TORCHCODEC_AVAILABLE, reason="TorchCodec not installed")
 class TestDecoderConsistency:
     """Test that PyAVVideoDecoder and TorchCodecVideoDecoder produce consistent outputs."""
 
@@ -176,7 +173,7 @@ class TestDecoderConsistency:
 
 
 @pytest.mark.video
-@pytest.mark.skipif(not _TORCHCODEC_AVAILABLE, reason="TorchCodec not installed")
+@pytest.mark.skipif(not TORCHCODEC_AVAILABLE, reason="TorchCodec not installed")
 class TestDecoderConsistencyAdvanced:
     """Advanced decoder consistency tests with more comprehensive coverage."""
 
@@ -184,8 +181,6 @@ class TestDecoderConsistencyAdvanced:
 
     def test_random_timestamp_sampling(self, sample_video_file: tuple[Path, list[int]], subtests: "SubTests"):
         """Test random timestamp sampling with fixed seeds for reproducibility."""
-        import random
-
         video_path, _ = sample_video_file
 
         # Use fixed seeds for reproducibility
@@ -286,14 +281,14 @@ class TestDecoderConsistencyAdvanced:
                     # Verify PTS match
                     np.testing.assert_array_almost_equal(pyav_batch.pts_seconds, tc_batch.pts_seconds, decimal=2)
 
-                    # Verify pixel values
-                    for i in range(len(timestamps)):
-                        max_diff = np.max(np.abs(pyav_batch.data[i].astype(int) - tc_batch.data[i].astype(int)))
-                        assert max_diff <= self.MAX_PIXEL_DIFF, f"Sequential call {timestamps}: max_diff={max_diff}"
+                    # Verify pixel values — use int16 to avoid overflow when subtracting uint8 arrays
+                    pixel_diffs = np.abs(pyav_batch.data.astype(np.int16) - tc_batch.data.astype(np.int16))
+                    max_diff = np.max(pixel_diffs)
+                    assert max_diff <= self.MAX_PIXEL_DIFF, f"Sequential call {timestamps}: max_diff={max_diff}"
 
 
 @pytest.mark.video
-@pytest.mark.skipif(not _TORCHCODEC_AVAILABLE, reason="TorchCodec not installed")
+@pytest.mark.skipif(not TORCHCODEC_AVAILABLE, reason="TorchCodec not installed")
 class TestDecoderConsistencyLongVideo:
     """Decoder consistency tests using longer video (10 seconds)."""
 
@@ -336,8 +331,6 @@ class TestDecoderConsistencyLongVideo:
 
     def test_random_sampling_long_video(self, sample_video_file_long: tuple[Path, float], subtests: "SubTests"):
         """Test random timestamp sampling across longer video."""
-        import random
-
         video_path, duration = sample_video_file_long
 
         configs = [
@@ -378,14 +371,14 @@ class TestDecoderConsistencyLongVideo:
                     # Verify PTS match
                     np.testing.assert_array_almost_equal(pyav_batch.pts_seconds, tc_batch.pts_seconds, decimal=2)
 
-                    # Verify pixel values
-                    for i in range(len(timestamps)):
-                        max_diff = np.max(np.abs(pyav_batch.data[i].astype(int) - tc_batch.data[i].astype(int)))
-                        assert max_diff <= self.MAX_PIXEL_DIFF, f"Sequential call {timestamps}: max_diff={max_diff}"
+                    # Verify pixel values — use int16 to avoid overflow when subtracting uint8 arrays
+                    pixel_diffs = np.abs(pyav_batch.data.astype(np.int16) - tc_batch.data.astype(np.int16))
+                    max_diff = np.max(pixel_diffs)
+                    assert max_diff <= self.MAX_PIXEL_DIFF, f"Sequential call {timestamps}: max_diff={max_diff}"
 
 
 @pytest.mark.video
-@pytest.mark.skipif(not _TORCHCODEC_AVAILABLE, reason="TorchCodec not installed")
+@pytest.mark.skipif(not TORCHCODEC_AVAILABLE, reason="TorchCodec not installed")
 class TestDecoderConsistencyRealVideos:
     """Decoder consistency tests using real video files.
 
@@ -432,7 +425,7 @@ class TestDecoderConsistencyRealVideos:
 
 
 @pytest.mark.video
-@pytest.mark.skipif(not _TORCHCODEC_AVAILABLE, reason="TorchCodec not installed")
+@pytest.mark.skipif(not TORCHCODEC_AVAILABLE, reason="TorchCodec not installed")
 class TestDecoderConsistencyEdgeCases:
     """Edge case tests for decoder consistency."""
 
@@ -527,11 +520,9 @@ class TestDecoderConsistencyEdgeCases:
         # these are different API names for the same underlying metadata field.
         pyav_fps = float(pyav_meta.average_rate)
         torchcodec_fps = float(torchcodec_meta.average_fps)
-        assert abs(pyav_fps - torchcodec_fps) < 0.1, f"FPS mismatch: {pyav_fps} vs {torchcodec_fps}"
+        assert pyav_fps == pytest.approx(torchcodec_fps, abs=0.1)
 
         # Duration comparison (allow 100ms tolerance)
         pyav_duration = float(pyav_meta.duration_seconds)
         torchcodec_duration = float(torchcodec_meta.duration_seconds)
-        assert abs(pyav_duration - torchcodec_duration) < 0.1, (
-            f"Duration mismatch: {pyav_duration} vs {torchcodec_duration}"
-        )
+        assert pyav_duration == pytest.approx(torchcodec_duration, abs=0.1)

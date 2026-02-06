@@ -10,16 +10,11 @@ from pathlib import Path
 import numpy as np
 import pytest
 
-try:
-    from torchcodec.decoders import VideoDecoder  # noqa: F401
-
-    _TORCHCODEC_AVAILABLE = True
-except (ImportError, RuntimeError, OSError):
-    _TORCHCODEC_AVAILABLE = False
+from tests import TORCHCODEC_AVAILABLE
 
 pytestmark = [
     pytest.mark.video,
-    pytest.mark.skipif(not _TORCHCODEC_AVAILABLE, reason="TorchCodec not installed"),
+    pytest.mark.skipif(not TORCHCODEC_AVAILABLE, reason="TorchCodec not installed"),
 ]
 
 
