@@ -313,6 +313,79 @@ class TestTorchCodecVideoDecoderCaching:
         assert batch2.data.shape[0] == 1
 
 
+class TestTorchCodecVideoDecoderGetFramesPlayedInRange:
+    """Test get_frames_played_in_range for TorchCodecVideoDecoder."""
+
+    def test_basic_range(self, sample_video_file: tuple[Path, list[int]]):
+        """Test basic range query returns frames within [start, stop)."""
+        from mediaref.video_decoder import TorchCodecVideoDecoder
+
+        video_path, _ = sample_video_file
+
+        with TorchCodecVideoDecoder(str(video_path)) as decoder:
+            batch = decoder.get_frames_played_in_range(0.0, 0.3)
+            # Should return frames at pts 0.0, 0.1, 0.2 (0.3 excluded)
+            assert batch.data.shape[0] == 3
+            np.testing.assert_array_almost_equal(batch.pts_seconds, [0.0, 0.1, 0.2], decimal=2)
+
+    def test_full_range(self, sample_video_file: tuple[Path, list[int]]):
+        """Test range covering entire video."""
+        from mediaref.video_decoder import TorchCodecVideoDecoder
+
+        video_path, _ = sample_video_file
+
+        with TorchCodecVideoDecoder(str(video_path)) as decoder:
+            end_stream = float(decoder.metadata.end_stream_seconds)
+            batch = decoder.get_frames_played_in_range(0.0, end_stream)
+            assert batch.data.shape[0] == 5
+
+    def test_nchw_format(self, sample_video_file: tuple[Path, list[int]]):
+        """Test that returned frames are in NCHW format."""
+        from mediaref.video_decoder import TorchCodecVideoDecoder
+
+        video_path, _ = sample_video_file
+
+        with TorchCodecVideoDecoder(str(video_path)) as decoder:
+            batch = decoder.get_frames_played_in_range(0.0, 0.2)
+            assert batch.data.shape == (2, 3, 48, 64)
+            assert batch.data.dtype == np.uint8
+            assert batch.pts_seconds.dtype == np.float64
+            assert batch.duration_seconds.dtype == np.float64
+
+    def test_start_greater_than_stop_raises(self, sample_video_file: tuple[Path, list[int]]):
+        """Test that start > stop raises an error."""
+        from mediaref.video_decoder import TorchCodecVideoDecoder
+
+        video_path, _ = sample_video_file
+
+        with TorchCodecVideoDecoder(str(video_path)) as decoder:
+            with pytest.raises((ValueError, RuntimeError)):
+                decoder.get_frames_played_in_range(0.3, 0.1)
+
+    def test_fps_raises_not_implemented_on_old_torchcodec(
+        self, sample_video_file: tuple[Path, list[int]]
+    ):
+        """Test that fps parameter raises NotImplementedError on TorchCodec <=0.10.0."""
+        from mediaref.video_decoder import TorchCodecVideoDecoder
+
+        video_path, _ = sample_video_file
+
+        with TorchCodecVideoDecoder(str(video_path)) as decoder:
+            with pytest.raises(NotImplementedError, match="does not support"):
+                decoder.get_frames_played_in_range(0.0, 0.2, fps=20.0)
+
+    def test_fps_none_returns_native_rate(self, sample_video_file: tuple[Path, list[int]]):
+        """Test that fps=None returns frames at native rate."""
+        from mediaref.video_decoder import TorchCodecVideoDecoder
+
+        video_path, _ = sample_video_file
+
+        with TorchCodecVideoDecoder(str(video_path)) as decoder:
+            batch = decoder.get_frames_played_in_range(0.0, 0.3, fps=None)
+            # Native 10fps: frames at 0.0, 0.1, 0.2
+            assert batch.data.shape[0] == 3
+
+
 class TestTorchCodecVideoDecoderEdgeCases:
     """Test edge cases and error handling."""
 

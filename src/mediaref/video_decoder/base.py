@@ -60,6 +60,38 @@ class BaseVideoDecoder(ABC):
         pass
 
     @abstractmethod
+    def get_frames_played_in_range(
+        self, start_seconds: float, stop_seconds: float, fps: float | None = None
+    ) -> FrameBatch:
+        """Return multiple frames in the given range.
+
+        Frames are in the half open range [start_seconds, stop_seconds). Each
+        returned frame's :term:`pts`, in seconds, is inside of the half open
+        range.
+
+        Args:
+            start_seconds: Time, in seconds, of the start of the range.
+            stop_seconds: Time, in seconds, of the end of the range.
+                As a half open range, the end is excluded.
+            fps: If specified, resample output to this frame rate by
+                duplicating or dropping frames as necessary. If None
+                (default), returns frames at the source video's frame rate.
+
+        Returns:
+            FrameBatch: The frames within the specified range.
+
+        Raises:
+            ValueError: If start_seconds > stop_seconds, or if the range
+                is outside the valid stream bounds.
+
+        Examples:
+            >>> with PyAVVideoDecoder("video.mp4") as decoder:
+            ...     batch = decoder.get_frames_played_in_range(0.0, 2.0)
+            ...     print(batch.data.shape)
+        """
+        pass
+
+    @abstractmethod
     def close(self):
         """Release video decoder resources.
 
