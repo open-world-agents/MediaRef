@@ -12,12 +12,13 @@ from pathlib import Path
 
 def find_av_libs_dir() -> Path | None:
     """Find PyAV's bundled FFmpeg libraries directory.
-    
+
     Returns:
         Path to av.libs directory, or None if not found.
     """
     try:
         import av
+
         av_path = Path(av.__file__).parent
         libs_dir = av_path.parent / "av.libs"
         if libs_dir.exists():
@@ -29,29 +30,29 @@ def find_av_libs_dir() -> Path | None:
 
 def get_library_mappings(libs_dir: Path) -> dict[str, Path]:
     """Get mapping from standard library names to actual PyAV library files.
-    
+
     Args:
         libs_dir: Path to PyAV's av.libs directory.
-    
+
     Returns:
         Dict mapping standard names (e.g., 'libavcodec.so.62') to actual file paths.
     """
     required_libs = [
         "libavcodec",
-        "libavformat", 
+        "libavformat",
         "libavutil",
         "libswscale",
         "libswresample",
         "libavdevice",
         "libavfilter",
     ]
-    
+
     mappings = {}
-    
+
     for lib_name in required_libs:
         # Find the actual library file (e.g., libavcodec-e57b519c.so.62.11.100)
         pattern = re.compile(rf"^{lib_name}-[a-f0-9]+\.so\.(\d+)\.\d+\.\d+$")
-        
+
         for file in libs_dir.iterdir():
             match = pattern.match(file.name)
             if match:
@@ -59,44 +60,44 @@ def get_library_mappings(libs_dir: Path) -> dict[str, Path]:
                 standard_name = f"{lib_name}.so.{major_version}"
                 mappings[standard_name] = file
                 break
-    
+
     return mappings
 
 
 def create_symlinks(libs_dir: Path, mappings: dict[str, Path] | None = None) -> list[Path]:
     """Create symbolic links for FFmpeg libraries.
-    
+
     Args:
         libs_dir: Path to PyAV's av.libs directory.
         mappings: Optional pre-computed library mappings.
-    
+
     Returns:
         List of created symlink paths.
     """
     if mappings is None:
         mappings = get_library_mappings(libs_dir)
-    
+
     created = []
-    
+
     for standard_name, actual_file in mappings.items():
         symlink_path = libs_dir / standard_name
-        
+
         # Remove existing symlink if present
         if symlink_path.is_symlink():
             symlink_path.unlink()
         elif symlink_path.exists():
             continue
-        
+
         # Create relative symlink
         symlink_path.symlink_to(actual_file.name)
         created.append(symlink_path)
-    
+
     return created
 
 
 def get_ld_library_path() -> str | None:
     """Get the LD_LIBRARY_PATH value needed for TorchCodec.
-    
+
     Returns:
         Path string to add to LD_LIBRARY_PATH, or None if PyAV not found.
     """
@@ -108,13 +109,13 @@ def get_ld_library_path() -> str | None:
 
 def setup(verbose: bool = False) -> bool:
     """Setup FFmpeg libraries for TorchCodec.
-    
+
     Creates symbolic links from PyAV's bundled FFmpeg libraries to standard
     library names that TorchCodec expects.
-    
+
     Args:
         verbose: If True, print progress messages.
-    
+
     Returns:
         True if setup was successful, False otherwise.
     """
@@ -123,20 +124,20 @@ def setup(verbose: bool = False) -> bool:
         if verbose:
             print("Error: PyAV not found. Install with: pip install av", file=sys.stderr)
         return False
-    
+
     mappings = get_library_mappings(libs_dir)
     if not mappings:
         if verbose:
             print("Error: No FFmpeg libraries found in PyAV bundle.", file=sys.stderr)
         return False
-    
+
     created = create_symlinks(libs_dir, mappings)
-    
+
     if verbose:
         print(f"Created {len(created)} symbolic links in {libs_dir}")
-        print(f"\nTo use TorchCodec, set LD_LIBRARY_PATH:")
+        print("\nTo use TorchCodec, set LD_LIBRARY_PATH:")
         print(f'  export LD_LIBRARY_PATH="{libs_dir}:$LD_LIBRARY_PATH"')
-    
+
     return True
 
 
@@ -168,6 +169,7 @@ def find_patchelf() -> Path | None:
     # Check in current Python environment first
     try:
         import site
+
         for sp in site.getsitepackages():
             patchelf = Path(sp).parent.parent / "bin" / "patchelf"
             if patchelf.exists():
@@ -416,4 +418,3 @@ def is_rpath_patched() -> bool:
         pass
 
     return False
-

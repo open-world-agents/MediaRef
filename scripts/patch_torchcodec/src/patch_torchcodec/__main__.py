@@ -49,7 +49,8 @@ Examples:
         help="Create an activation script (activate_torchcodec.sh)",
     )
     parser.add_argument(
-        "--verify", "--verify-only",
+        "--verify",
+        "--verify-only",
         action="store_true",
         dest="verify_only",
         help="Only verify TorchCodec works, don't make changes",
@@ -60,7 +61,8 @@ Examples:
         help="Show current setup status",
     )
     parser.add_argument(
-        "--quiet", "-q",
+        "--quiet",
+        "-q",
         action="store_true",
         help="Suppress verbose output",
     )
@@ -114,7 +116,7 @@ Examples:
         elif verify_torchcodec(libs_dir, require_env=True):
             if verbose:
                 print("✓ TorchCodec works with LD_LIBRARY_PATH")
-                print(f"  Run: export LD_LIBRARY_PATH=\"{libs_dir}:$LD_LIBRARY_PATH\"")
+                print(f'  Run: export LD_LIBRARY_PATH="{libs_dir}:$LD_LIBRARY_PATH"')
             sys.exit(0)
         else:
             if verbose:
@@ -144,8 +146,8 @@ Examples:
 
         if verbose:
             print(f"  Created {len(created) + len(all_created)} symbolic links")
-            print(f"\n✓ Symlinks created")
-            print(f"\nTo use TorchCodec, set LD_LIBRARY_PATH:")
+            print("\n✓ Symlinks created")
+            print("\nTo use TorchCodec, set LD_LIBRARY_PATH:")
             print(f'  export LD_LIBRARY_PATH="{libs_dir}:$LD_LIBRARY_PATH"')
 
         if args.print_env:
@@ -220,4 +222,3 @@ echo "TorchCodec FFmpeg libraries activated"
 
 if __name__ == "__main__":
     main()
-
