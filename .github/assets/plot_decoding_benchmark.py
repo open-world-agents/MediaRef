@@ -78,4 +78,3 @@ plt.tight_layout()
 # Save figure
 plt.savefig("decoding_benchmark.png", dpi=150, bbox_inches="tight")
 print("Figure saved to decoding_benchmark.png")
-
