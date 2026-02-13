@@ -47,15 +47,13 @@ The MediaRef schema(`uri`, `pts_ns`) is designed to be **permanent**, built enti
 
 Due to lazy loading, MediaRef has **zero CPU and I/O overhead** when the media is not accessed. When you do need to load the media, convenient APIs handle the complexity of multi-source media (local files, URLs, embedded data) with a single unified interface.
 
-When loading multiple frames from the same video, `batch_decode()` opens the video file once and reuses the handle, achieving **4.9× faster throughput** and **41× better I/O efficiency** compared to existing methods[^1].
+When loading multiple frames from the same video, `batch_decode()` opens the video file once and reuses the handle, achieving **4.9× faster throughput** and **2.2× better I/O efficiency** compared to sequential decoding.
 
 <p align="center">
   <img src=".github/assets/decoding_benchmark.png" alt="Decoding Benchmark" width="800">
 </p>
 
 > **Benchmark details**: Decoding throughput = decoded frames per second during dataloading; I/O efficiency = inverse of disk I/O operations per frame loaded. Measured on real ML dataloader workloads (Minecraft dataset: 64×5 min episodes, 640×360 @ 20Hz, FSLDataset with 4096 token sequences). See [D2E paper](https://worv-ai.github.io/d2e/) Section 3 and Appendix A for full methodology.
-
-[^1]: The benchmark was conducted against TorchCodec v0.6.0, which only supported `seek_mode=exact` for `.mkv` files, forcing full sequential scans and causing significant I/O overhead. While `.mkv` support for `seek_mode=approximate` was added in v0.9.0 ([pytorch/torchcodec#989](https://github.com/pytorch/torchcodec/pull/989)), TorchCodec still exhibits severe performance issues with `.mkv` files (see [pytorch/torchcodec#1223](https://github.com/pytorch/torchcodec/issues/1223)). MediaRef provides PyAV as a stable alternative.
 
 ## Installation
 

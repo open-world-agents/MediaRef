@@ -1,0 +1,41 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "patch-torchcodec"
+version = "0.1.4"
+description = "Patch TorchCodec to use PyAV's bundled FFmpeg — one command, no system FFmpeg needed"
+readme = "README.md"
+license = "MIT"
+requires-python = ">=3.9"
+authors = [
+    { name = "Suhwan Choi", email = "milkclouds00@gmail.com" }
+]
+keywords = ["torchcodec", "ffmpeg", "pyav", "video", "decoder", "patchelf"]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Intended Audience :: Developers",
+    "License :: OSI Approved :: MIT License",
+    "Operating System :: POSIX :: Linux",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.9",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Topic :: Multimedia :: Video",
+]
+dependencies = [
+    "av>=10.0.0",
+    "patchelf",
+]
+
+[project.scripts]
+patch-torchcodec = "patch_torchcodec.__main__:main"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/patch_torchcodec"]
+
+[tool.hatch.build.targets.sdist]
+include = ["src/patch_torchcodec", "README.md", "pyproject.toml"]
+

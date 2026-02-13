@@ -3,19 +3,19 @@
 
 import matplotlib.pyplot as plt
 
-# Benchmark data
-configurations = ["Sequential\nDecoding", "TorchCodec\n(batch)", "MediaRef\n(adaptive batch)"]
-throughput = [24.25, 79.73, 119.16]  # img/s
-io_efficiency = [41.69, 770.39, 18.73]  # KB/img
+# Benchmark data (Sequential vs MediaRef only)
+configurations = ["Sequential\nDecoding", "MediaRef\n(adaptive batch)"]
+throughput = [24.25, 119.16]  # img/s
+io_efficiency = [41.69, 18.73]  # KB/img
 
 # Convert KB/img to img/KB for more intuitive visualization
 io_efficiency_inverted = [1000 / x for x in io_efficiency]  # img/KB
 
 # Create figure with two subplots
-fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(12, 4.5))
+fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(10, 4.5))
 
 # Colors
-colors = ["#6B7280", "#F59E0B", "#10B981"]
+colors = ["#6B7280", "#10B981"]
 
 # Plot 1: Throughput
 bars1 = ax1.bar(configurations, throughput, color=colors, alpha=0.8, edgecolor="black", linewidth=1.2)
@@ -37,9 +37,8 @@ for bar, val in zip(bars1, throughput):
         fontweight="bold",
     )
 
-# Add speedup annotations
-ax1.text(1, throughput[1] * 0.5, "3.3×", ha="center", va="center", fontsize=10, color="white", fontweight="bold")
-ax1.text(2, throughput[2] * 0.5, "4.9×", ha="center", va="center", fontsize=10, color="white", fontweight="bold")
+# Add speedup annotation
+ax1.text(1, throughput[1] * 0.5, "4.9×", ha="center", va="center", fontsize=10, color="white", fontweight="bold")
 
 # Plot 2: I/O Efficiency (inverted to img/KB)
 bars2 = ax2.bar(configurations, io_efficiency_inverted, color=colors, alpha=0.8, edgecolor="black", linewidth=1.2)
@@ -61,20 +60,10 @@ for bar, val in zip(bars2, io_efficiency_inverted):
         fontweight="bold",
     )
 
-# Add efficiency improvement annotations
+# Add efficiency improvement annotation
 ax2.text(
     1,
     io_efficiency_inverted[1] * 0.5,
-    "0.03×",
-    ha="center",
-    va="center",
-    fontsize=10,
-    color="white",
-    fontweight="bold",
-)
-ax2.text(
-    2,
-    io_efficiency_inverted[2] * 0.5,
     "2.2×",
     ha="center",
     va="center",
