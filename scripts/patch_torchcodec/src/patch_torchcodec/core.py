@@ -281,6 +281,13 @@ def setup_with_patchelf(verbose: bool = False) -> bool:
             print("Error: patchelf not found. Install with: pip install patchelf", file=sys.stderr)
         return False
 
+    # Verify required FFmpeg libs exist before proceeding
+    mappings = get_library_mappings(libs_dir)
+    if not mappings:
+        if verbose:
+            print("Error: No FFmpeg libraries found in PyAV bundle.", file=sys.stderr)
+        return False
+
     # Create symlinks for all libraries in av.libs
     if verbose:
         print(f"Creating symbolic links in {libs_dir}...")
