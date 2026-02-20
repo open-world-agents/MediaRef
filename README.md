@@ -217,7 +217,7 @@ ref = MediaRef.model_validate_json(json_str)           # From JSON
 - `loguru` - Logging (disabled by default for library code)
 
 **Optional dependencies**:
-- `[video]` extra: `av>=15.0` (PyAV for video frame extraction)
+- `[video]` extra: `av>=15.0` (PyAV for video frame extraction, 15.0+ for FFmpeg 7.0 support)
 - TorchCodec: `torchcodec` (install separately for GPU-accelerated decoding)
 
 ## Acknowledgments
