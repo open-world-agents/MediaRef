@@ -1,6 +1,7 @@
 """PyAV-based video decoder with TorchCodec-compatible playback semantics."""
 
 import gc
+import warnings
 from fractions import Fraction
 from typing import List, Optional
 
@@ -19,6 +20,9 @@ from .types import VideoStreamMetadata
 # Reference: https://github.com/pytorch/vision/blob/428a54c96e82226c0d2d8522e9cbfdca64283da0/torchvision/io/video.py#L53-L55
 _CALLED_TIMES = 0
 _GC_COLLECTION_INTERVAL = 10
+
+# Threshold for sparse query detection (seconds between consecutive timestamps)
+_SPARSE_QUERY_GAP_THRESHOLD = 1.0
 
 
 def _frame_to_rgba(frame: av.VideoFrame) -> npt.NDArray[np.uint8]:
@@ -275,6 +279,20 @@ class PyAVVideoDecoder(BaseVideoDecoder):
         # Sort queries for efficient sequential access while preserving output order
         indexed_queries = sorted(enumerate(seconds), key=lambda x: x[1])
         results: List[av.VideoFrame] = [None] * len(seconds)  # type: ignore
+
+        # Warn if consecutive sorted timestamps are far apart (single-pass is wasteful)
+        if len(indexed_queries) >= 2:
+            sorted_times = [t for _, t in indexed_queries]
+            max_gap = max(b - a for a, b in zip(sorted_times, sorted_times[1:]))
+            if max_gap > _SPARSE_QUERY_GAP_THRESHOLD:
+                warnings.warn(
+                    f"Sparse timestamp query detected: max gap between consecutive "
+                    f"timestamps is {max_gap:.1f}s (threshold: {_SPARSE_QUERY_GAP_THRESHOLD}s). "
+                    f"Single-pass decoding will decode all intermediate frames. "
+                    f"For widely spaced timestamps, consider per-timestamp seeking instead.",
+                    UserWarning,
+                    stacklevel=3,
+                )
 
         query_idx = 0
         prev_frame: av.VideoFrame | None = None
