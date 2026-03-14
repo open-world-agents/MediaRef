@@ -84,21 +84,33 @@ class PyAVVideoDecoder(BaseVideoDecoder):
     def _extract_metadata(self) -> VideoStreamMetadata:
         """Extract video stream metadata from container.
 
-        Decodes only the first frame to get accurate begin_stream_seconds.
-        Uses header metadata for duration/end_stream_seconds.
+        Stream boundary strategy (cf. TorchCodec's two modes):
+          - TorchCodec exact mode: scans ALL packets → begin=min(PTS), end=max(PTS+dur).
+            Accurate but O(N) and requires full file read for remote URLs.
+          - TorchCodec approximate mode: header-based → begin=start_time, end=start_time+dur.
+            O(1) but may be loose (container duration > actual content).
+
+        We use a hybrid: content-based begin (decode first frame) + header-based end
+        (stream.start_time + duration). Begin must be content-based for accurate query
+        validation. End uses header because reliably finding the last frame via seek is
+        fragile (MKV with sparse keyframes returns 0 frames when seeking past the last
+        cluster boundary). The loose end bound is safe: queries past the last frame PTS
+        but within the header end return the last frame per playback semantics.
+
+        IMPORTANT: end must use stream.start_time (header), NOT first_pts (content).
+        Mixing sources inflates end when first_pts > start_time (e.g. first_pts=0.033
+        but start_time=0 → end was 1 frame too large).
         """
         container = self._container
         if not container.streams.video:
             raise ValueError(f"No video streams found in {self.source}")
         stream = container.streams.video[0]
 
-        # Determine frame rate
         if stream.average_rate:
             average_rate = Fraction(stream.average_rate)
         else:
             raise ValueError("Failed to determine average rate")
 
-        # Determine video duration from header metadata
         if stream.duration and stream.time_base:
             duration_seconds = Fraction(stream.duration * stream.time_base)
         elif container.duration:
@@ -106,26 +118,28 @@ class PyAVVideoDecoder(BaseVideoDecoder):
         else:
             raise ValueError("Failed to determine duration")
 
-        # Decode first frame to get accurate begin_stream_seconds
-        # This is fast - just one seek + one decode
+        # begin: content-based (first decoded frame PTS)
         container.seek(0)
-        first_pts = Fraction(0)
+        first_pts: Fraction | None = None
         for frame in container.decode(video=0):
             if frame.time is not None:
                 first_pts = Fraction(frame.time).limit_denominator(1000000)
             break
 
-        # Reset container position
+        if first_pts is None:
+            raise ValueError("No video frames found")
+
         container.seek(0)
 
-        # begin_stream_seconds is the first frame's PTS
         begin_stream_seconds = first_pts
 
-        # end_stream_seconds = begin + duration (from header)
-        # Note: This assumes header duration is relative to stream start
-        end_stream_seconds = begin_stream_seconds + duration_seconds
+        # end: header-based (stream.start_time + duration)
+        if stream.start_time is not None and stream.time_base:
+            stream_start = Fraction(stream.start_time * stream.time_base)
+        else:
+            stream_start = Fraction(0)
+        end_stream_seconds = stream_start + duration_seconds
 
-        # Determine frame count
         num_frames = stream.frames if stream.frames else int(duration_seconds * average_rate)
 
         return VideoStreamMetadata(
