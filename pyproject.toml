@@ -38,6 +38,10 @@ dependencies = [
 video = [
     "av>=15.0",  # FFmpeg 7.0 support
 ]
+hf = [
+    "datasets>=2.14.0",  # register_feature has been stable since 2.x
+    "pyarrow",           # transitively required by datasets, listed for clarity
+]
 
 [dependency-groups]
 dev = [
@@ -45,6 +49,8 @@ dev = [
     "pytest",
     "pytest-cov",
     "ruff>=0.3.0",
+    "datasets>=2.14.0",  # for tests/test_hf.py
+    "pyarrow",
 ]
 
 [tool.ruff]
