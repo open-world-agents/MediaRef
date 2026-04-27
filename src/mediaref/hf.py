@@ -35,6 +35,10 @@ except ImportError as e:  # pragma: no cover
 
 from .core import MediaRef
 
+# Single source of truth for the feature type identifier (registry key,
+# `_type` discriminator, and dtype suffix all reuse this).
+_FEATURE_NAME = "MediaRef"
+
 
 @dataclass
 class MediaRefFeature:
@@ -54,10 +58,9 @@ class MediaRefFeature:
     decode: bool = True
     id: Optional[str] = field(default=None, repr=False)
 
-    # Automatically constructed (ClassVar — not part of the dataclass init)
-    dtype: ClassVar[str] = "mediaref.MediaRef"
+    dtype: ClassVar[str] = f"mediaref.{_FEATURE_NAME}"
     pa_type: ClassVar[Any] = pa.struct({"uri": pa.string(), "pts_ns": pa.int64()})
-    _type: str = field(default="MediaRef", init=False, repr=False)
+    _type: str = field(default=_FEATURE_NAME, init=False, repr=False)
 
     def __call__(self) -> pa.StructType:
         return self.pa_type
@@ -73,17 +76,18 @@ class MediaRefFeature:
             - :class:`MediaRef` instance
             - ``dict`` with ``uri`` and optional ``pts_ns``
             - ``str``: interpreted as a URI with ``pts_ns = None`` (still image)
+
+        Dicts are validated through :class:`MediaRef` itself so the same
+        coercions that work in the constructor (``DataURI`` → str, numpy
+        integers, ``Optional[int]`` semantics for ``pts_ns``) work here.
         """
         if isinstance(value, MediaRef):
             return {"uri": value.uri, "pts_ns": value.pts_ns}
         if isinstance(value, dict):
-            uri = value.get("uri")
-            if uri is None:
+            if "uri" not in value or value["uri"] is None:
                 raise ValueError(f"MediaRefFeature: dict must include 'uri'; got {value!r}")
-            pts = value.get("pts_ns")
-            if pts is not None and not isinstance(pts, int):
-                raise TypeError(f"MediaRefFeature: 'pts_ns' must be int or None; got {type(pts).__name__}")
-            return {"uri": str(uri), "pts_ns": pts}
+            ref = MediaRef.model_validate(value)
+            return {"uri": ref.uri, "pts_ns": ref.pts_ns}
         if isinstance(value, str):
             return {"uri": value, "pts_ns": None}
         raise TypeError(f"MediaRefFeature.encode_example: unsupported type {type(value).__name__}")
@@ -117,10 +121,8 @@ class MediaRefFeature:
         """
         if pa.types.is_string(storage.type):
             uri_array = storage
-            pts_array = pa.array([None] * len(storage), type=pa.int64())
-            return pa.StructArray.from_arrays([uri_array, pts_array], ["uri", "pts_ns"], mask=storage.is_null())
-
-        if pa.types.is_struct(storage.type):
+            pts_array = pa.nulls(len(storage), type=pa.int64())
+        elif pa.types.is_struct(storage.type):
             if storage.type.get_field_index("uri") < 0:
                 raise ValueError(
                     "MediaRefFeature.cast_storage: struct must contain a "
@@ -130,23 +132,22 @@ class MediaRefFeature:
             if storage.type.get_field_index("pts_ns") >= 0:
                 pts_array = storage.field("pts_ns").cast(pa.int64())
             else:
-                pts_array = pa.array([None] * len(storage), type=pa.int64())
-            return pa.StructArray.from_arrays([uri_array, pts_array], ["uri", "pts_ns"], mask=storage.is_null())
+                pts_array = pa.nulls(len(storage), type=pa.int64())
+        else:
+            raise TypeError(
+                f"MediaRefFeature.cast_storage: cannot cast Arrow type {storage.type}; "
+                "expected pa.string() or pa.struct(uri, pts_ns)."
+            )
+        return pa.StructArray.from_arrays([uri_array, pts_array], ["uri", "pts_ns"], mask=storage.is_null())
 
-        raise TypeError(
-            f"MediaRefFeature.cast_storage: cannot cast Arrow type {storage.type}; "
-            "expected pa.string() or pa.struct(uri, pts_ns)."
-        )
 
-
-# Register with the HuggingFace datasets feature registry on import.
 with warnings.catch_warnings():
     warnings.filterwarnings(
         "ignore",
         "'register_feature' is experimental.*",
         category=UserWarning,
     )
-    register_feature(MediaRefFeature, "MediaRef")
+    register_feature(MediaRefFeature, _FEATURE_NAME)
 
 
 __all__ = ["MediaRefFeature"]

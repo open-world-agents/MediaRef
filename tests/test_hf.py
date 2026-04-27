@@ -67,8 +67,17 @@ class TestEncodeExample:
             MediaRefFeature().encode_example({"pts_ns": 0})
 
     def test_encode_dict_with_non_int_pts_raises(self):
-        with pytest.raises(TypeError, match="pts_ns"):
+        # Routed through MediaRef.model_validate; Pydantic's ValidationError
+        # is a ValueError subclass and its message names the offending field.
+        with pytest.raises(ValueError, match="pts_ns"):
             MediaRefFeature().encode_example({"uri": "x", "pts_ns": 1.5})
+
+    def test_encode_dict_with_numpy_int_pts_accepted(self):
+        # Pydantic int coercion accepts numpy integer types — the previous
+        # `isinstance(pts, int)` check rejected np.int64 on Linux/macOS.
+        np = pytest.importorskip("numpy")
+        out = MediaRefFeature().encode_example({"uri": "v.mp4", "pts_ns": np.int64(33_333_333)})
+        assert out == {"uri": "v.mp4", "pts_ns": 33_333_333}
 
     def test_encode_unsupported_type_raises(self):
         with pytest.raises(TypeError):

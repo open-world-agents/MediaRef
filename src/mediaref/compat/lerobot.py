@@ -22,10 +22,14 @@ from __future__ import annotations
 
 from typing import Iterable, Mapping
 
+from .._internal import NANOSECOND
 from ..core import MediaRef
 
-# Conversion constant — 1 second = 1_000_000_000 nanoseconds.
-_NS_PER_SEC = 1_000_000_000
+
+def _sec_to_ns(seconds: float) -> int:
+    """Round seconds (float) to int64 nanoseconds. Used both for whole
+    timestamps and for episode-local offsets, so it's worth one place."""
+    return int(round(float(seconds) * NANOSECOND))
 
 
 def from_videoframe(vf: Mapping[str, object]) -> MediaRef:
@@ -40,15 +44,15 @@ def from_videoframe(vf: Mapping[str, object]) -> MediaRef:
 
     Raises:
         KeyError: If ``path`` or ``timestamp`` is missing.
-        TypeError: If ``timestamp`` is not numeric.
+        TypeError: If ``path`` is not a str or ``timestamp`` is not numeric.
     """
     path = vf["path"]
     ts = vf["timestamp"]
-    if not isinstance(path, (str, bytes)):
+    if not isinstance(path, str):
         raise TypeError(f"VideoFrame.path must be str; got {type(path).__name__}")
     if not isinstance(ts, (int, float)):
         raise TypeError(f"VideoFrame.timestamp must be numeric; got {type(ts).__name__}")
-    return MediaRef(uri=str(path), pts_ns=int(round(float(ts) * _NS_PER_SEC)))
+    return MediaRef(uri=path, pts_ns=_sec_to_ns(ts))
 
 
 def to_videoframe(ref: MediaRef) -> dict:
@@ -69,7 +73,7 @@ def to_videoframe(ref: MediaRef) -> dict:
         raise ValueError(
             "Cannot convert MediaRef to VideoFrame: pts_ns is None (lerobot's VideoFrame requires a timestamp)."
         )
-    return {"path": ref.uri, "timestamp": ref.pts_ns / _NS_PER_SEC}
+    return {"path": ref.uri, "timestamp": ref.pts_ns / NANOSECOND}
 
 
 def lerobot_episode_to_refs(
@@ -98,8 +102,8 @@ def lerobot_episode_to_refs(
         A list of MediaRefs, one per frame, each pointing to the same
         ``video_path`` with absolute ``pts_ns`` inside that mp4.
     """
-    base_ns = int(round(float(from_timestamp) * _NS_PER_SEC))
-    return [MediaRef(uri=video_path, pts_ns=base_ns + int(round(float(t) * _NS_PER_SEC))) for t in frame_timestamps]
+    base_ns = _sec_to_ns(from_timestamp)
+    return [MediaRef(uri=video_path, pts_ns=base_ns + _sec_to_ns(t)) for t in frame_timestamps]
 
 
 __all__ = ["from_videoframe", "to_videoframe", "lerobot_episode_to_refs"]

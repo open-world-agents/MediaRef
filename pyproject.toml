@@ -49,8 +49,6 @@ dev = [
     "pytest",
     "pytest-cov",
     "ruff>=0.3.0",
-    "datasets>=2.14.0",  # for tests/test_hf.py
-    "pyarrow",
 ]
 
 [tool.ruff]
