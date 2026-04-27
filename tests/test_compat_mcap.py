@@ -264,17 +264,23 @@ class TestResolveAgainstMcap:
             MediaRef(uri="videos/clip.mp4", pts_ns=1_000_000_000),
         ]
         out = resolve_against_mcap(refs, mcap_file)
+        # The returned URI uses POSIX separators (Path.as_posix in core.py).
+        # Compare against an as_posix base so this works on Windows too.
+        expected_base = tmp_path.resolve().as_posix()
         assert all(r.uri.endswith("videos/clip.mp4") for r in out)
-        assert all(r.uri.startswith(str(tmp_path)) for r in out)
+        assert all(r.uri.startswith(expected_base) for r in out)
         # pts_ns preserved
         assert [r.pts_ns for r in out] == [0, 1_000_000_000]
 
     def test_passes_through_absolute_uri(self, tmp_path):
         mcap_file = tmp_path / "session.mcap"
         mcap_file.touch()
-        absolute = MediaRef(uri="/data/clip.mp4", pts_ns=0)
-        out = resolve_against_mcap([absolute], mcap_file)
-        assert out[0].uri == "/data/clip.mp4"
+        # Use a path that is absolute on whatever platform we're running on
+        # (`/data/...` is not absolute on Windows). The point of the test is
+        # "absolute → unchanged" — the specific absolute path is incidental.
+        absolute_uri = (tmp_path / "elsewhere" / "clip.mp4").as_posix()
+        out = resolve_against_mcap([MediaRef(uri=absolute_uri, pts_ns=0)], mcap_file)
+        assert out[0].uri == absolute_uri
 
     def test_passes_through_remote_uri(self, tmp_path):
         mcap_file = tmp_path / "session.mcap"
