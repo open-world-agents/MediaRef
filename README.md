@@ -218,68 +218,31 @@ frames = batch_decode(refs)
 
 ## HuggingFace `datasets` integration
 
-`mediaref.hf` registers `MediaRef` as a first-class `datasets` feature (Arrow storage `struct<uri: string, pts_ns: int64>`). The feature type survives every official `datasets` persistence path — `save_to_disk`, `push_to_hub`, parquet export — so the column you write as `MediaRef` reads back as `MediaRef` anywhere consumers have `mediaref[hf]` installed.
+`mediaref.hf` registers `MediaRef` as a first-class `datasets` feature (Arrow `struct<uri: string, pts_ns: int64>`), preserved across `save_to_disk`, `push_to_hub`, and parquet export.
 
 ```python
 # pip install 'mediaref[hf]'
-from datasets import Dataset, Features, load_from_disk, load_dataset
+from datasets import Dataset, Features, load_from_disk
 from mediaref import MediaRef
 from mediaref.hf import MediaRefFeature
 
-# 1. Create — pass MediaRef objects (or dicts) and declare the feature type.
 ds = Dataset.from_dict(
     {"frame": [MediaRef(uri="video.mp4", pts_ns=0),
                MediaRef(uri="video.mp4", pts_ns=33_333_333)]},
     features=Features({"frame": MediaRefFeature()}),
 )
-ds[0]["frame"]                       # MediaRef(uri='video.mp4', pts_ns=0)  ← lazy
-
-# 2. Local persistence (canonical save/load, uses Arrow IPC + features JSON).
 ds.save_to_disk("path/to/ds")
-ds2 = load_from_disk("path/to/ds")
-assert isinstance(ds2.features["frame"], MediaRefFeature)
-ds2[0]["frame"].to_ndarray()         # decode lazily on access
-
-# 3. Sharing via the Hub (push_to_hub / load_dataset). Same guarantee —
-#    the registered feature name is "MediaRef", so consumers get MediaRef
-#    objects back automatically.
-# ds.push_to_hub("my-org/my-dataset")
-# load_dataset("my-org/my-dataset")["train"][0]["frame"]
-#   → MediaRef(uri='video.mp4', pts_ns=0)
-
-# (parquet export also preserves the feature via Arrow schema metadata —
-#  use `ds.to_parquet(...)` / `Dataset.from_parquet(...)` if you need that
-#  specific format.)
+load_from_disk("path/to/ds")[0]["frame"].to_ndarray()  # round-trips as MediaRef
 ```
 
-`MediaRefFeature(decode=False)` returns the raw `{"uri": ..., "pts_ns": ...}` dict instead of a `MediaRef` instance — useful when you want to defer object construction or pass values straight into PyArrow compute.
+`push_to_hub` / `load_dataset` round-trip identically. Pass `MediaRefFeature(decode=False)` to receive the raw `{"uri", "pts_ns"}` dict instead of a `MediaRef` instance.
 
 ### Required: register the feature in the consumer process
 
-`datasets` keeps a global feature registry that is populated by side effect of `register_feature(...)`. There is no autodiscovery — so for `load_from_disk` / `load_dataset` to reconstruct `MediaRefFeature`, the consumer process must reach `mediaref.hf` *before* the load. Without that, datasets raises:
+`datasets` has no feature autodiscovery — `load_from_disk` / `load_dataset` raises `ValueError: Feature type 'MediaRef' not found` unless the consumer process imports `mediaref.hf` first. Two options:
 
-```
-ValueError: Feature type 'MediaRef' not found.
-```
-
-You have two options:
-
-**(a) Explicit import in every consumer process.** Add one line before the load:
-
-```python
-from mediaref.hf import MediaRefFeature   # registers "MediaRef" with datasets
-from datasets import load_from_disk
-
-ds = load_from_disk("path/to/ds")
-```
-
-**(b) Permanent registration via the `mediaref` CLI.** Run once per environment (and re-run after `pip upgrade datasets`):
-
-```bash
-mediaref enable-hf-feature
-```
-
-This appends a small block to the installed `datasets/features/features.py` that imports `mediaref.hf` during datasets' own initialization. After that, every Python process in the environment has `MediaRef` registered automatically — no explicit import in consumer code. Reverse with `mediaref disable-hf-feature`; check state with `mediaref status`. Same on-disk patching pattern as the project's existing `patch_torchcodec` script.
+- **Explicit import.** Add `from mediaref.hf import MediaRefFeature` before any load call.
+- **Permanent CLI patch.** `mediaref enable-hf-feature` (idempotent; re-run after `pip upgrade datasets`) source-patches `datasets/features/features.py` so MediaRef auto-registers on every `import datasets`. Reverse with `mediaref disable-hf-feature`; check with `mediaref status`. Same pattern as this repo's `patch_torchcodec`.
 
 ## lerobot interop
 
