@@ -10,6 +10,8 @@ import numpy.typing as npt
 import PIL.Image
 from pydantic import BaseModel, BeforeValidator, Field
 
+from ._internal import is_cloud_uri as _is_cloud_uri
+
 if TYPE_CHECKING:
     from .data_uri import DataURI
 
@@ -89,12 +91,28 @@ class MediaRef(BaseModel):
         return self.uri.startswith(("http://", "https://"))
 
     @property
+    def is_cloud_uri(self) -> bool:
+        """True if this URI is delegated to fsspec.
+
+        Open-set: any scheme other than ``file`` / ``data`` (and not a bare
+        path) is fsspec-routable. This includes ``http(s)://`` (handled by
+        fsspec's HTTPFileSystem) and cloud schemes (``s3://``, ``gs://``,
+        ``hf://``, …). fsspec is a core dependency; backends like
+        ``s3fs``/``gcsfs``/``huggingface_hub`` must be installed for the
+        schemes they serve. See [SPEC §2.1](../docs/SPEC.md) for guidance.
+
+        Note: ``is_remote`` (http(s) specifically) and ``is_cloud_uri``
+        overlap on http(s) URIs since the unified dispatch.
+        """
+        return _is_cloud_uri(self.uri)
+
+    @property
     def is_relative_path(self) -> bool:
         """True if this is a relative path (not absolute, not URI).
 
         Uses platform-specific path semantics (behavior differs on Windows vs POSIX).
         """
-        if self.is_embedded or self.is_remote or self.uri.startswith("file://"):
+        if self.is_embedded or self.is_cloud_uri or self.uri.startswith("file://"):
             return False
         return not Path(self.uri).is_absolute()
 
@@ -109,10 +127,10 @@ class MediaRef(BaseModel):
             True if URI is valid/accessible
 
         Raises:
-            NotImplementedError: For remote URI validation
+            NotImplementedError: For fsspec-routed (remote / cloud) URI validation.
         """
-        if self.is_remote:
-            raise NotImplementedError("Remote URI validation not implemented")
+        if self.is_cloud_uri:
+            raise NotImplementedError("Cloud URI validation not implemented")
         if self.is_embedded:
             return True  # Embedded data is always "valid"
         return Path(self.uri).exists()
@@ -148,12 +166,13 @@ class MediaRef(BaseModel):
             >>> remote = MediaRef(uri="https://example.com/image.jpg")
             >>> remote.resolve_relative_path("/data/recordings", on_unresolvable="ignore")
         """
-        if self.is_embedded or self.is_remote:
+        if self.is_embedded or self.is_cloud_uri:
+            kind = "embedded" if self.is_embedded else "cloud"
             if on_unresolvable == "error":
-                raise ValueError(f"Cannot resolve unresolvable URI (embedded or remote): {self.uri}")
+                raise ValueError(f"Cannot resolve unresolvable URI ({kind}): {self.uri}")
             elif on_unresolvable == "warn":
-                warnings.warn(f"Cannot resolve unresolvable URI (embedded or remote): {self.uri}")
-            return self  # Nothing to resolve for embedded/remote URIs
+                warnings.warn(f"Cannot resolve unresolvable URI ({kind}): {self.uri}")
+            return self
 
         if not self.is_relative_path:
             return self  # Already absolute or not a local path

@@ -30,8 +30,8 @@ dependencies = [
     "numpy",
     "Pillow>=9.4.0",   # When PIL.Image.ExifTags was introduced
     "opencv-python",
-    "requests>=2.32.2",
     "loguru",
+    "fsspec[http]>=2024.2.0",  # uniform URI dispatch — http(s)/cloud all via fsspec
 ]
 
 [project.optional-dependencies]
