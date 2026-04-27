@@ -1,9 +1,10 @@
 """Internal loading and encoding utilities."""
 
 import io
-import os
+from contextlib import contextmanager
 from pathlib import Path
-from typing import Union
+from typing import Iterator, Union
+from urllib.request import url2pathname
 
 import fsspec
 import numpy as np
@@ -11,16 +12,15 @@ import numpy.typing as npt
 import PIL.Image
 import PIL.ImageOps
 
-# Constants
 NANOSECOND = 1_000_000_000  # 1 second in nanoseconds
 
-# URI schemes MediaRef handles directly (without fsspec). Anything else with a
-# scheme — including http(s):// — is delegated to fsspec.open(), which dispatches
-# to the appropriate backend (HTTPFileSystem, S3FileSystem, GCSFileSystem,
-# HfFileSystem, …). All backends return seekable file-like objects that map
-# seek/read to HTTP Range requests, enabling sparse video frame access without
-# downloading the full file.
+# URI schemes MediaRef handles directly. Anything else with a scheme is
+# delegated to fsspec.open(), which dispatches to the appropriate backend
+# (HTTPFileSystem, S3FileSystem, GCSFileSystem, HfFileSystem, …). All
+# backends return seekable file-likes that map seek to HTTP Range requests,
+# enabling sparse video frame access without downloading the full file.
 _DIRECT_URI_SCHEMES = frozenset({"file", "data"})
+_FILE_URI_PREFIX = "file://"
 
 
 def _scheme_of(uri: str) -> str:
@@ -49,11 +49,37 @@ def open_cloud(uri: str):
 
 
 def _file_uri_to_path(uri: str) -> str:
-    """Convert a ``file://`` URI to a local filesystem path."""
-    from urllib.request import url2pathname
+    """Convert a ``file://`` URI to a local filesystem path (handles URL decoding)."""
+    return url2pathname(uri[len(_FILE_URI_PREFIX) :])
 
-    # url2pathname handles URL decoding (unquote) internally
-    return url2pathname(uri[7:])
+
+def _resolve_to_local_path(uri: str) -> str:
+    """Resolve a ``file://`` URI or bare path to an existing local path.
+
+    Raises:
+        FileNotFoundError: If the resolved path doesn't exist.
+    """
+    path = _file_uri_to_path(uri) if uri.startswith(_FILE_URI_PREFIX) else uri
+    if not Path(path).exists():
+        raise FileNotFoundError(f"File not found: {path}")
+    return path
+
+
+@contextmanager
+def open_media_source(uri: str) -> Iterator:
+    """Yield whatever the decoder layer can consume directly.
+
+    For fsspec-routed URIs (cloud, http(s), …): an open file-like.
+    For ``file://`` URIs and bare paths: a verified local path string.
+
+    Raises:
+        FileNotFoundError: For local paths that don't exist.
+    """
+    if is_cloud_uri(uri):
+        with open_cloud(uri) as f:
+            yield f
+    else:
+        yield _resolve_to_local_path(uri)
 
 
 # ============================================================================
@@ -79,53 +105,35 @@ def load_image_as_rgba(path_or_uri: str) -> npt.NDArray[np.uint8]:
             from .data_uri import DataURI
 
             return DataURI.from_uri(path_or_uri).to_ndarray(format="rgba")
-        else:
-            # Load as PIL image and convert to RGBA
-            pil_image = _load_pil_image(path_or_uri)
-            return np.array(pil_image.convert("RGBA"))
+        pil_image = _load_pil_image(path_or_uri)
+        return np.array(pil_image.convert("RGBA"))
     except FileNotFoundError:
         raise
     except Exception as e:
         raise ValueError(f"Failed to load image from {path_or_uri}: {e}") from e
 
 
-def _load_pil_image(
-    image: Union[str, PIL.Image.Image],
-) -> PIL.Image.Image:
+def _load_pil_image(image: Union[str, PIL.Image.Image]) -> PIL.Image.Image:
     """Load image to PIL Image."""
     if isinstance(image, str):
         if is_cloud_uri(image):
-            # PIL needs to seek (magic-byte detection); fsspec's HTTPFile is
+            # PIL needs seek (magic-byte detection); fsspec's HTTPFile is
             # streaming-only when the server doesn't advertise byte-range
-            # support. Materializing bytes once keeps image loading robust
-            # across all backends (s3, gs, hf, http(s) chunked, …).
+            # support. Materializing bytes once keeps loading robust across
+            # all backends (s3, gs, hf, http(s) chunked, …).
             with open_cloud(image) as f:
                 data = f.read()
             image = PIL.Image.open(io.BytesIO(data))
             image.load()
-        elif image.startswith("file://"):
-            file_path = _file_uri_to_path(image)
-            if not os.path.isfile(file_path):
-                raise FileNotFoundError(f"File not found: {file_path} (from URI: {image})")
-            image = PIL.Image.open(file_path)
-        elif os.path.isfile(image):
-            image = PIL.Image.open(image)
         else:
-            raise ValueError(f"Not a valid local path or supported URI: {image}")
-    elif isinstance(image, PIL.Image.Image):
-        pass
-    else:
+            image = PIL.Image.open(_resolve_to_local_path(image))
+    elif not isinstance(image, PIL.Image.Image):
         raise ValueError(
             "Incorrect format used for the image. Should be a URL linking to an image, a local path, or a PIL image."
         )
 
-    # Handle EXIF orientation
     image = PIL.ImageOps.exif_transpose(image)
-
-    # Convert to RGBA
-    image = image.convert("RGBA")
-
-    return image
+    return image.convert("RGBA")
 
 
 # ============================================================================
@@ -133,10 +141,7 @@ def _load_pil_image(
 # ============================================================================
 
 
-def load_video_frame_as_rgba(
-    path_or_url: str,
-    pts_ns: int,
-) -> npt.NDArray[np.uint8]:
+def load_video_frame_as_rgba(path_or_url: str, pts_ns: int) -> npt.NDArray[np.uint8]:
     """Load video frame and return as RGBA numpy array.
 
     Args:
@@ -155,32 +160,13 @@ def load_video_frame_as_rgba(
 
     pts_seconds = pts_ns / NANOSECOND
 
-    def _decode(source) -> npt.NDArray[np.uint8]:
-        with PyAVVideoDecoder(source) as decoder:
+    try:
+        with open_media_source(path_or_url) as source, PyAVVideoDecoder(source) as decoder:
             batch = decoder.get_frames_played_at([pts_seconds])
-            # batch.data is NCHW format (1, 3, H, W) with RGB channels
-            rgb_nchw = batch.data[0]  # (3, H, W)
-            rgb_hwc = np.transpose(rgb_nchw, (1, 2, 0))  # (H, W, 3)
+            rgb_nchw = batch.data[0]
+            rgb_hwc = np.transpose(rgb_nchw, (1, 2, 0))
             alpha = np.full((*rgb_hwc.shape[:2], 1), 255, dtype=np.uint8)
             return np.concatenate([rgb_hwc, alpha], axis=2)
-
-    try:
-        # fsspec-routed URIs (http(s)://, s3://, gs://, hf://, …): open as a
-        # file-like, hand to PyAV. fsspec backends provide seekable file-likes
-        # that map seek to HTTP Range requests, so sparse frame access reads
-        # only the byte ranges PyAV asks for. The cached_av cache cannot retain
-        # file-like objects across calls, so cross-call container caching is
-        # forfeited for fsspec URIs; within a single batch_decode call the same
-        # handle is reused as expected.
-        if is_cloud_uri(path_or_url):
-            with open_cloud(path_or_url) as f:
-                return _decode(f)
-
-        # Local file: file:// URI or bare path.
-        local_path = _file_uri_to_path(path_or_url) if path_or_url.startswith("file://") else path_or_url
-        if not Path(local_path).exists():
-            raise FileNotFoundError(f"Video file not found: {local_path}")
-        return _decode(local_path)
     except FileNotFoundError:
         raise
     except Exception as e:

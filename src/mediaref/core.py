@@ -127,10 +127,8 @@ class MediaRef(BaseModel):
             True if URI is valid/accessible
 
         Raises:
-            NotImplementedError: For remote / cloud URI validation
+            NotImplementedError: For fsspec-routed (remote / cloud) URI validation.
         """
-        if self.is_remote:
-            raise NotImplementedError("Remote URI validation not implemented")
         if self.is_cloud_uri:
             raise NotImplementedError("Cloud URI validation not implemented")
         if self.is_embedded:
@@ -168,13 +166,13 @@ class MediaRef(BaseModel):
             >>> remote = MediaRef(uri="https://example.com/image.jpg")
             >>> remote.resolve_relative_path("/data/recordings", on_unresolvable="ignore")
         """
-        if self.is_embedded or self.is_remote or self.is_cloud_uri:
-            kind = "embedded" if self.is_embedded else ("remote" if self.is_remote else "cloud")
+        if self.is_embedded or self.is_cloud_uri:
+            kind = "embedded" if self.is_embedded else "cloud"
             if on_unresolvable == "error":
                 raise ValueError(f"Cannot resolve unresolvable URI ({kind}): {self.uri}")
             elif on_unresolvable == "warn":
                 warnings.warn(f"Cannot resolve unresolvable URI ({kind}): {self.uri}")
-            return self  # Nothing to resolve for embedded/remote/cloud URIs
+            return self
 
         if not self.is_relative_path:
             return self  # Already absolute or not a local path

@@ -7,7 +7,7 @@ from typing import TYPE_CHECKING, List, Literal, Optional, Type
 import numpy as np
 import numpy.typing as npt
 
-from ._internal import is_cloud_uri, open_cloud
+from ._internal import open_media_source
 
 if TYPE_CHECKING:
     from .core import MediaRef
@@ -123,18 +123,15 @@ def batch_decode(
             pts_seconds.append(ref.pts_ns / NANOSECOND)
 
         try:
-            if is_cloud_uri(uri):
-                # Cloud URIs: open once via fsspec and reuse the file-like.
-                # cached_av cannot keep file-likes across calls, so cross-call
-                # caching is forfeited; within-call reuse is preserved.
-                with open_cloud(uri) as source:
-                    frames = _decode_video_group(decoder_class, source, pts_seconds)
-            else:
-                frames = _decode_video_group(decoder_class, uri, pts_seconds)
+            # open_media_source yields a file-like for fsspec URIs (one
+            # range-served handle reused across the group's timestamps; cached_av
+            # cannot retain file-likes so cross-call caching is forfeited) or a
+            # verified local path string for file://-and-bare-paths.
+            with open_media_source(uri) as source:
+                frames = _decode_video_group(decoder_class, source, pts_seconds)
             for idx, frame in zip(indices, frames):
                 results[idx] = frame
         except ImportError:
-            # Re-raise ImportError for missing decoder / fsspec dependencies
             raise
         except Exception as e:
             raise ValueError(f"Failed to load batch from '{uri}': {e}") from e
