@@ -42,6 +42,9 @@ hf = [
     "datasets>=2.14.0",  # register_feature has been stable since 2.x
     "pyarrow",           # transitively required by datasets, listed for clarity
 ]
+mcap = [
+    "mcap>=1.0",         # mcap container reader/writer
+]
 
 [dependency-groups]
 dev = [
