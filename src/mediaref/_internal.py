@@ -1,5 +1,6 @@
 """Internal loading and encoding utilities."""
 
+import io
 import os
 from pathlib import Path
 from typing import Union
@@ -9,17 +10,17 @@ import numpy as np
 import numpy.typing as npt
 import PIL.Image
 import PIL.ImageOps
-import requests
 
 # Constants
-REQUEST_TIMEOUT = 60  # HTTP request timeout in seconds
 NANOSECOND = 1_000_000_000  # 1 second in nanoseconds
 
 # URI schemes MediaRef handles directly (without fsspec). Anything else with a
-# scheme is delegated to fsspec — open-set, so newly registered fsspec backends
-# (gdrive://, webdav://, ipfs://, …) work without code changes here. See
-# https://filesystem-spec.readthedocs.io for the live protocol list.
-_DIRECT_URI_SCHEMES = frozenset({"http", "https", "file", "data"})
+# scheme — including http(s):// — is delegated to fsspec.open(), which dispatches
+# to the appropriate backend (HTTPFileSystem, S3FileSystem, GCSFileSystem,
+# HfFileSystem, …). All backends return seekable file-like objects that map
+# seek/read to HTTP Range requests, enabling sparse video frame access without
+# downloading the full file.
+_DIRECT_URI_SCHEMES = frozenset({"file", "data"})
 
 
 def _scheme_of(uri: str) -> str:
@@ -32,19 +33,27 @@ def is_cloud_uri(uri: str) -> bool:
     """True if ``uri`` is delegated to fsspec.
 
     Open-set: any URI whose scheme is not in :data:`_DIRECT_URI_SCHEMES`
-    (``http``, ``https``, ``file``, ``data``) and is not a bare path is
-    treated as fsspec-routable. The corresponding fsspec backend
-    (``s3fs`` for ``s3://``, ``gcsfs`` for ``gs://``,
-    ``huggingface_hub`` for ``hf://``, …) must be installed for the open
-    call to succeed; fsspec raises a clear error of its own otherwise.
+    (``file``, ``data``) and is not a bare path is treated as fsspec-routable.
+    This includes ``http(s)://`` (handled by fsspec's HTTPFileSystem +
+    aiohttp backend) and any cloud scheme whose backend is installed
+    (``s3fs`` for ``s3://``, ``gcsfs`` for ``gs://``, ``huggingface_hub``
+    for ``hf://``, …). Backend missing → fsspec raises a clear error.
     """
     scheme = _scheme_of(uri)
     return bool(scheme) and scheme not in _DIRECT_URI_SCHEMES
 
 
 def open_cloud(uri: str):
-    """Open a cloud URI as a binary file-like via fsspec (context manager)."""
+    """Open a fsspec-routed URI as a binary file-like (context manager)."""
     return fsspec.open(uri, "rb")
+
+
+def _file_uri_to_path(uri: str) -> str:
+    """Convert a ``file://`` URI to a local filesystem path."""
+    from urllib.request import url2pathname
+
+    # url2pathname handles URL decoding (unquote) internally
+    return url2pathname(uri[7:])
 
 
 # ============================================================================
@@ -83,35 +92,26 @@ def load_image_as_rgba(path_or_uri: str) -> npt.NDArray[np.uint8]:
 def _load_pil_image(
     image: Union[str, PIL.Image.Image],
 ) -> PIL.Image.Image:
-    """Load image to PIL Image.
-
-    Adapted from: https://github.com/huggingface/diffusers/blob/main/src/diffusers/utils/loading_utils.py
-    """
+    """Load image to PIL Image."""
     if isinstance(image, str):
         if is_cloud_uri(image):
+            # PIL needs to seek (magic-byte detection); fsspec's HTTPFile is
+            # streaming-only when the server doesn't advertise byte-range
+            # support. Materializing bytes once keeps image loading robust
+            # across all backends (s3, gs, hf, http(s) chunked, …).
             with open_cloud(image) as f:
-                image = PIL.Image.open(f)
-                image.load()  # force the bytes through PIL before f closes
-        elif image.startswith("http://") or image.startswith("https://"):
-            image = PIL.Image.open(requests.get(image, stream=True, timeout=REQUEST_TIMEOUT).raw)
+                data = f.read()
+            image = PIL.Image.open(io.BytesIO(data))
+            image.load()
         elif image.startswith("file://"):
-            # Convert file:// URI to local path
-            from urllib.request import url2pathname
-
-            # Remove 'file://' prefix and convert to local path
-            # url2pathname handles URL decoding (unquote) internally
-            file_path = url2pathname(image[7:])
-            if os.path.isfile(file_path):
-                image = PIL.Image.open(file_path)
-            else:
+            file_path = _file_uri_to_path(image)
+            if not os.path.isfile(file_path):
                 raise FileNotFoundError(f"File not found: {file_path} (from URI: {image})")
+            image = PIL.Image.open(file_path)
         elif os.path.isfile(image):
             image = PIL.Image.open(image)
         else:
-            raise ValueError(
-                f"Incorrect path or URL. URLs must start with `http://`, `https://`, or `file://`, "
-                f"and {image} is not a valid path."
-            )
+            raise ValueError(f"Not a valid local path or supported URI: {image}")
     elif isinstance(image, PIL.Image.Image):
         pass
     else:
@@ -165,28 +165,22 @@ def load_video_frame_as_rgba(
             return np.concatenate([rgb_hwc, alpha], axis=2)
 
     try:
-        # Cloud URIs (s3://, gs://, hf://, …) — open via fsspec as a file-like
-        # and hand that to PyAV. The cached_av cache cannot retain file-like
-        # objects across calls, so cloud-backed videos do not benefit from
-        # cross-call caching; within a single batch_decode the same handle is
-        # reused as expected.
+        # fsspec-routed URIs (http(s)://, s3://, gs://, hf://, …): open as a
+        # file-like, hand to PyAV. fsspec backends provide seekable file-likes
+        # that map seek to HTTP Range requests, so sparse frame access reads
+        # only the byte ranges PyAV asks for. The cached_av cache cannot retain
+        # file-like objects across calls, so cross-call container caching is
+        # forfeited for fsspec URIs; within a single batch_decode call the same
+        # handle is reused as expected.
         if is_cloud_uri(path_or_url):
             with open_cloud(path_or_url) as f:
                 return _decode(f)
 
-        # file:// URI → local path
-        actual_path = path_or_url
-        if path_or_url.startswith("file://"):
-            from urllib.request import url2pathname
-
-            actual_path = url2pathname(path_or_url[7:])
-
-        # Validate local file exists (skip for http(s)://, which PyAV opens directly)
-        if not path_or_url.startswith(("http://", "https://")):
-            if not Path(actual_path).exists():
-                raise FileNotFoundError(f"Video file not found: {actual_path}")
-
-        return _decode(actual_path)
+        # Local file: file:// URI or bare path.
+        local_path = _file_uri_to_path(path_or_url) if path_or_url.startswith("file://") else path_or_url
+        if not Path(local_path).exists():
+            raise FileNotFoundError(f"Video file not found: {local_path}")
+        return _decode(local_path)
     except FileNotFoundError:
         raise
     except Exception as e:

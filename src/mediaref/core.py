@@ -94,11 +94,15 @@ class MediaRef(BaseModel):
     def is_cloud_uri(self) -> bool:
         """True if this URI is delegated to fsspec.
 
-        Open-set: any scheme other than ``http``/``https``/``file``/``data``
-        (and not a bare path) is fsspec-routable. fsspec is a core
-        dependency, but each backend (``s3fs``, ``gcsfs``,
-        ``huggingface_hub``, …) must be installed separately for the
-        schemes it serves. See [SPEC §2.1](../docs/SPEC.md) for guidance.
+        Open-set: any scheme other than ``file`` / ``data`` (and not a bare
+        path) is fsspec-routable. This includes ``http(s)://`` (handled by
+        fsspec's HTTPFileSystem) and cloud schemes (``s3://``, ``gs://``,
+        ``hf://``, …). fsspec is a core dependency; backends like
+        ``s3fs``/``gcsfs``/``huggingface_hub`` must be installed for the
+        schemes they serve. See [SPEC §2.1](../docs/SPEC.md) for guidance.
+
+        Note: ``is_remote`` (http(s) specifically) and ``is_cloud_uri``
+        overlap on http(s) URIs since the unified dispatch.
         """
         return _is_cloud_uri(self.uri)
 
@@ -108,7 +112,7 @@ class MediaRef(BaseModel):
 
         Uses platform-specific path semantics (behavior differs on Windows vs POSIX).
         """
-        if self.is_embedded or self.is_remote or self.is_cloud_uri or self.uri.startswith("file://"):
+        if self.is_embedded or self.is_cloud_uri or self.uri.startswith("file://"):
             return False
         return not Path(self.uri).is_absolute()
 

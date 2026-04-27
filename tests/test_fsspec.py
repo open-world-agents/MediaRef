@@ -63,6 +63,8 @@ class TestIsCloudUri:
     @pytest.mark.parametrize(
         "uri",
         [
+            "http://example.com/x.png",
+            "https://example.com/x.png",
             "s3://bucket/key.mp4",
             "gs://bucket/key.png",
             "hf://datasets/foo/bar.mp4",
@@ -80,10 +82,8 @@ class TestIsCloudUri:
         [
             "image.png",  # bare relative path
             "/absolute/path.mp4",  # absolute POSIX path
-            "file:///etc/passwd",  # file:// is NOT a cloud URI
-            "http://example.com/x.png",  # http(s) is NOT a cloud URI
-            "https://example.com/x.png",
-            "data:image/png;base64,iVBOR...",  # data URI
+            "file:///etc/passwd",  # file:// stays direct (path-based open)
+            "data:image/png;base64,iVBOR...",  # data URI (special case)
             "C:/Windows/path.mp4",  # Windows-style path (no scheme)
         ],
     )
@@ -99,8 +99,8 @@ class TestIsCloudUri:
         assert is_cloud_uri("gdrive://folder/file.png") is True
 
     def test_direct_schemes_excluded_from_cloud(self):
-        # _DIRECT_URI_SCHEMES is the closed set MediaRef handles itself.
-        assert _DIRECT_URI_SCHEMES == frozenset({"http", "https", "file", "data"})
+        # MediaRef handles these schemes directly (without fsspec).
+        assert _DIRECT_URI_SCHEMES == frozenset({"file", "data"})
 
 
 class TestMediaRefCloudUri:
@@ -110,8 +110,10 @@ class TestMediaRefCloudUri:
     def test_property_false_for_local(self):
         assert MediaRef(uri="image.png").is_cloud_uri is False
 
-    def test_property_false_for_http(self):
-        assert MediaRef(uri="https://example.com/x.png").is_cloud_uri is False
+    def test_property_true_for_http(self):
+        # http(s) goes through fsspec's HTTPFileSystem under the unified dispatch.
+        assert MediaRef(uri="https://example.com/x.png").is_cloud_uri is True
+        assert MediaRef(uri="http://example.com/x.png").is_cloud_uri is True
 
     def test_is_relative_path_false_for_cloud(self):
         # Cloud URIs are absolute by construction.
