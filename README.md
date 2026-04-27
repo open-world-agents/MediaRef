@@ -133,36 +133,41 @@ Both decoders follow unified [playback semantics](docs/playback_semantics.md)—
 
 ### Embedding Media Directly in MediaRef
 
-Embed image data into a `MediaRef` to make it self-contained — useful for serialization, caching, or sharing without external files.
-
-| Input | Constructor |
-| --- | --- |
-| `numpy` ndarray (RGB) | `DataURI.from_image(rgb, format="png")` |
-| File on disk | `DataURI.from_file("image.png")` |
-| `PIL.Image` | `DataURI.from_image(pil_img, format="jpeg", quality=90)` |
-| `numpy` ndarray (BGR, e.g. `cv2.imread`) | `DataURI.from_image(bgr, format="png", input_format="bgr")` |
-
-> `input_format="bgr"` is required for arrays from OpenCV — `cv2.imread` returns BGR, not RGB. Pass an RGB array without `input_format` and it Just Works.
+You can embed image data directly into `MediaRef` objects, making them self-contained and portable (useful for serialization, caching, or sharing).
 
 ```python
 from mediaref import MediaRef, DataURI
 import numpy as np
 
-# Build from any input above (here: numpy RGB)
+# Create embedded MediaRef from numpy array
 rgb = np.random.randint(0, 255, (100, 100, 3), dtype=np.uint8)
-ref = MediaRef(uri=DataURI.from_image(rgb, format="png"))
+embedded_ref = MediaRef(uri=DataURI.from_image(rgb, format="png"))
 
-# Use exactly like any other MediaRef
-ref.to_ndarray()                                           # (H, W, 3) RGB array
-ref.to_pil_image()                                         # PIL Image
+# Or from file
+embedded_ref = MediaRef(uri=DataURI.from_file("image.png"))
 
-# Serialize — image data lives inside the MediaRef
-serialized = ref.model_dump_json()
-restored = MediaRef.model_validate_json(serialized)        # no external file needed
+# Or from PIL Image
+from PIL import Image
+pil_img = Image.open("image.png")
+embedded_ref = MediaRef(uri=DataURI.from_image(pil_img, format="jpeg", quality=90))
 
-# DataURI properties
-data_uri = DataURI.from_image(rgb, format="png")
-data_uri.mimetype, len(data_uri), data_uri.is_image        # ('image/png', N, True)
+# Or from BGR array (OpenCV uses BGR by default - input_format="bgr" is REQUIRED)
+import cv2
+bgr_array = cv2.imread("image.jpg")  # OpenCV loads as BGR, not RGB!
+embedded_ref = MediaRef(uri=DataURI.from_image(bgr_array, format="png", input_format="bgr"))
+
+# Use just like any other MediaRef
+rgb = embedded_ref.to_ndarray()                            # (H, W, 3) RGB array
+pil = embedded_ref.to_pil_image()                          # PIL Image
+
+# Serialize with embedded data
+serialized = embedded_ref.model_dump_json()                # Contains image data
+restored = MediaRef.model_validate_json(serialized)        # No external file needed!
+
+# Properties
+print(data_uri.mimetype)                                   # "image/png"
+print(len(data_uri))                                       # URI length in bytes
+print(data_uri.is_image)                                   # True for image/* types
 ```
 
 ### Path Resolution & Serialization
@@ -248,6 +253,33 @@ ds2[0]["frame"].to_ndarray()         # decode lazily on access
 ```
 
 `MediaRefFeature(decode=False)` returns the raw `{"uri": ..., "pts_ns": ...}` dict instead of a `MediaRef` instance — useful when you want to defer object construction or pass values straight into PyArrow compute.
+
+### Required: register the feature in the consumer process
+
+`datasets` keeps a global feature registry that is populated by side effect of `register_feature(...)`. There is no autodiscovery — so for `load_from_disk` / `load_dataset` to reconstruct `MediaRefFeature`, the consumer process must reach `mediaref.hf` *before* the load. Without that, datasets raises:
+
+```
+ValueError: Feature type 'MediaRef' not found.
+```
+
+You have two options:
+
+**(a) Explicit import in every consumer process.** Add one line before the load:
+
+```python
+from mediaref.hf import MediaRefFeature   # registers "MediaRef" with datasets
+from datasets import load_from_disk
+
+ds = load_from_disk("path/to/ds")
+```
+
+**(b) Permanent registration via the `mediaref` CLI.** Run once per environment (and re-run after `pip upgrade datasets`):
+
+```bash
+mediaref enable-hf-feature
+```
+
+This appends a small block to the installed `datasets/features/features.py` that imports `mediaref.hf` during datasets' own initialization. After that, every Python process in the environment has `MediaRef` registered automatically — no explicit import in consumer code. Reverse with `mediaref disable-hf-feature`; check state with `mediaref status`. Same on-disk patching pattern as the project's existing `patch_torchcodec` script.
 
 ## lerobot interop
 

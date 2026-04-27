@@ -34,6 +34,9 @@ dependencies = [
     "fsspec[http]>=2024.2.0",  # uniform URI dispatch — http(s)/cloud all via fsspec
 ]
 
+[project.scripts]
+mediaref = "mediaref._cli:main"
+
 [project.optional-dependencies]
 video = [
     "av>=15.0",  # FFmpeg 7.0 support
