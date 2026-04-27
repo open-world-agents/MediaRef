@@ -7,7 +7,7 @@
 
 <!-- [![downloads](https://static.pepy.tech/badge/mediaref/month)](https://pepy.tech/project/mediaref) -->
 
-Pydantic media reference for images and video frames (with timestamp support) from data URIs, HTTP URLs, file URIs, and local paths. Features lazy loading and optimized batch video decoding.
+Pydantic media reference for images and video frames (with timestamp support) from data URIs, HTTP URLs, file URIs, cloud storage, and local paths. Features lazy loading and optimized batch video decoding.
 
 Works with any container format (Parquet, HDF5, mcap, rosbag, etc.) and any media format (JPEG, PNG, H.264, H.265, AV1, etc.).
 
@@ -45,7 +45,7 @@ The MediaRef schema(`uri`, `pts_ns`) is designed to be **permanent**, built enti
 
 **3. Optimized performance where it matters**
 
-Due to lazy loading, MediaRef has **zero CPU and I/O overhead** when the media is not accessed. When you do need to load the media, convenient APIs handle the complexity of multi-source media (local files, URLs, embedded data) with a single unified interface.
+Due to lazy loading, MediaRef has **zero CPU and I/O overhead** when the media is not accessed. When you do need to load the media, convenient APIs handle the complexity of multi-source media (local files, URLs, embedded data, cloud storage) with a single unified interface.
 
 When loading multiple frames from the same video, `batch_decode()` opens the video file once and reuses the handle, achieving **4.9× faster throughput** and **2.2× better I/O efficiency** compared to sequential decoding.
 
@@ -59,11 +59,17 @@ When loading multiple frames from the same video, `batch_decode()` opens the vid
 
 **Quick install:**
 ```bash
-# Core package with image loading support
+# Core package — image loading, cloud-storage URIs (s3://, gs://, hf://, …) via fsspec
 pip install mediaref
 
-# With video decoding support (adds PyAV for video frame extraction)
-pip install mediaref[video]
+# With video decoding (adds PyAV)
+pip install 'mediaref[video]'
+
+# With HuggingFace datasets integration (registers the MediaRef feature type)
+pip install 'mediaref[hf]'
+
+# All extras
+pip install 'mediaref[video,hf]'
 ```
 
 **Add to your project:**
@@ -86,24 +92,25 @@ from mediaref import MediaRef, DataURI, batch_decode
 import numpy as np
 
 # 1. Create references (lightweight, no loading yet)
-ref = MediaRef(uri="image.png")                        # Local file
-ref = MediaRef(uri="https://example.com/image.jpg")    # Remote URL
-ref = MediaRef(uri="video.mp4", pts_ns=1_000_000_000)  # Video frame at 1.0s
+ref = MediaRef(uri="image.png")                            # Local file
+ref = MediaRef(uri="https://example.com/image.jpg")        # HTTP(S) URL
+ref = MediaRef(uri="s3://bucket/image.jpg")                # Cloud storage (fsspec)
+ref = MediaRef(uri="video.mp4", pts_ns=1_000_000_000)      # Video frame at 1.0s
 
 # 2. Load media
-rgb = ref.to_ndarray()                                 # Returns (H, W, 3) RGB array
-pil = ref.to_pil_image()                               # Returns PIL.Image
+rgb = ref.to_ndarray()                                     # Returns (H, W, 3) RGB array
+pil = ref.to_pil_image()                                   # Returns PIL.Image
 
 # 3. Embed as data URI
-data_uri = DataURI.from_image(rgb, format="png")       # e.g., "data:image/png;base64,iVBORw0KG..."
-ref = MediaRef(uri=data_uri)                           # Self-contained reference
+data_uri = DataURI.from_image(rgb, format="png")           # e.g., "data:image/png;base64,iVBORw0KG..."
+ref = MediaRef(uri=data_uri)                               # Self-contained reference
 
 # 4. Batch decode video frames (opens video once, reuses handle)
 refs = [MediaRef(uri="video.mp4", pts_ns=int(i*1e9)) for i in range(10)]
-frames = batch_decode(refs)                            # Much faster than loading individually
+frames = batch_decode(refs)                                # Much faster than loading individually
 
 # 5. Serialize for storage in any container format (Parquet, HDF5, mcap, rosbag, etc.)
-json_str = ref.model_dump_json()                       # Lightweight JSON string
+json_str = ref.model_dump_json()                           # Lightweight JSON string
 # Store in your dataset format of choice - works with any format that stores strings
 ```
 
@@ -150,17 +157,17 @@ bgr_array = cv2.imread("image.jpg")  # OpenCV loads as BGR, not RGB!
 embedded_ref = MediaRef(uri=DataURI.from_image(bgr_array, format="png", input_format="bgr"))
 
 # Use just like any other MediaRef
-rgb = embedded_ref.to_ndarray()                        # (H, W, 3) RGB array
-pil = embedded_ref.to_pil_image()                      # PIL Image
+rgb = embedded_ref.to_ndarray()                            # (H, W, 3) RGB array
+pil = embedded_ref.to_pil_image()                          # PIL Image
 
 # Serialize with embedded data
-serialized = embedded_ref.model_dump_json()            # Contains image data
-restored = MediaRef.model_validate_json(serialized)    # No external file needed!
+serialized = embedded_ref.model_dump_json()                # Contains image data
+restored = MediaRef.model_validate_json(serialized)        # No external file needed!
 
 # Properties
-print(data_uri.mimetype)                               # "image/png"
-print(len(data_uri))                                   # URI length in bytes
-print(data_uri.is_image)                               # True for image/* types
+print(data_uri.mimetype)                                   # "image/png"
+print(len(data_uri))                                       # URI length in bytes
+print(data_uri.is_image)                                   # True for image/* types
 ```
 
 ### Path Resolution & Serialization
@@ -188,8 +195,74 @@ json_str = ref.model_dump_json()
 # Output: '{"uri":"video.mp4","pts_ns":1500000000}'
 
 # Deserialization
-ref = MediaRef.model_validate(data)                    # From dict
-ref = MediaRef.model_validate_json(json_str)           # From JSON
+ref = MediaRef.model_validate(data)                        # From dict
+ref = MediaRef.model_validate_json(json_str)               # From JSON
+```
+
+## Cloud storage URIs
+
+Any URI whose scheme is not `file://` or `data:` is delegated to [fsspec](https://filesystem-spec.readthedocs.io). `s3://`, `gs://`, `hf://`, `az://`, `webdav://`, `gdrive://`, `ipfs://`, `http(s)://`, and any future fsspec backend all work without scheme-specific code:
+
+```python
+from mediaref import MediaRef, batch_decode
+
+ref = MediaRef(uri="s3://my-bucket/episode_42.mp4", pts_ns=1_500_000_000)
+frame = ref.to_ndarray()                                    # range read via fsspec — no full download
+
+# batch_decode opens the cloud-backed video once and decodes many frames
+refs = [MediaRef(uri="hf://datasets/me/clips/cam.mp4", pts_ns=int(i*1e9)) for i in range(10)]
+frames = batch_decode(refs)
+```
+
+`fsspec` is a core dependency. Each cloud backend (`s3fs` for `s3://`, `gcsfs` for `gs://`, `huggingface_hub` for `hf://`, `adlfs` for `az://`/`abfs://`, …) must be installed separately for the schemes it serves; fsspec raises a clear error otherwise.
+
+## HuggingFace `datasets` integration
+
+`mediaref.hf` registers `MediaRef` as a first-class `datasets` feature (Arrow `struct<uri: string, pts_ns: int64>`), preserved across `save_to_disk`, `push_to_hub`, and parquet export.
+
+```python
+# pip install 'mediaref[hf]'
+from datasets import Dataset, Features, load_from_disk
+from mediaref import MediaRef
+from mediaref.hf import MediaRefFeature
+
+ds = Dataset.from_dict(
+    {"frame": [MediaRef(uri="video.mp4", pts_ns=0),
+               MediaRef(uri="video.mp4", pts_ns=33_333_333)]},
+    features=Features({"frame": MediaRefFeature()}),
+)
+ds.save_to_disk("path/to/ds")
+load_from_disk("path/to/ds")[0]["frame"].to_ndarray()  # round-trips as MediaRef
+```
+
+`push_to_hub` / `load_dataset` round-trip identically. Pass `MediaRefFeature(decode=False)` to receive the raw `{"uri", "pts_ns"}` dict instead of a `MediaRef` instance.
+
+### Required: register the feature in the consumer process
+
+`datasets` has no feature autodiscovery — `load_from_disk` / `load_dataset` raises `ValueError: Feature type 'MediaRef' not found` unless the consumer process imports `mediaref.hf` first. Two options:
+
+- **Explicit import.** Add `from mediaref.hf import MediaRefFeature` before any load call.
+- **Permanent CLI patch.** `mediaref enable-hf-feature` (idempotent; re-run after `pip upgrade datasets`) source-patches `datasets/features/features.py` so MediaRef auto-registers on every `import datasets`. Reverse with `mediaref disable-hf-feature`; check with `mediaref status`. Same pattern as this repo's `patch_torchcodec`.
+
+## lerobot interop
+
+`mediaref.compat.lerobot` converts to and from lerobot's `VideoFrame` representation (`{path, timestamp seconds}`) and reconstructs MediaRefs from a v3.0 LeRobotDataset episode without needing lerobot installed:
+
+```python
+from mediaref.compat.lerobot import (
+    from_videoframe, to_videoframe, lerobot_episode_to_refs,
+)
+
+# 1. Convert a single VideoFrame dict
+ref = from_videoframe({"path": "videos/clip.mp4", "timestamp": 0.5})
+# MediaRef(uri='videos/clip.mp4', pts_ns=500000000)
+
+# 2. Build refs for an entire episode in a v3.0 LeRobotDataset shared mp4 shard
+refs = lerobot_episode_to_refs(
+    video_path="videos/observation.images.front_left/chunk-000/file-000.mp4",
+    from_timestamp=12.34,           # meta.episodes[ep_idx][f"videos/{vid_key}/from_timestamp"]
+    frame_timestamps=[0.0, 1/30, 2/30],  # episode-local timestamps
+)
 ```
 
 ## Documentation
@@ -211,12 +284,14 @@ ref = MediaRef.model_validate_json(json_str)           # From JSON
 - `numpy` - Array operations
 - `opencv-python` - Image loading and color conversion
 - `pillow>=9.4.0` - Image loading from various sources
-- `requests>=2.32.2` - HTTP/HTTPS URL loading
+- `fsspec[http]>=2024.2.0` - `http(s)://`, `s3://`, `gs://`, `hf://`, … URI dispatch
 - `loguru` - Logging (disabled by default for library code)
 
 **Optional dependencies**:
 - `[video]` extra: `av>=15.0` (PyAV for video frame extraction, 15.0+ for FFmpeg 7.0 support)
+- `[hf]` extra: `datasets>=2.14.0` + `pyarrow` (HuggingFace datasets feature registration)
 - TorchCodec: `torchcodec` (install separately for GPU-accelerated decoding)
+- Per-backend cloud storage extras: `s3fs` (s3://), `gcsfs` (gs://), `huggingface_hub` (hf://), `adlfs` (az://, abfs://). See [filesystem-spec docs](https://filesystem-spec.readthedocs.io).
 
 ## Acknowledgments
 
@@ -225,4 +300,3 @@ The video decoder interface design references [TorchCodec](https://github.com/py
 ## License
 
 MediaRef is released under the [MIT License](LICENSE).
-
