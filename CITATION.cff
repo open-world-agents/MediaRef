@@ -1,0 +1,34 @@
+# Citation File Format 1.2.0 — https://citation-file-format.github.io/
+cff-version: 1.2.0
+message: "If you use MediaRef in academic work, please cite it as below."
+type: software
+title: "MediaRef: a portable frame-level media reference primitive"
+abstract: >-
+  MediaRef is a Pydantic-based primitive for referencing images and video
+  frames by URI and nanosecond presentation timestamp. It provides lazy
+  loading, optimized batch decoding for sparse video frames, and works
+  across container formats (Parquet, mcap, rosbag, HDF5) without imposing
+  any fps, episode, or directory-layout assumptions.
+authors:
+  - family-names: Choi
+    given-names: Suhwan
+    email: milkclouds00@gmail.com
+repository-code: "https://github.com/open-world-agents/MediaRef"
+url: "https://github.com/open-world-agents/MediaRef"
+license: MIT
+keywords:
+  - video
+  - dataset
+  - machine-learning
+  - pydantic
+  - media-reference
+  - video-frame
+  - data-uri
+  - mcap
+# After enabling Zenodo integration and cutting the first GitHub Release,
+# replace this `identifiers` block with the Zenodo-issued DOI:
+#
+# identifiers:
+#   - type: doi
+#     value: 10.5281/zenodo.XXXXXXX
+#     description: "Zenodo concept DOI (always resolves to latest release)"
