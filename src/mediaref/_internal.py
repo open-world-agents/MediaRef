@@ -4,6 +4,7 @@ import os
 from pathlib import Path
 from typing import Union
 
+import fsspec
 import numpy as np
 import numpy.typing as npt
 import PIL.Image
@@ -14,27 +15,11 @@ import requests
 REQUEST_TIMEOUT = 60  # HTTP request timeout in seconds
 NANOSECOND = 1_000_000_000  # 1 second in nanoseconds
 
-# Schemes routed through fsspec when available. http(s) and file:// are handled
-# directly by requests / pathlib so they're intentionally excluded; data: is its
-# own thing. New schemes can be added here as needed (cf. SPEC §2.1).
-_CLOUD_URI_SCHEMES = frozenset(
-    {
-        "s3",
-        "gs",
-        "gcs",
-        "hf",
-        "az",
-        "azure",
-        "abfs",
-        "abfss",
-        "adl",
-        "r2",
-        "ftp",
-        "sftp",
-        "ssh",
-        "memory",  # fsspec's in-memory filesystem (testing & ephemeral pipelines)
-    }
-)
+# URI schemes MediaRef handles directly (without fsspec). Anything else with a
+# scheme is delegated to fsspec — open-set, so newly registered fsspec backends
+# (gdrive://, webdav://, ipfs://, …) work without code changes here. See
+# https://filesystem-spec.readthedocs.io for the live protocol list.
+_DIRECT_URI_SCHEMES = frozenset({"http", "https", "file", "data"})
 
 
 def _scheme_of(uri: str) -> str:
@@ -44,42 +29,22 @@ def _scheme_of(uri: str) -> str:
 
 
 def is_cloud_uri(uri: str) -> bool:
-    """True if ``uri`` uses a scheme delegated to fsspec.
+    """True if ``uri`` is delegated to fsspec.
 
-    Schemes covered: ``s3://``, ``gs://``, ``gcs://``, ``hf://``, ``az://``,
-    ``azure://``, ``abfs(s)://``, ``adl://``, ``r2://``, ``ftp://``, ``sftp://``,
-    ``ssh://``, ``memory://``.
-
-    ``http(s)://``, ``file://``, ``data:`` and POSIX paths are NOT cloud URIs —
-    they are handled directly without fsspec.
+    Open-set: any URI whose scheme is not in :data:`_DIRECT_URI_SCHEMES`
+    (``http``, ``https``, ``file``, ``data``) and is not a bare path is
+    treated as fsspec-routable. The corresponding fsspec backend
+    (``s3fs`` for ``s3://``, ``gcsfs`` for ``gs://``,
+    ``huggingface_hub`` for ``hf://``, …) must be installed for the open
+    call to succeed; fsspec raises a clear error of its own otherwise.
     """
-    return _scheme_of(uri) in _CLOUD_URI_SCHEMES
-
-
-def _require_fsspec(uri: str):
-    """Import fsspec or raise a focused ImportError naming the offending scheme."""
-    try:
-        import fsspec  # noqa: PLC0415 — lazy import; optional dependency
-    except ImportError as e:  # pragma: no cover — exercised in test_fsspec
-        raise ImportError(
-            f"Loading from {_scheme_of(uri) or uri}:// requires the fsspec optional dependency. "
-            "Install with: pip install 'mediaref[fsspec]'\n"
-            "For specific cloud backends you may also need: "
-            "s3fs (s3://), gcsfs (gs://), huggingface_hub[hf_transfer] (hf://), "
-            "adlfs (az://, abfs://). See https://filesystem-spec.readthedocs.io."
-        ) from e
-    return fsspec
+    scheme = _scheme_of(uri)
+    return bool(scheme) and scheme not in _DIRECT_URI_SCHEMES
 
 
 def open_cloud(uri: str):
-    """Open a cloud URI as a binary file-like via fsspec (use as context manager).
-
-    Wraps the fsspec import + ``fsspec.open(uri, "rb")`` boilerplate that
-    image loading, video loading, and batch decoding all share. Raises a
-    focused :class:`ImportError` when fsspec or the relevant backend isn't
-    installed.
-    """
-    return _require_fsspec(uri).open(uri, "rb")
+    """Open a cloud URI as a binary file-like via fsspec (context manager)."""
+    return fsspec.open(uri, "rb")
 
 
 # ============================================================================

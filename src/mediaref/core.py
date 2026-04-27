@@ -92,15 +92,13 @@ class MediaRef(BaseModel):
 
     @property
     def is_cloud_uri(self) -> bool:
-        """True if this references a cloud/remote scheme handled by fsspec.
+        """True if this URI is delegated to fsspec.
 
-        Recognized schemes (see [SPEC §2.1](../docs/SPEC.md)): ``s3://``,
-        ``gs://``, ``gcs://``, ``hf://``, ``az://``, ``azure://``, ``abfs(s)://``,
-        ``adl://``, ``r2://``, ``ftp://``, ``sftp://``, ``ssh://``, ``memory://``.
-
-        ``http(s)://`` URIs are NOT cloud URIs by this definition — they are
-        served by the built-in `requests` path. Loading from a cloud URI
-        requires the ``fsspec`` extra: ``pip install 'mediaref[fsspec]'``.
+        Open-set: any scheme other than ``http``/``https``/``file``/``data``
+        (and not a bare path) is fsspec-routable. fsspec is a core
+        dependency, but each backend (``s3fs``, ``gcsfs``,
+        ``huggingface_hub``, …) must be installed separately for the
+        schemes it serves. See [SPEC §2.1](../docs/SPEC.md) for guidance.
         """
         return _is_cloud_uri(self.uri)
 

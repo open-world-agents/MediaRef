@@ -10,14 +10,13 @@ import io
 from fractions import Fraction
 
 import cv2
+import fsspec
 import numpy as np
 import numpy.typing as npt
 import pytest
 
-fsspec = pytest.importorskip("fsspec")
-
-from mediaref import MediaRef, batch_decode  # noqa: E402
-from mediaref._internal import _CLOUD_URI_SCHEMES, _require_fsspec, is_cloud_uri  # noqa: E402
+from mediaref import MediaRef, batch_decode
+from mediaref._internal import _DIRECT_URI_SCHEMES, is_cloud_uri
 
 
 # ---------------------------------------------------------------------------
@@ -91,19 +90,17 @@ class TestIsCloudUri:
     def test_non_cloud_schemes(self, uri):
         assert is_cloud_uri(uri) is False
 
-    def test_unknown_scheme_is_not_cloud(self):
-        # An unrecognized scheme must NOT silently pass — opt-in only.
-        assert is_cloud_uri("custom-scheme://thing") is False
+    def test_unknown_scheme_is_cloud_open_set(self):
+        # Open-set: any scheme not in _DIRECT_URI_SCHEMES (and not a bare
+        # path) routes to fsspec — even unfamiliar / future ones. Whether
+        # the call succeeds at runtime is fsspec's responsibility.
+        assert is_cloud_uri("custom-scheme://thing") is True
+        assert is_cloud_uri("webdav://host/path") is True
+        assert is_cloud_uri("gdrive://folder/file.png") is True
 
-    def test_scheme_set_is_documented(self):
-        # Sanity: the documented set in core.is_cloud_uri docstring is the
-        # same as the runtime set. Edits to one should prompt edits to both.
-        assert "s3" in _CLOUD_URI_SCHEMES
-        assert "memory" in _CLOUD_URI_SCHEMES
-        assert "http" not in _CLOUD_URI_SCHEMES
-        assert "https" not in _CLOUD_URI_SCHEMES
-        assert "file" not in _CLOUD_URI_SCHEMES
-        assert "data" not in _CLOUD_URI_SCHEMES
+    def test_direct_schemes_excluded_from_cloud(self):
+        # _DIRECT_URI_SCHEMES is the closed set MediaRef handles itself.
+        assert _DIRECT_URI_SCHEMES == frozenset({"http", "https", "file", "data"})
 
 
 class TestMediaRefCloudUri:
@@ -234,33 +231,3 @@ class TestVideoLoadingFromMemoryFS:
         frames = batch_decode(refs)
         assert len(frames) == 2
         assert all(f.shape == (48, 64, 3) for f in frames)
-
-
-# ---------------------------------------------------------------------------
-# Missing fsspec → focused ImportError
-# ---------------------------------------------------------------------------
-
-
-class TestImportErrorWhenFsspecMissing:
-    def test_require_fsspec_message_names_extra(self, monkeypatch):
-        # Simulate fsspec import failure by removing it from sys.modules and
-        # blocking re-import.
-        import builtins
-        import sys
-
-        monkeypatch.delitem(sys.modules, "fsspec", raising=False)
-        real_import = builtins.__import__
-
-        def fail_fsspec(name, *args, **kwargs):
-            if name == "fsspec":
-                raise ImportError("simulated absence")
-            return real_import(name, *args, **kwargs)
-
-        monkeypatch.setattr(builtins, "__import__", fail_fsspec)
-
-        with pytest.raises(ImportError) as excinfo:
-            _require_fsspec("s3://bucket/key.png")
-        msg = str(excinfo.value)
-        assert "fsspec" in msg
-        assert "mediaref[fsspec]" in msg
-        assert "s3" in msg  # names the offending scheme
