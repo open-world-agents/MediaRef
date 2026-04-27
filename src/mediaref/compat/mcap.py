@@ -194,12 +194,17 @@ def iter_mediarefs(
         start_time_ns: Inclusive lower bound on ``log_time``.
         end_time_ns: Exclusive upper bound on ``log_time``.
 
+    Only messages whose channel schema is named :data:`MEDIAREF_SCHEMA_NAME`
+    are yielded — other message types in the same mcap file (IMU, lidar,
+    diagnostics, …) are silently skipped. Pass ``topics=`` to filter
+    further.
+
     Yields:
         ``(log_time_ns, MediaRef)`` pairs in mcap log-time order.
 
     Raises:
-        ValueError: If a non-MediaRef message is encountered on a
-            channel claimed to use the MediaRef schema.
+        ValueError: If a message on a MediaRef-schema channel cannot be
+            parsed as JSON or fails MediaRef validation.
     """
     iter_kwargs: dict = {}
     if topics is not None:
@@ -209,18 +214,20 @@ def iter_mediarefs(
     if end_time_ns is not None:
         iter_kwargs["end_time"] = int(end_time_ns)
 
-    for _schema, _channel, message in reader.iter_messages(**iter_kwargs):
+    for schema, channel, message in reader.iter_messages(**iter_kwargs):
+        if schema is None or schema.name != MEDIAREF_SCHEMA_NAME:
+            continue
         try:
             payload = json.loads(message.data.decode("utf-8"))
         except json.JSONDecodeError as e:
             raise ValueError(
-                f"Channel '{_channel.topic}' message at log_time={message.log_time} is not valid JSON: {e}"
+                f"Channel '{channel.topic}' message at log_time={message.log_time} is not valid JSON: {e}"
             ) from e
         try:
             ref = MediaRef.model_validate(payload)
         except Exception as e:
             raise ValueError(
-                f"Channel '{_channel.topic}' message at log_time={message.log_time} is not a MediaRef: {e}"
+                f"Channel '{channel.topic}' message at log_time={message.log_time} is not a MediaRef: {e}"
             ) from e
         yield message.log_time, ref
 
@@ -234,12 +241,16 @@ def resolve_against_mcap(
     refs: Iterable[MediaRef],
     mcap_path: Union[str, Path],
     on_unresolvable: str = "ignore",
-) -> list[MediaRef]:
+) -> Iterator[MediaRef]:
     """Resolve relative URIs against the directory containing ``mcap_path``.
 
     mcap files commonly sit next to the ``.mp4``/``.mkv`` they reference,
     and the parquet/JSON ``uri`` field is recorded as a relative path.
     Use this helper after :func:`iter_mediarefs` to obtain absolute refs.
+
+    Returns a generator so long mcap recordings (millions of frames) don't
+    materialize an intermediate list. Wrap with ``list(...)`` if you need
+    one.
 
     Args:
         refs: Iterable of :class:`MediaRef` (e.g. the output of
@@ -252,11 +263,12 @@ def resolve_against_mcap(
             / cloud URIs (default ``"ignore"`` — they pass through
             unchanged).
 
-    Returns:
-        A list of resolved MediaRefs. Order matches input order.
+    Yields:
+        Resolved MediaRefs in input order.
     """
     base = str(Path(mcap_path).resolve().parent)
-    return [r.resolve_relative_path(base, on_unresolvable=on_unresolvable) for r in refs]
+    for r in refs:
+        yield r.resolve_relative_path(base, on_unresolvable=on_unresolvable)
 
 
 __all__ = [

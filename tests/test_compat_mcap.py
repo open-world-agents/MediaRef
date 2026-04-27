@@ -233,6 +233,30 @@ class TestReaderRejectsBadPayloads:
         buf.seek(0)
         return buf
 
+    def test_non_mediaref_messages_silently_skipped(self, open_writer):
+        # Mixed mcap: one MediaRef channel + one channel with a different
+        # schema (e.g. an IMU sample). iter_mediarefs must yield only
+        # MediaRefs and skip the rest, not raise.
+        w, buf = open_writer
+        sid = register_mediaref_schema(w)
+        cid_media = register_mediaref_channel(w, "/screen", sid)
+
+        imu_sid = w.register_schema(
+            name="IMUSample",
+            encoding="jsonschema",
+            data=b'{"type":"object","properties":{"ax":{"type":"number"}}}',
+        )
+        cid_imu = w.register_channel(topic="/imu", message_encoding="json", schema_id=imu_sid)
+
+        write_mediaref(w, cid_media, 100, MediaRef(uri="clip.mp4", pts_ns=0))
+        w.add_message(channel_id=cid_imu, log_time=200, data=b'{"ax":0.1}', publish_time=200)
+        write_mediaref(w, cid_media, 300, MediaRef(uri="clip.mp4", pts_ns=10))
+        w.finish()
+
+        buf.seek(0)
+        out = list(iter_mediarefs(make_reader(buf)))
+        assert [(ts, r.pts_ns) for ts, r in out] == [(100, 0), (300, 10)]
+
     def test_invalid_json_raises(self):
         buf = self._writer_with_one_raw_message(
             schema_data=json.dumps(MEDIAREF_SCHEMA).encode("utf-8"),
@@ -263,13 +287,13 @@ class TestResolveAgainstMcap:
             MediaRef(uri="videos/clip.mp4", pts_ns=0),
             MediaRef(uri="videos/clip.mp4", pts_ns=1_000_000_000),
         ]
-        out = resolve_against_mcap(refs, mcap_file)
+        # resolve_against_mcap returns a generator; materialize once.
+        out = list(resolve_against_mcap(refs, mcap_file))
         # The returned URI uses POSIX separators (Path.as_posix in core.py).
         # Compare against an as_posix base so this works on Windows too.
         expected_base = tmp_path.resolve().as_posix()
         assert all(r.uri.endswith("videos/clip.mp4") for r in out)
         assert all(r.uri.startswith(expected_base) for r in out)
-        # pts_ns preserved
         assert [r.pts_ns for r in out] == [0, 1_000_000_000]
 
     def test_passes_through_absolute_uri(self, tmp_path):
@@ -279,12 +303,22 @@ class TestResolveAgainstMcap:
         # (`/data/...` is not absolute on Windows). The point of the test is
         # "absolute → unchanged" — the specific absolute path is incidental.
         absolute_uri = (tmp_path / "elsewhere" / "clip.mp4").as_posix()
-        out = resolve_against_mcap([MediaRef(uri=absolute_uri, pts_ns=0)], mcap_file)
+        out = list(resolve_against_mcap([MediaRef(uri=absolute_uri, pts_ns=0)], mcap_file))
         assert out[0].uri == absolute_uri
 
     def test_passes_through_remote_uri(self, tmp_path):
         mcap_file = tmp_path / "session.mcap"
         mcap_file.touch()
         remote = MediaRef(uri="https://example.com/v.mp4", pts_ns=0)
-        out = resolve_against_mcap([remote], mcap_file, on_unresolvable="ignore")
+        out = list(resolve_against_mcap([remote], mcap_file, on_unresolvable="ignore"))
         assert out[0].uri == "https://example.com/v.mp4"
+
+    def test_returns_generator(self, tmp_path):
+        # Documents the iterator contract: callers can stream large mcaps
+        # without materializing an intermediate list.
+        import types
+
+        mcap_file = tmp_path / "session.mcap"
+        mcap_file.touch()
+        gen = resolve_against_mcap([MediaRef(uri="x.mp4", pts_ns=0)], mcap_file)
+        assert isinstance(gen, types.GeneratorType)
