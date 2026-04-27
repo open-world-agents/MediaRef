@@ -54,8 +54,13 @@ any scheme. Schemes a compliant MediaRef library is expected to recognize:
 | `https://`       | Remote resource over HTTPS.                                   |
 | `data:`          | Embedded media per RFC 2397 (see §2.2).                       |
 
-Implementations MAY recognize additional schemes (`s3://`, `gs://`, `hf://`,
-…); such recognition is implementation-defined and out of scope for v1.
+Implementations SHOULD recognize cloud-storage schemes through the
+[fsspec](https://filesystem-spec.readthedocs.io) family of protocol
+handlers when the appropriate backend is installed: `s3://`, `gs://`,
+`gcs://`, `hf://`, `az://`, `azure://`, `abfs(s)://`, `adl://`, `r2://`,
+`ftp://`, `sftp://`, `ssh://`, `memory://`. The reference implementation
+ships this support behind the optional ``[fsspec]`` extra. Recognition of
+additional schemes beyond this list is implementation-defined.
 
 ### 2.2 Data URI per RFC 2397
 

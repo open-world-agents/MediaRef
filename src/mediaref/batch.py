@@ -99,6 +99,8 @@ def batch_decode(
         results[i] = ref.to_ndarray(**kwargs)
 
     # Load video frames using optimized batch decoding
+    from ._internal import _require_fsspec, is_cloud_uri
+
     for uri, group in video_groups.items():
         # Extract timestamps and original indices
         indices = [i for i, _ in group]
@@ -110,18 +112,24 @@ def batch_decode(
                 raise ValueError(f"Video reference missing pts_ns: {ref.uri}")
             pts_seconds.append(ref.pts_ns / NANOSECOND)
 
-        # Use selected decoder for batch decoding
-        try:
-            with decoder_class(uri) as video_decoder:
+        def _run_batch(source) -> None:
+            with decoder_class(source) as video_decoder:
                 batch = video_decoder.get_frames_played_at(pts_seconds)
-
-                # Convert from NCHW to HWC format
                 for idx, frame_nchw in zip(indices, batch.data):
-                    # Transpose from (C, H, W) to (H, W, C) - decoder outputs RGB
-                    rgb_array = np.transpose(frame_nchw, (1, 2, 0))
-                    results[idx] = rgb_array
+                    # (C, H, W) → (H, W, C) — decoder outputs RGB
+                    results[idx] = np.transpose(frame_nchw, (1, 2, 0))
+
+        try:
+            if is_cloud_uri(uri):
+                # Open the cloud-backed video once and reuse the file-like for
+                # the entire group. fsspec handles auth/range reads internally.
+                fsspec = _require_fsspec(uri)
+                with fsspec.open(uri, "rb") as f:
+                    _run_batch(f)
+            else:
+                _run_batch(uri)
         except ImportError:
-            # Re-raise ImportError for missing decoder dependencies
+            # Re-raise ImportError for missing decoder / fsspec dependencies
             raise
         except Exception as e:
             raise ValueError(f"Failed to load batch from '{uri}': {e}") from e

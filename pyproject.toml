@@ -42,6 +42,9 @@ hf = [
     "datasets>=2.14.0",  # register_feature has been stable since 2.x
     "pyarrow",           # transitively required by datasets, listed for clarity
 ]
+fsspec = [
+    "fsspec>=2024.2.0",  # baseline for stable AbstractFileSystem.open() semantics
+]
 
 [dependency-groups]
 dev = [

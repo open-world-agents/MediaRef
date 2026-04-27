@@ -14,6 +14,60 @@ import requests
 REQUEST_TIMEOUT = 60  # HTTP request timeout in seconds
 NANOSECOND = 1_000_000_000  # 1 second in nanoseconds
 
+# Schemes routed through fsspec when available. http(s) and file:// are handled
+# directly by requests / pathlib so they're intentionally excluded; data: is its
+# own thing. New schemes can be added here as needed (cf. SPEC §2.1).
+_CLOUD_URI_SCHEMES = frozenset(
+    {
+        "s3",
+        "gs",
+        "gcs",
+        "hf",
+        "az",
+        "azure",
+        "abfs",
+        "abfss",
+        "adl",
+        "r2",
+        "ftp",
+        "sftp",
+        "ssh",
+        "memory",  # fsspec's in-memory filesystem (testing & ephemeral pipelines)
+    }
+)
+
+
+def is_cloud_uri(uri: str) -> bool:
+    """True if ``uri`` uses a scheme delegated to fsspec.
+
+    Schemes covered: ``s3://``, ``gs://``, ``gcs://``, ``hf://``, ``az://``,
+    ``azure://``, ``abfs(s)://``, ``adl://``, ``r2://``, ``ftp://``, ``sftp://``,
+    ``ssh://``, ``memory://``.
+
+    ``http(s)://``, ``file://``, ``data:`` and POSIX paths are NOT cloud URIs —
+    they are handled directly without fsspec.
+    """
+    if "://" not in uri:
+        return False
+    scheme = uri.split("://", 1)[0].lower()
+    return scheme in _CLOUD_URI_SCHEMES
+
+
+def _require_fsspec(uri: str):
+    """Import fsspec or raise a focused ImportError naming the offending scheme."""
+    try:
+        import fsspec  # noqa: PLC0415 — lazy import; optional dependency
+    except ImportError as e:  # pragma: no cover — exercised in test_fsspec
+        scheme = uri.split("://", 1)[0]
+        raise ImportError(
+            f"Loading from {scheme}:// requires the fsspec optional dependency. "
+            "Install with: pip install 'mediaref[fsspec]'\n"
+            "For specific cloud backends you may also need: "
+            "s3fs (s3://), gcsfs (gs://), huggingface_hub[hf_transfer] (hf://), "
+            "adlfs (az://, abfs://). See https://filesystem-spec.readthedocs.io."
+        ) from e
+    return fsspec
+
 
 # ============================================================================
 # Image Loading
@@ -56,7 +110,12 @@ def _load_pil_image(
     Adapted from: https://github.com/huggingface/diffusers/blob/main/src/diffusers/utils/loading_utils.py
     """
     if isinstance(image, str):
-        if image.startswith("http://") or image.startswith("https://"):
+        if is_cloud_uri(image):
+            fsspec = _require_fsspec(image)
+            with fsspec.open(image, "rb") as f:
+                image = PIL.Image.open(f)
+                image.load()  # force the bytes through PIL before f closes
+        elif image.startswith("http://") or image.startswith("https://"):
             image = PIL.Image.open(requests.get(image, stream=True, timeout=REQUEST_TIMEOUT).raw)
         elif image.startswith("file://"):
             # Convert file:// URI to local path
@@ -117,36 +176,42 @@ def load_video_frame_as_rgba(
     """
     from .video_decoder import PyAVVideoDecoder
 
+    pts_seconds = pts_ns / NANOSECOND
+
+    def _decode(source) -> npt.NDArray[np.uint8]:
+        with PyAVVideoDecoder(source) as decoder:
+            batch = decoder.get_frames_played_at([pts_seconds])
+            # batch.data is NCHW format (1, 3, H, W) with RGB channels
+            rgb_nchw = batch.data[0]  # (3, H, W)
+            rgb_hwc = np.transpose(rgb_nchw, (1, 2, 0))  # (H, W, 3)
+            alpha = np.full((*rgb_hwc.shape[:2], 1), 255, dtype=np.uint8)
+            return np.concatenate([rgb_hwc, alpha], axis=2)
+
     try:
-        # Convert file:// URI to local path if needed
+        # Cloud URIs (s3://, gs://, hf://, …) — open via fsspec as a file-like
+        # and hand that to PyAV. The cached_av cache cannot retain file-like
+        # objects across calls, so cloud-backed videos do not benefit from
+        # cross-call caching; within a single batch_decode the same handle is
+        # reused as expected.
+        if is_cloud_uri(path_or_url):
+            fsspec = _require_fsspec(path_or_url)
+            with fsspec.open(path_or_url, "rb") as f:
+                return _decode(f)
+
+        # file:// URI → local path
         actual_path = path_or_url
         if path_or_url.startswith("file://"):
             from urllib.request import url2pathname
 
-            # url2pathname handles URL decoding (unquote) internally
             actual_path = url2pathname(path_or_url[7:])
 
-        # Validate local file exists
+        # Validate local file exists (skip for http(s)://, which PyAV opens directly)
         if not path_or_url.startswith(("http://", "https://")):
             if not Path(actual_path).exists():
                 raise FileNotFoundError(f"Video file not found: {actual_path}")
 
-        # Convert nanoseconds to seconds
-        pts_seconds = pts_ns / NANOSECOND
-
-        # Use PyAVVideoDecoder for consistent playback semantics with batch_decode
-        with PyAVVideoDecoder(actual_path) as decoder:
-            batch = decoder.get_frames_played_at([pts_seconds])
-            # batch.data is NCHW format (1, 3, H, W) with RGB channels
-            # Convert to RGBA HWC format (H, W, 4)
-            rgb_nchw = batch.data[0]  # (3, H, W)
-            rgb_hwc = np.transpose(rgb_nchw, (1, 2, 0))  # (H, W, 3)
-            # Add alpha channel (fully opaque)
-            alpha = np.full((*rgb_hwc.shape[:2], 1), 255, dtype=np.uint8)
-            rgba_hwc: npt.NDArray[np.uint8] = np.concatenate([rgb_hwc, alpha], axis=2)
-            return rgba_hwc
+        return _decode(actual_path)
     except FileNotFoundError:
         raise
     except Exception as e:
-        pts_seconds = pts_ns / NANOSECOND
         raise ValueError(f"Failed to load frame at {pts_seconds:.3f}s from {path_or_url}: {e}") from e
