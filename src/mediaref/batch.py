@@ -7,6 +7,8 @@ from typing import TYPE_CHECKING, List, Literal, Optional, Type
 import numpy as np
 import numpy.typing as npt
 
+from ._internal import is_cloud_uri, open_cloud
+
 if TYPE_CHECKING:
     from .core import MediaRef
     from .video_decoder import BaseVideoDecoder
@@ -15,6 +17,17 @@ NANOSECOND = 1_000_000_000  # 1 second in nanoseconds
 
 # Type alias for decoder backend selection
 DecoderBackend = Literal["pyav", "torchcodec"]
+
+
+def _decode_video_group(
+    decoder_class: Type["BaseVideoDecoder"],
+    source,
+    pts_seconds: List[float],
+) -> List[npt.NDArray[np.uint8]]:
+    """Decode all timestamps from one source. Returns RGB HWC frames in input order."""
+    with decoder_class(source) as video_decoder:
+        batch = video_decoder.get_frames_played_at(pts_seconds)
+        return [np.transpose(f, (1, 2, 0)) for f in batch.data]
 
 
 def _get_decoder_class(backend: DecoderBackend) -> Type["BaseVideoDecoder"]:
@@ -99,10 +112,7 @@ def batch_decode(
         results[i] = ref.to_ndarray(**kwargs)
 
     # Load video frames using optimized batch decoding
-    from ._internal import _require_fsspec, is_cloud_uri
-
     for uri, group in video_groups.items():
-        # Extract timestamps and original indices
         indices = [i for i, _ in group]
 
         # Validate pts_ns and convert to seconds
@@ -112,22 +122,17 @@ def batch_decode(
                 raise ValueError(f"Video reference missing pts_ns: {ref.uri}")
             pts_seconds.append(ref.pts_ns / NANOSECOND)
 
-        def _run_batch(source) -> None:
-            with decoder_class(source) as video_decoder:
-                batch = video_decoder.get_frames_played_at(pts_seconds)
-                for idx, frame_nchw in zip(indices, batch.data):
-                    # (C, H, W) → (H, W, C) — decoder outputs RGB
-                    results[idx] = np.transpose(frame_nchw, (1, 2, 0))
-
         try:
             if is_cloud_uri(uri):
-                # Open the cloud-backed video once and reuse the file-like for
-                # the entire group. fsspec handles auth/range reads internally.
-                fsspec = _require_fsspec(uri)
-                with fsspec.open(uri, "rb") as f:
-                    _run_batch(f)
+                # Cloud URIs: open once via fsspec and reuse the file-like.
+                # cached_av cannot keep file-likes across calls, so cross-call
+                # caching is forfeited; within-call reuse is preserved.
+                with open_cloud(uri) as source:
+                    frames = _decode_video_group(decoder_class, source, pts_seconds)
             else:
-                _run_batch(uri)
+                frames = _decode_video_group(decoder_class, uri, pts_seconds)
+            for idx, frame in zip(indices, frames):
+                results[idx] = frame
         except ImportError:
             # Re-raise ImportError for missing decoder / fsspec dependencies
             raise

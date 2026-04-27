@@ -10,6 +10,8 @@ import numpy.typing as npt
 import PIL.Image
 from pydantic import BaseModel, BeforeValidator, Field
 
+from ._internal import is_cloud_uri as _is_cloud_uri
+
 if TYPE_CHECKING:
     from .data_uri import DataURI
 
@@ -100,8 +102,6 @@ class MediaRef(BaseModel):
         served by the built-in `requests` path. Loading from a cloud URI
         requires the ``fsspec`` extra: ``pip install 'mediaref[fsspec]'``.
         """
-        from ._internal import is_cloud_uri as _is_cloud_uri
-
         return _is_cloud_uri(self.uri)
 
     @property

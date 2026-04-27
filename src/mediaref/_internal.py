@@ -37,6 +37,12 @@ _CLOUD_URI_SCHEMES = frozenset(
 )
 
 
+def _scheme_of(uri: str) -> str:
+    """Lowercased URI scheme (the part before ``://``), or ``""`` for paths."""
+    scheme, sep, _ = uri.partition("://")
+    return scheme.lower() if sep else ""
+
+
 def is_cloud_uri(uri: str) -> bool:
     """True if ``uri`` uses a scheme delegated to fsspec.
 
@@ -47,10 +53,7 @@ def is_cloud_uri(uri: str) -> bool:
     ``http(s)://``, ``file://``, ``data:`` and POSIX paths are NOT cloud URIs —
     they are handled directly without fsspec.
     """
-    if "://" not in uri:
-        return False
-    scheme = uri.split("://", 1)[0].lower()
-    return scheme in _CLOUD_URI_SCHEMES
+    return _scheme_of(uri) in _CLOUD_URI_SCHEMES
 
 
 def _require_fsspec(uri: str):
@@ -58,15 +61,25 @@ def _require_fsspec(uri: str):
     try:
         import fsspec  # noqa: PLC0415 — lazy import; optional dependency
     except ImportError as e:  # pragma: no cover — exercised in test_fsspec
-        scheme = uri.split("://", 1)[0]
         raise ImportError(
-            f"Loading from {scheme}:// requires the fsspec optional dependency. "
+            f"Loading from {_scheme_of(uri) or uri}:// requires the fsspec optional dependency. "
             "Install with: pip install 'mediaref[fsspec]'\n"
             "For specific cloud backends you may also need: "
             "s3fs (s3://), gcsfs (gs://), huggingface_hub[hf_transfer] (hf://), "
             "adlfs (az://, abfs://). See https://filesystem-spec.readthedocs.io."
         ) from e
     return fsspec
+
+
+def open_cloud(uri: str):
+    """Open a cloud URI as a binary file-like via fsspec (use as context manager).
+
+    Wraps the fsspec import + ``fsspec.open(uri, "rb")`` boilerplate that
+    image loading, video loading, and batch decoding all share. Raises a
+    focused :class:`ImportError` when fsspec or the relevant backend isn't
+    installed.
+    """
+    return _require_fsspec(uri).open(uri, "rb")
 
 
 # ============================================================================
@@ -111,8 +124,7 @@ def _load_pil_image(
     """
     if isinstance(image, str):
         if is_cloud_uri(image):
-            fsspec = _require_fsspec(image)
-            with fsspec.open(image, "rb") as f:
+            with open_cloud(image) as f:
                 image = PIL.Image.open(f)
                 image.load()  # force the bytes through PIL before f closes
         elif image.startswith("http://") or image.startswith("https://"):
@@ -194,8 +206,7 @@ def load_video_frame_as_rgba(
         # cross-call caching; within a single batch_decode the same handle is
         # reused as expected.
         if is_cloud_uri(path_or_url):
-            fsspec = _require_fsspec(path_or_url)
-            with fsspec.open(path_or_url, "rb") as f:
+            with open_cloud(path_or_url) as f:
                 return _decode(f)
 
         # file:// URI → local path
