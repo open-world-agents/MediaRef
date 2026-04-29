@@ -74,31 +74,34 @@ class MockedInputContainer(InputContainerMixin):
     concurrent callers of :func:`open` for the same source; each caller
     pairs its acquire with a single :meth:`close`.
 
-    For cloud URIs the entry also owns the underlying fsspec file-like:
-    a single ``MockedInputContainer`` ⊇ one ``av.container`` ⊇ one fsspec
-    file-like, all disposed together by :meth:`_dispose` at eviction.
+    For cloud URIs the entry also owns the underlying fsspec ``OpenFile``
+    context manager: a single ``MockedInputContainer`` ⊇ one
+    ``av.container`` ⊇ one fsspec ``OpenFile``, all disposed together by
+    :meth:`_dispose` at eviction.
     """
 
-    _owned_filelike: Optional[object]
+    _owned_open_ctx: Optional[object]
 
     def __init__(self, file: PathLike, **kwargs):
         self._cache_key = str(file)
-        self._owned_filelike = None
+        self._owned_open_ctx = None
         try:
             if isinstance(file, str) and is_cloud_uri(file):
-                # Take ownership of the fsspec file-like for the lifetime
-                # of this cache entry. ``fsspec.open(...).__enter__()``
-                # returns the underlying file (e.g. ``HfFileSystemFile``)
-                # without binding it to an outer ``with`` block; we close
-                # it ourselves in :meth:`_dispose`.
-                self._owned_filelike = fsspec.open(file, "rb").__enter__()
-                self._container = av.open(self._owned_filelike, "r", **kwargs)
+                # Take ownership of the fsspec OpenFile for the lifetime of
+                # this cache entry. We store the context manager itself (not
+                # just its yielded file-like) so :meth:`_dispose` can call
+                # ``__exit__`` — some fsspec backends (cached/chained openers,
+                # connection pools) do extra cleanup there beyond closing
+                # the inner file.
+                self._owned_open_ctx = fsspec.open(file, "rb")
+                fileobj = self._owned_open_ctx.__enter__()
+                self._container = av.open(fileobj, "r", **kwargs)
             else:
                 self._container = av.open(file, "r", **kwargs)
         except Exception:
-            if self._owned_filelike is not None:
-                self._owned_filelike.close()
-                self._owned_filelike = None
+            if self._owned_open_ctx is not None:
+                self._owned_open_ctx.__exit__(None, None, None)
+                self._owned_open_ctx = None
             raise
 
     def __enter__(self) -> "MockedInputContainer":
@@ -107,21 +110,28 @@ class MockedInputContainer(InputContainerMixin):
     def close(self):
         """Public close = release one cache reference. The container and
         its owned I/O are not actually torn down until the cache decides
-        to evict (capacity LRU or :func:`cleanup_cache`)."""
+        to evict (capacity LRU or :func:`cleanup_cache`).
+
+        Idempotent: extra calls beyond what was acquired are no-ops, so
+        manual ``close()`` followed by an ``__exit__`` (or vice versa) is
+        safe. Refcount is checked under the cache lock.
+        """
+        if _container_cache.refs(self._cache_key) <= 0:
+            return
         try:
             _container_cache.release(self._cache_key)
         except KeyError:
             pass
 
     def _dispose(self):
-        """Eviction-time real cleanup. Closes the av container and any
-        fsspec file-like this entry owns. Idempotent."""
+        """Eviction-time real cleanup. Closes the av container and the
+        fsspec OpenFile context this entry owns."""
         try:
             self._container.close()
         finally:
-            if self._owned_filelike is not None:
-                self._owned_filelike.close()
-                self._owned_filelike = None
+            if self._owned_open_ctx is not None:
+                self._owned_open_ctx.__exit__(None, None, None)
+                self._owned_open_ctx = None
 
 
 __all__ = ["open", "cleanup_cache"]
