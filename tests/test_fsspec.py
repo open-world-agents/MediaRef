@@ -15,7 +15,7 @@ import numpy as np
 import numpy.typing as npt
 import pytest
 
-from mediaref import MediaRef, batch_decode
+from mediaref import MediaRef, batch_decode, cleanup_cache
 from mediaref._internal import _DIRECT_URI_SCHEMES, is_cloud_uri
 
 
@@ -26,7 +26,15 @@ from mediaref._internal import _DIRECT_URI_SCHEMES, is_cloud_uri
 
 @pytest.fixture(autouse=True)
 def _clear_memory_fs():
-    """Wipe the in-process MemoryFileSystem between tests."""
+    """Wipe the in-process MemoryFileSystem AND mediaref's container cache
+    between tests.
+
+    The container cache is keyed by URI string. Without clearing it, a
+    second test that re-creates ``memory://x`` with different bytes would
+    HIT the previous test's cached container (still holding the original
+    bytes via its owned MemoryFile) — silent cross-test pollution.
+    """
+    cleanup_cache()
     fs = fsspec.filesystem("memory")
     # Reset the underlying store directly (no public clear()).
     if hasattr(fs, "store"):
@@ -34,6 +42,7 @@ def _clear_memory_fs():
     if hasattr(fs, "pseudo_dirs"):
         fs.pseudo_dirs.clear()
     yield
+    cleanup_cache()
     if hasattr(fs, "store"):
         fs.store.clear()
     if hasattr(fs, "pseudo_dirs"):
@@ -233,3 +242,99 @@ class TestVideoLoadingFromMemoryFS:
         frames = batch_decode(refs)
         assert len(frames) == 2
         assert all(f.shape == (48, 64, 3) for f in frames)
+
+    def test_repeated_decode_same_cloud_uri_reuses_cache(self, sample_video_bytes, monkeypatch):
+        """Two batch_decode calls on the same cloud URI must HIT the cache and
+        open fsspec exactly once. Proves both the perf claim and the absence
+        of the stale-handle bug — a stale handle would raise on the second
+        call instead of HITting.
+        """
+        data, pts_ns_list = sample_video_bytes
+        _put_bytes("memory://videos/clip.mp4", data)
+
+        # Spy on fsspec.open as imported by mediaref.cached_av.
+        import mediaref.cached_av as cav_mod
+        open_calls = []
+        real_open = cav_mod.fsspec.open
+
+        def spy(*args, **kwargs):
+            open_calls.append(args[0] if args else kwargs.get("urlpath"))
+            return real_open(*args, **kwargs)
+
+        monkeypatch.setattr(cav_mod.fsspec, "open", spy)
+
+        refs = [MediaRef(uri="memory://videos/clip.mp4", pts_ns=pts_ns_list[1])]
+        batch_decode(refs)  # 1st call: cache miss → opens fsspec once
+        batch_decode(refs)  # 2nd call: cache hit → must NOT reopen
+
+        assert open_calls == ["memory://videos/clip.mp4"], (
+            f"expected single fsspec.open(memory://...), got {open_calls}"
+        )
+
+    def test_cleanup_cache_closes_owned_filelike(self, sample_video_bytes):
+        """``cleanup_cache()`` must dispose owned fsspec file-likes; a fresh
+        decode after cleanup must work (no left-over closed-handle state).
+        """
+        data, pts_ns_list = sample_video_bytes
+        _put_bytes("memory://videos/clip.mp4", data)
+        refs = [MediaRef(uri="memory://videos/clip.mp4", pts_ns=pts_ns_list[1])]
+        batch_decode(refs)
+        cleanup_cache()
+        # Reopen-and-decode must succeed against a fresh cache entry.
+        frames = batch_decode(refs)
+        assert len(frames) == 1
+        assert frames[0].shape == (48, 64, 3)
+
+
+# ---------------------------------------------------------------------------
+# Real hf:// integration (network)
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.video
+@pytest.mark.network
+class TestHfDatasetIntegration:
+    """Live integration tests against the open-world-agents/D2E-480p HF dataset.
+
+    These tests verify that the fsspec hf:// dispatch works against a real
+    HuggingFace endpoint — not a mock, not memory://. The dataset is one of the
+    canonical downstream consumers of MediaRef (see README), so a real-world
+    breakage here is a release blocker.
+
+    HF Hub serves byte-range requests, so each test pulls only the bytes it
+    actually decodes (a few MB), not the multi-TB dataset.
+    """
+
+    # Stable, smallest-game video in D2E-480p. If this file is ever deleted
+    # upstream, swap it for any other ``<game>/<id>.mkv`` under the dataset.
+    HF_VIDEO_URI = "hf://datasets/open-world-agents/D2E-480p/Apex_Legends/0805_01.mkv"
+
+    @pytest.fixture(scope="class")
+    def _hf_available(self):
+        pytest.importorskip("huggingface_hub")
+        # Ensure the URI is actually reachable before running the decode tests
+        # (gives a clearer skip reason than a mid-decode failure).
+        import fsspec
+        try:
+            with fsspec.open(self.HF_VIDEO_URI, "rb") as f:
+                f.read(1)
+        except Exception as e:
+            pytest.skip(f"D2E-480p HF endpoint unreachable: {e}")
+
+    def test_single_frame_decode_from_hf(self, _hf_available):
+        ref = MediaRef(uri=self.HF_VIDEO_URI, pts_ns=1_000_000_000)
+        rgb = ref.to_ndarray()
+        assert rgb.dtype == np.uint8
+        assert rgb.ndim == 3 and rgb.shape[2] == 3
+        # 480p — height should be ~480 pixels (allow generic check on H>=240)
+        assert rgb.shape[0] >= 240, f"unexpected height: {rgb.shape}"
+
+    def test_batch_decode_from_hf(self, _hf_available):
+        refs = [
+            MediaRef(uri=self.HF_VIDEO_URI, pts_ns=int(t * 1e9))
+            for t in (0.5, 1.0, 2.0)
+        ]
+        frames = batch_decode(refs)
+        assert len(frames) == 3
+        shapes = {f.shape for f in frames}
+        assert len(shapes) == 1, f"frame shapes diverged: {shapes}"
