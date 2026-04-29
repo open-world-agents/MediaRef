@@ -12,9 +12,8 @@ from .frame_batch import FrameBatch
 
 
 class TorchCodecVideoDecoder(VideoDecoder, BaseVideoDecoder):
-    """Cached TorchCodec video decoder.
-
-    Wraps TorchCodec's VideoDecoder with caching for efficient resource management.
+    """Cached TorchCodec video decoder. Concurrent constructors for the same source share
+    one cached instance; each caller pairs its construction with a single :meth:`close`.
 
     Args:
         source: Path to video file or URL
@@ -26,26 +25,30 @@ class TorchCodecVideoDecoder(VideoDecoder, BaseVideoDecoder):
     """
 
     cache: ClassVar[ResourceCache[VideoDecoder]] = ResourceCache(max_size=10)
-    _skip_init = False
 
     def __new__(cls, source: PathLike, **kwargs):
-        """Create or retrieve cached decoder instance."""
         cache_key = str(source)
-        if cache_key in cls.cache:
-            instance = cls.cache.acquire_entry(cache_key)
-            instance._skip_init = True
-        else:
-            instance = super().__new__(cls)
-            instance._skip_init = False
+        cached = cls.cache.try_acquire(cache_key)
+        if cached is not None:
+            cached._skip_init = True
+            return cached
+        instance = super().__new__(cls)
+        instance._skip_init = False
         return instance
 
     def __init__(self, source: PathLike, **kwargs):
-        """Initialize decoder if not retrieved from cache."""
         if getattr(self, "_skip_init", False):
             return
         super().__init__(str(source), **kwargs)
-        self._cache_key = str(source)
-        self.cache.add_entry(self._cache_key, self, lambda: None)
+        cache_key = str(source)
+        # __new__ already returned self; we cannot replace it with the canonical on
+        # race-loss. Loser keeps self as uncached, releases the incidental ref.
+        _, was_added = self.cache.try_insert_or_acquire(cache_key, self, lambda: VideoDecoder.close(self))
+        if was_added:
+            self._cache_key = cache_key
+        else:
+            self.cache.release(cache_key)
+            self._cache_key = None
 
     def get_frames_played_at(self, seconds: List[float]) -> FrameBatch:
         """Retrieve frames at specific timestamps.
@@ -111,6 +114,10 @@ class TorchCodecVideoDecoder(VideoDecoder, BaseVideoDecoder):
         )
 
     def close(self):
-        """Release cache reference. Safe to call multiple times."""
-        if hasattr(self, "_cache_key") and self._cache_key in self.cache and self.cache[self._cache_key].refs > 0:
-            self.cache.release_entry(self._cache_key)
+        if self._cache_key is not None:
+            try:
+                self.cache.release(self._cache_key)
+            except KeyError:
+                pass
+        else:
+            VideoDecoder.close(self)
