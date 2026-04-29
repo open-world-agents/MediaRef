@@ -125,7 +125,7 @@ class TorchCodecVideoDecoder(VideoDecoder, BaseVideoDecoder):
         """
         if self._cache_key is not None:
             try:
-                self.cache.release_entry(self._cache_key)
+                self.cache.release(self._cache_key)
             except KeyError:
                 pass
         else:

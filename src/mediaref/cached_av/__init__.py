@@ -62,8 +62,8 @@ def _open_cached(cache_key: str, file: PathLike, **kwargs) -> "MockedInputContai
 
         container = MockedInputContainer(file, **kwargs)
         # The eviction callback closes the underlying av container directly; routing through
-        # ``MockedInputContainer.close`` would re-enter ``release_entry`` on an entry that is
-        # already being popped.
+        # ``MockedInputContainer.close`` would re-enter ``release`` on an entry that is
+        # already being evicted.
         if _container_cache.try_add(cache_key, container, lambda c=container: InputContainerMixin.close(c)):
             return container
 
@@ -96,7 +96,7 @@ class MockedInputContainer(InputContainerMixin):
     def close(self):
         """Release the cache reference held by this caller. No-op if already evicted."""
         try:
-            _container_cache.release_entry(self._cache_key)
+            _container_cache.release(self._cache_key)
         except KeyError:
             pass
 

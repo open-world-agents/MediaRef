@@ -5,7 +5,7 @@ import sys
 import threading
 import time
 from dataclasses import dataclass
-from typing import Callable, ContextManager, Dict, Generic, Optional, Tuple, TypeVar
+from typing import Callable, ContextManager, Dict, Generic, Optional, TypeVar
 
 from loguru import logger
 
@@ -13,34 +13,54 @@ T = TypeVar("T")
 
 
 @dataclass
-class CacheEntry(Generic[T]):
-    """Container for cached resources with metadata."""
+class _Entry(Generic[T]):
+    """Internal cache entry record. Not part of the public API."""
 
     obj: T
     cleanup_callback: Callable
-    last_used: float = 0.0
-    refs: int = 0
+    last_used: float
+    refs: int
 
 
-class ResourceCache(Generic[T], Dict[str, CacheEntry[T]]):
+class ResourceCache(Generic[T]):
     """Thread-safe reference-counted resource cache with LRU eviction.
 
-    All mutating operations and compound check-then-act primitives are serialized through
-    an internal :class:`threading.RLock`. Read-only Dict accesses (``key in cache``,
-    ``cache[key]``) inherit Python's GIL-level atomicity but are *not* lock-protected —
-    call sites that need check-then-act semantics must use :meth:`try_acquire`,
-    :meth:`try_add`, or :meth:`get_or_add` rather than composing ``__contains__`` and
-    :meth:`acquire_entry` themselves.
+    Public surface:
+
+    Mutations (atomic, thread-safe):
+        - :meth:`try_add` — insert if absent (returns ``bool``).
+        - :meth:`try_acquire` — increment refs if present (returns ``Optional[T]``).
+        - :meth:`release` — decrement refs; raises ``KeyError`` if absent.
+        - :meth:`evict` — forcefully remove regardless of refs (returns ``bool``).
+        - :meth:`clear` — remove all entries.
+
+    Inspection (read-only):
+        - ``key in cache`` (``__contains__``).
+        - ``len(cache)``.
+        - :meth:`refs` — current ref count for a key (0 if absent).
+
+    Configuration:
+        - ``max_size`` — soft cap; LRU eviction happens after :meth:`release`
+          drops a refs-0 entry below the cap. ``0`` (default) disables.
+
+    Eviction (LRU sweep, :meth:`evict`, :meth:`clear`) invokes the registered
+    ``cleanup_callback`` for each removed entry. Pass ``cleanup_callback=None``
+    to :meth:`try_add` to fall back to ``obj.__exit__(None, None, None)``;
+    the object must then implement the context-manager protocol.
+
+    Strict variants (e.g. "raise on miss") are intentionally not provided —
+    compose them at the call site with ``if not cache.try_add(...): raise ...``
+    or ``if (x := cache.try_acquire(...)) is None: raise ...``. This keeps
+    the primitive surface minimal.
     """
 
-    def __init__(self, *args, max_size: int = 0, **kwargs):
+    def __init__(self, max_size: int = 0):
         self.max_size = max_size
+        self._entries: Dict[str, _Entry[T]] = {}
         self._lock = threading.RLock()
-        super().__init__(*args, **kwargs)
         self._register_cleanup_handlers()
 
     def _register_cleanup_handlers(self):
-        """Register cleanup callbacks for process lifecycle events."""
         if sys.platform != "win32":
             os.register_at_fork(before=lambda: (self.clear(), gc.collect()))
         atexit.register(self.clear)
@@ -52,110 +72,94 @@ class ResourceCache(Generic[T], Dict[str, CacheEntry[T]]):
         return lambda: obj.__exit__(None, None, None)
 
     # ------------------------------------------------------------------
-    # Internal lock-held helpers
+    # Mutations
     # ------------------------------------------------------------------
-
-    def _insert_locked(self, key: str, obj: T, cleanup_callback: Optional[Callable]) -> None:
-        """Insert a new entry with refs=1. Caller must hold ``self._lock``."""
-        if cleanup_callback is None:
-            cleanup_callback = self._default_cleanup(obj)
-        self[key] = CacheEntry(obj=obj, cleanup_callback=cleanup_callback, refs=1, last_used=time.time())
-        logger.debug(f"cache add: {key=}, total={len(self)}")
-
-    def _acquire_locked(self, key: str) -> T:
-        """Increment refs of an existing entry and return its object. Caller must hold ``self._lock``."""
-        entry = self[key]
-        entry.refs += 1
-        entry.last_used = time.time()
-        return entry.obj
-
-    # ------------------------------------------------------------------
-    # Public API
-    # ------------------------------------------------------------------
-
-    def add_entry(self, key: str, obj: T, cleanup_callback: Optional[Callable] = None):
-        """Add new entry with refs=1. Raises ``ValueError`` if key already exists.
-
-        Thread-safe. Prefer :meth:`try_add` or :meth:`get_or_add` from concurrent
-        code paths to avoid the check-then-add race.
-        """
-        with self._lock:
-            if key in self:
-                raise ValueError(f"Entry {key} already exists. Use acquire_entry() to increment refs.")
-            self._insert_locked(key, obj, cleanup_callback)
 
     def try_add(self, key: str, obj: T, cleanup_callback: Optional[Callable] = None) -> bool:
-        """Atomically add entry only if key is absent. Returns True if added. Thread-safe."""
+        """Atomically insert a new entry with refs=1. Returns True if added, False if the key already exists."""
         with self._lock:
-            if key in self:
+            if key in self._entries:
                 return False
-            self._insert_locked(key, obj, cleanup_callback)
+            if cleanup_callback is None:
+                cleanup_callback = self._default_cleanup(obj)
+            self._entries[key] = _Entry(obj=obj, cleanup_callback=cleanup_callback, refs=1, last_used=time.time())
+            logger.debug(f"cache add: {key=}, total={len(self._entries)}")
             return True
 
-    def acquire_entry(self, key: str) -> T:
-        """Increment refs and return cached object. Raises ``KeyError`` if not found. Thread-safe."""
-        with self._lock:
-            if key not in self:
-                raise KeyError(f"Entry {key} not found in cache")
-            return self._acquire_locked(key)
-
     def try_acquire(self, key: str) -> Optional[T]:
-        """Atomic check-and-acquire. Returns the object with refs incremented, or ``None`` if absent."""
+        """Atomically increment refs and return the object, or ``None`` if the key is absent."""
         with self._lock:
-            if key not in self:
+            entry = self._entries.get(key)
+            if entry is None:
                 return None
-            return self._acquire_locked(key)
+            entry.refs += 1
+            entry.last_used = time.time()
+            return entry.obj
 
-    def get_or_add(self, key: str, factory: Callable[[], Tuple[T, Optional[Callable]]]) -> T:
-        """Atomically acquire if present, else create via ``factory()`` and add. Thread-safe.
+    def release(self, key: str) -> None:
+        """Decrement refs of an entry. Raises ``KeyError`` if the key is absent.
 
-        ``factory()`` must return ``(obj, cleanup_callback)``; the callback may be ``None``
-        to fall back to the context-manager default. The factory is invoked while the cache
-        lock is held — keep it cheap. For heavy construction that should not serialize
-        across cache keys, use :meth:`try_acquire` followed by an unlocked construction
-        and :meth:`try_add` to commit.
+        After decrement, if the entry is unreferenced and the cache exceeds
+        ``max_size``, an LRU sweep runs.
         """
         with self._lock:
-            if key in self:
-                return self._acquire_locked(key)
-            obj, cleanup_callback = factory()
-            self._insert_locked(key, obj, cleanup_callback)
-            return obj
-
-    def release_entry(self, key: str):
-        """Decrement refs and trigger LRU cleanup if needed. Thread-safe."""
-        with self._lock:
-            entry = self[key]
+            entry = self._entries[key]
             entry.refs -= 1
             logger.debug(f"cache release: {key=}, refs={entry.refs}")
             self._cleanup_if_needed()
 
-    def pop(self, key: str, default: Optional[CacheEntry[T]] = None) -> Optional[CacheEntry[T]]:  # type: ignore[override]
-        """Remove entry and execute cleanup callback. Thread-safe."""
-        with self._lock:
-            if key in self:
-                self[key].cleanup_callback()
-            logger.debug(f"cache pop: {key=}, total={len(self) - (1 if key in self else 0)}")
-            return super().pop(key, default)
+    def evict(self, key: str) -> bool:
+        """Forcefully remove an entry regardless of refs, invoking its cleanup callback.
 
-    def clear(self):
-        """Clear all entries and execute cleanup callbacks. Thread-safe."""
-        with self._lock:
-            for entry in self.values():
-                entry.cleanup_callback()
-            logger.debug(f"cache clear: total={len(self)}")
-            super().clear()
-
-    def _cleanup_if_needed(self):
-        """Evict unreferenced entries using LRU policy when cache exceeds ``max_size``.
-
-        The RLock allows nested acquisition from :meth:`release_entry`.
+        Returns True if the entry was present, False otherwise.
         """
         with self._lock:
-            if self.max_size == 0 or len(self) <= self.max_size:
-                return
-            unreferenced = [k for k, v in self.items() if v.refs == 0]
-            oldest_first = sorted(unreferenced, key=lambda k: self[k].last_used)
-            excess_count = len(self) - self.max_size
-            for key in oldest_first[:excess_count]:
-                self.pop(key)
+            entry = self._entries.pop(key, None)
+            if entry is None:
+                return False
+            entry.cleanup_callback()
+            logger.debug(f"cache evict: {key=}, total={len(self._entries)}")
+            return True
+
+    def clear(self) -> None:
+        """Remove all entries, invoking each cleanup callback."""
+        with self._lock:
+            for entry in self._entries.values():
+                entry.cleanup_callback()
+            logger.debug(f"cache clear: total={len(self._entries)}")
+            self._entries.clear()
+
+    # ------------------------------------------------------------------
+    # Inspection
+    # ------------------------------------------------------------------
+
+    def __contains__(self, key: object) -> bool:
+        return key in self._entries
+
+    def __len__(self) -> int:
+        return len(self._entries)
+
+    def refs(self, key: str) -> int:
+        """Return the current ref count for ``key``, or ``0`` if absent."""
+        with self._lock:
+            entry = self._entries.get(key)
+            return 0 if entry is None else entry.refs
+
+    # ------------------------------------------------------------------
+    # Internal
+    # ------------------------------------------------------------------
+
+    def _cleanup_if_needed(self) -> None:
+        """LRU sweep: evict the oldest unreferenced entries until at or below ``max_size``.
+
+        Caller must hold ``self._lock``.
+        """
+        if self.max_size == 0 or len(self._entries) <= self.max_size:
+            return
+        unreferenced = [(k, e.last_used) for k, e in self._entries.items() if e.refs == 0]
+        unreferenced.sort(key=lambda kv: kv[1])
+        excess = len(self._entries) - self.max_size
+        for key, _ in unreferenced[:excess]:
+            entry = self._entries.pop(key)
+            entry.cleanup_callback()
+            logger.debug(f"cache LRU evict: {key=}, total={len(self._entries)}")
