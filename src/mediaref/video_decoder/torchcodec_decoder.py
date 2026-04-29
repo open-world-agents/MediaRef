@@ -1,5 +1,6 @@
 """TorchCodec-based video decoder."""
 
+import threading
 from typing import ClassVar, List, Optional
 
 import numpy as np
@@ -23,20 +24,31 @@ class TorchCodecVideoDecoder(VideoDecoder, BaseVideoDecoder):
     Examples:
         >>> with TorchCodecVideoDecoder("video.mp4") as decoder:
         ...     batch = decoder.get_frames_played_at([0.0, 1.0, 2.0])
+
+    Thread-safety: cache lookup uses atomic ``try_acquire`` / ``try_add``
+    primitives, so concurrent constructors for the same source produce a
+    single cached instance with refs incremented per caller. Under
+    contention an extra fresh instance may be constructed and discarded
+    (its file handle is released by GC); functionally this is safe.
     """
 
     cache: ClassVar[ResourceCache[VideoDecoder]] = ResourceCache(max_size=10)
     _skip_init = False
 
     def __new__(cls, source: PathLike, **kwargs):
-        """Create or retrieve cached decoder instance."""
+        """Create or retrieve cached decoder instance.
+
+        Uses atomic ``try_acquire`` so that concurrent constructors do not
+        race the cache check. If the entry is absent, the fresh instance is
+        built outside the cache lock and only committed in :meth:`__init__`.
+        """
         cache_key = str(source)
-        if cache_key in cls.cache:
-            instance = cls.cache.acquire_entry(cache_key)
-            instance._skip_init = True
-        else:
-            instance = super().__new__(cls)
-            instance._skip_init = False
+        cached = cls.cache.try_acquire(cache_key)
+        if cached is not None:
+            cached._skip_init = True
+            return cached
+        instance = super().__new__(cls)
+        instance._skip_init = False
         return instance
 
     def __init__(self, source: PathLike, **kwargs):
@@ -44,8 +56,18 @@ class TorchCodecVideoDecoder(VideoDecoder, BaseVideoDecoder):
         if getattr(self, "_skip_init", False):
             return
         super().__init__(str(source), **kwargs)
-        self._cache_key = str(source)
-        self.cache.add_entry(self._cache_key, self, lambda: None)
+        self._close_lock = threading.Lock()
+        self._released = False
+        # Atomic try_add: returns False if a concurrent thread cached an
+        # instance for this key first. In that case the fresh instance is
+        # still functional for this caller, but it's not the cached one,
+        # so close() must not release_entry against the foreign cached
+        # instance.
+        cache_key = str(source)
+        if self.cache.try_add(cache_key, self, lambda: None):
+            self._cache_key = cache_key
+        else:
+            self._cache_key = None
 
     def get_frames_played_at(self, seconds: List[float]) -> FrameBatch:
         """Retrieve frames at specific timestamps.
@@ -111,6 +133,10 @@ class TorchCodecVideoDecoder(VideoDecoder, BaseVideoDecoder):
         )
 
     def close(self):
-        """Release cache reference. Safe to call multiple times."""
-        if hasattr(self, "_cache_key") and self._cache_key in self.cache and self.cache[self._cache_key].refs > 0:
+        """Release cache reference. Idempotent and thread-safe."""
+        with self._close_lock:
+            if self._released:
+                return
+            self._released = True
+        if self._cache_key is not None and self._cache_key in self.cache and self.cache[self._cache_key].refs > 0:
             self.cache.release_entry(self._cache_key)

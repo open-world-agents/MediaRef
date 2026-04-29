@@ -1,4 +1,5 @@
 import os
+import threading
 from typing import Literal, overload
 
 import av
@@ -37,20 +38,26 @@ def open(file: PathLike, mode: Literal["r", "w"], *, keep_av_open: bool = False,
         mode: Access mode ('r' for read, 'w' for write)
         keep_av_open: Enable caching for read containers
         **kwargs: Additional arguments passed to av.open
+
+    Thread-safety: when ``keep_av_open=True``, the cache lookup-and-insert
+    is atomic, so concurrent calls for the same ``file`` yield a single
+    cached container with refs incremented per caller.
     """
     if mode == "r":
         if not keep_av_open:
             # Direct access without caching
             return av.open(file, "r", **kwargs)
 
-        # Use cached container when keep_av_open=True
+        # Atomic get-or-create: factory builds a fresh MockedInputContainer
+        # only on the cache-miss path; concurrent callers receive the same
+        # instance with refs incremented.
         cache_key = str(file)
-        if cache_key not in _container_cache:
-            # Create new cached container
-            return MockedInputContainer(file, **kwargs)
-        else:
-            # Reuse existing cached container and increment reference count
-            return _container_cache.acquire_entry(cache_key)
+
+        def _factory():
+            container = MockedInputContainer(file, **kwargs)
+            return container, lambda: container.__exit__(None, None, None)
+
+        return _container_cache.get_or_add(cache_key, _factory)
     else:
         return av.open(file, mode, **kwargs)
 
@@ -61,18 +68,33 @@ def cleanup_cache():
 
 
 class MockedInputContainer(InputContainerMixin):
-    """Cached wrapper for PyAV InputContainer with reference counting."""
+    """Cached wrapper for PyAV InputContainer with reference counting.
+
+    Cache registration is performed by :func:`open` via
+    ``ResourceCache.get_or_add``; this class no longer self-registers in
+    its ``__init__``. ``close`` is idempotent — repeated calls on the
+    same instance release the cache reference at most once.
+    """
 
     def __init__(self, file: PathLike, **kwargs):
         self._cache_key = str(file)
         self._container: av.container.InputContainer = av.open(file, "r", **kwargs)
-        _container_cache.add_entry(self._cache_key, self)
+        self._close_lock = threading.Lock()
+        self._released = False
 
     def __enter__(self) -> "MockedInputContainer":
         return self
 
     def close(self):
-        """Release container reference and cleanup when no longer needed. Safe to call multiple times."""
+        """Release container reference and cleanup when no longer needed.
+
+        Idempotent and thread-safe: repeated calls after the first are
+        no-ops, even from different threads.
+        """
+        with self._close_lock:
+            if self._released:
+                return
+            self._released = True
         if self._cache_key in _container_cache and _container_cache[self._cache_key].refs > 0:
             _container_cache.release_entry(self._cache_key)
 
