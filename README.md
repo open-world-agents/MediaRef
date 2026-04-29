@@ -61,7 +61,7 @@ pip install 'mediaref[hf]'            # + HuggingFace datasets feature registrat
 pip install 'mediaref[video,hf]'      # all extras
 ```
 
-For UV: `uv add 'mediaref[video,hf]~=0.5.0'`. MediaRef follows [semantic versioning](https://semver.org/); patch releases are bug-only, minor releases are backward-compatible. The wire schema (`uri`, `pts_ns`) is frozen for the life of Spec 1.x.
+For UV: `uv add 'mediaref[video,hf]~=1.0'`. MediaRef follows [semantic versioning](https://semver.org/); patch releases are bug-only, minor releases are backward-compatible. The wire schema (`uri`, `pts_ns`) is frozen for the life of Spec 1.x.
 
 **Optional TorchCodec backend.** `batch_decode(refs, decoder="torchcodec")` uses TorchCodec for CUDA-accelerated decoding. TorchCodec ships its own FFmpeg shared-library expectations that may not match PyAV's bundled copies; if you see `libavcodec.so.NN: cannot open shared object file` after `pip install torchcodec`, repair the install with [`patch-torchcodec`](scripts/patch_torchcodec/) (it patches torchcodec's RPATH onto PyAV's bundled FFmpeg):
 
