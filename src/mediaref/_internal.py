@@ -1,9 +1,8 @@
 """Internal loading and encoding utilities."""
 
 import io
-from contextlib import contextmanager
 from pathlib import Path
-from typing import Iterator, Union
+from typing import Union
 from urllib.request import url2pathname
 
 import fsspec
@@ -65,21 +64,20 @@ def _resolve_to_local_path(uri: str) -> str:
     return path
 
 
-@contextmanager
-def open_media_source(uri: str) -> Iterator:
-    """Yield whatever the decoder layer can consume directly.
+def resolve_video_source(uri: str) -> str:
+    """Return the source string the video decoder layer can consume directly.
 
-    For fsspec-routed URIs (cloud, http(s), …): an open file-like.
-    For ``file://`` URIs and bare paths: a verified local path string.
+    For cloud URIs (``hf://``, ``s3://``, …) the URI is returned as-is — the
+    decoder layer (``cached_av``) opens fsspec internally and ties the
+    file-like's lifetime to its cache entry. For ``file://`` URIs and bare
+    paths, returns the verified local path string.
 
     Raises:
         FileNotFoundError: For local paths that don't exist.
     """
     if is_cloud_uri(uri):
-        with open_cloud(uri) as f:
-            yield f
-    else:
-        yield _resolve_to_local_path(uri)
+        return uri
+    return _resolve_to_local_path(uri)
 
 
 # ============================================================================
@@ -161,7 +159,8 @@ def load_video_frame_as_rgba(path_or_url: str, pts_ns: int) -> npt.NDArray[np.ui
     pts_seconds = pts_ns / NANOSECOND
 
     try:
-        with open_media_source(path_or_url) as source, PyAVVideoDecoder(source) as decoder:
+        source = resolve_video_source(path_or_url)
+        with PyAVVideoDecoder(source) as decoder:
             batch = decoder.get_frames_played_at([pts_seconds])
             rgb_nchw = batch.data[0]
             rgb_hwc = np.transpose(rgb_nchw, (1, 2, 0))
