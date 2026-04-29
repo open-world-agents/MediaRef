@@ -50,7 +50,14 @@ def open(file: PathLike, mode: Literal["r", "w"], *, keep_av_open: bool = False,
 
 
 def _open_cached(cache_key: str, file: PathLike, **kwargs) -> "MockedInputContainer":
-    """Atomic open-and-cache without serializing ``av.open`` across cache keys."""
+    """Atomic open-and-cache without serializing ``av.open`` across cache keys.
+
+    Cache hit fast path: a single ``try_acquire`` avoids opening the file at all.
+    On miss, the (potentially heavy) ``av.open`` runs *outside* the cache lock;
+    the result is committed via the atomic ``try_insert_or_acquire``, which closes
+    the race window where a concurrent insert+evict could otherwise vanish the
+    entry between two separate cache calls.
+    """
     cached = _container_cache.try_acquire(cache_key)
     if cached is not None:
         return cached
@@ -59,18 +66,15 @@ def _open_cached(cache_key: str, file: PathLike, **kwargs) -> "MockedInputContai
     # The eviction callback closes the underlying av container directly; routing through
     # ``MockedInputContainer.close`` would re-enter ``release`` on an entry that is
     # already being evicted.
-    if _container_cache.try_add(cache_key, container, lambda c=container: InputContainerMixin.close(c)):
+    canonical, was_added = _container_cache.try_insert_or_acquire(
+        cache_key, container, lambda c=container: InputContainerMixin.close(c)
+    )
+    if was_added:
         return container
-
-    # Lost the race: another thread inserted first. Discard our throwaway and acquire theirs.
+    # Lost the race: ``canonical`` is the winner's container with refs already incremented.
+    # Discard our throwaway.
     InputContainerMixin.close(container)
-    cached = _container_cache.try_acquire(cache_key)
-    if cached is not None:
-        return cached
-
-    # Pathological — the entry was inserted and then evicted (e.g. by a concurrent
-    # ``cleanup_cache()``) between our ``try_add`` failure and the second ``try_acquire``.
-    raise RuntimeError(f"cached_av.open: cache entry vanished mid-insert for {cache_key!r}")
+    return canonical
 
 
 def cleanup_cache():

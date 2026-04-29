@@ -47,12 +47,16 @@ class TorchCodecVideoDecoder(VideoDecoder, BaseVideoDecoder):
             return
         super().__init__(str(source), **kwargs)
         cache_key = str(source)
-        # ``try_add`` may return False if another thread cached a different instance for
-        # the same key first; in that case ``close`` must dispose of the underlying
-        # decoder directly rather than touch the cache.
-        if self.cache.try_add(cache_key, self, lambda: VideoDecoder.close(self)):
+        # ``__new__`` already returned ``self`` to the caller, so we cannot replace it
+        # with the canonical instance on race-loss. Instead, the loser releases the
+        # incidental ref it picked up from ``try_insert_or_acquire`` and keeps ``self``
+        # as an uncached decoder; ``close`` then disposes of the underlying decoder
+        # directly rather than touching the cache.
+        canonical, was_added = self.cache.try_insert_or_acquire(cache_key, self, lambda: VideoDecoder.close(self))
+        if was_added:
             self._cache_key = cache_key
         else:
+            self.cache.release(cache_key)
             self._cache_key = None
 
     def get_frames_played_at(self, seconds: List[float]) -> FrameBatch:

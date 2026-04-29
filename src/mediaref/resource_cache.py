@@ -5,7 +5,7 @@ import sys
 import threading
 import time
 from dataclasses import dataclass
-from typing import Callable, ContextManager, Dict, Generic, Optional, TypeVar
+from typing import Callable, ContextManager, Dict, Generic, Optional, Tuple, TypeVar
 
 from loguru import logger
 
@@ -28,8 +28,9 @@ class ResourceCache(Generic[T]):
     Public surface:
 
     Mutations (atomic, thread-safe):
-        - :meth:`try_add` — insert if absent (returns ``bool``).
         - :meth:`try_acquire` — increment refs if present (returns ``Optional[T]``).
+        - :meth:`try_insert_or_acquire` — atomic lazy-init: insert obj if absent or
+          acquire the existing canonical (returns ``(canonical, was_added)``).
         - :meth:`release` — decrement refs; raises ``KeyError`` if absent.
         - :meth:`evict` — forcefully remove regardless of refs (returns ``bool``).
         - :meth:`clear` — remove all entries.
@@ -45,13 +46,19 @@ class ResourceCache(Generic[T]):
 
     Eviction (LRU sweep, :meth:`evict`, :meth:`clear`) invokes the registered
     ``cleanup_callback`` for each removed entry. Pass ``cleanup_callback=None``
-    to :meth:`try_add` to fall back to ``obj.__exit__(None, None, None)``;
+    to :meth:`try_insert_or_acquire` to fall back to ``obj.__exit__(None, None, None)``;
     the object must then implement the context-manager protocol.
 
+    The two atomic mutation primitives cover disjoint caller intents:
+
+      ``try_acquire``: caller has no obj, only wants to know if one is cached.
+      ``try_insert_or_acquire``: caller has built an obj and wants either to
+        commit it as the canonical entry or to receive the existing canonical.
+
     Strict variants (e.g. "raise on miss") are intentionally not provided —
-    compose them at the call site with ``if not cache.try_add(...): raise ...``
-    or ``if (x := cache.try_acquire(...)) is None: raise ...``. This keeps
-    the primitive surface minimal.
+    compose them at the call site with
+    ``if (x := cache.try_acquire(...)) is None: raise ...``. This keeps the
+    primitive surface minimal.
     """
 
     def __init__(self, max_size: int = 0):
@@ -75,19 +82,11 @@ class ResourceCache(Generic[T]):
     # Mutations
     # ------------------------------------------------------------------
 
-    def try_add(self, key: str, obj: T, cleanup_callback: Optional[Callable] = None) -> bool:
-        """Atomically insert a new entry with refs=1. Returns True if added, False if the key already exists."""
-        with self._lock:
-            if key in self._entries:
-                return False
-            if cleanup_callback is None:
-                cleanup_callback = self._default_cleanup(obj)
-            self._entries[key] = _Entry(obj=obj, cleanup_callback=cleanup_callback, refs=1, last_used=time.time())
-            logger.debug(f"cache add: {key=}, total={len(self._entries)}")
-            return True
-
     def try_acquire(self, key: str) -> Optional[T]:
-        """Atomically increment refs and return the object, or ``None`` if the key is absent."""
+        """Atomically increment refs and return the object, or ``None`` if the key is absent.
+
+        Caller MUST call :meth:`release` for any non-``None`` return.
+        """
         with self._lock:
             entry = self._entries.get(key)
             if entry is None:
@@ -95,6 +94,34 @@ class ResourceCache(Generic[T]):
             entry.refs += 1
             entry.last_used = time.time()
             return entry.obj
+
+    def try_insert_or_acquire(
+        self,
+        key: str,
+        obj: T,
+        cleanup_callback: Optional[Callable] = None,
+    ) -> Tuple[T, bool]:
+        """Atomic lazy-init.
+
+        - If absent: insert ``obj`` with refs=1 and return ``(obj, True)``.
+        - If present: increment refs and return ``(existing, False)``.
+
+        The caller MUST call :meth:`release` in either case (one acquire =
+        one release). When ``was_added`` is ``False``, the caller MUST also
+        discard their own ``obj`` (close handles, free memory) — the cached
+        canonical is something else.
+        """
+        with self._lock:
+            entry = self._entries.get(key)
+            if entry is not None:
+                entry.refs += 1
+                entry.last_used = time.time()
+                return entry.obj, False
+            if cleanup_callback is None:
+                cleanup_callback = self._default_cleanup(obj)
+            self._entries[key] = _Entry(obj=obj, cleanup_callback=cleanup_callback, refs=1, last_used=time.time())
+            logger.debug(f"cache add: {key=}, total={len(self._entries)}")
+            return obj, True
 
     def release(self, key: str) -> None:
         """Decrement refs of an entry. Raises ``KeyError`` if the key is absent.

@@ -1,7 +1,7 @@
 """Behavioral and thread-safety tests for :class:`mediaref.resource_cache.ResourceCache`.
 
 The cache exposes a minimal-yet-complete primitive surface:
-``try_add`` / ``try_acquire`` / ``release`` / ``evict`` / ``clear`` plus
+``try_acquire`` / ``try_insert_or_acquire`` / ``release`` / ``evict`` / ``clear`` plus
 inspection (``__contains__`` / ``__len__`` / ``refs``). All mutations are
 serialized through an internal RLock; tests cover both the
 single-threaded contract and contended workloads.
@@ -43,38 +43,49 @@ def _wait_then(barrier: threading.Barrier, fn):
     return fn()
 
 
+def _seed(cache: ResourceCache[_Resource], key: str, name: str = "r") -> _Resource:
+    """Insert a fresh resource into ``cache`` with refs=1 and return it."""
+    r = _Resource(name)
+    cached, was_added = cache.try_insert_or_acquire(key, r)
+    assert was_added and cached is r
+    return r
+
+
 # ---------------------------------------------------------------------------
 # Single-threaded contract
 # ---------------------------------------------------------------------------
 
 
 class TestBasicContract:
-    def test_try_add_inserts_when_absent(self):
-        cache: ResourceCache[_Resource] = ResourceCache()
-        assert cache.try_add("k", _Resource()) is True
-        assert "k" in cache
-        assert cache.refs("k") == 1
-
-    def test_try_add_returns_false_on_collision(self):
-        cache: ResourceCache[_Resource] = ResourceCache()
-        cache.try_add("k", _Resource())
-        assert cache.try_add("k", _Resource()) is False
-        assert cache.refs("k") == 1  # the existing entry's refs unchanged
-
-    def test_try_acquire_increments_refs(self):
-        cache: ResourceCache[_Resource] = ResourceCache()
-        r = _Resource()
-        cache.try_add("k", r)
-        assert cache.try_acquire("k") is r
-        assert cache.refs("k") == 2
-
     def test_try_acquire_returns_none_when_absent(self):
         cache: ResourceCache[_Resource] = ResourceCache()
         assert cache.try_acquire("absent") is None
 
+    def test_try_acquire_increments_refs(self):
+        cache: ResourceCache[_Resource] = ResourceCache()
+        r = _seed(cache, "k")
+        assert cache.try_acquire("k") is r
+        assert cache.refs("k") == 2
+
+    def test_try_insert_or_acquire_inserts_when_absent(self):
+        cache: ResourceCache[_Resource] = ResourceCache()
+        r = _Resource()
+        canonical, was_added = cache.try_insert_or_acquire("k", r)
+        assert canonical is r and was_added is True
+        assert cache.refs("k") == 1
+
+    def test_try_insert_or_acquire_returns_existing_on_collision(self):
+        cache: ResourceCache[_Resource] = ResourceCache()
+        first = _seed(cache, "k", "first")
+        second = _Resource("second")
+        canonical, was_added = cache.try_insert_or_acquire("k", second)
+        assert canonical is first and was_added is False
+        # collision path increments refs (caller is responsible for releasing).
+        assert cache.refs("k") == 2
+
     def test_release_decrements(self):
         cache: ResourceCache[_Resource] = ResourceCache()
-        cache.try_add("k", _Resource())
+        _seed(cache, "k")
         cache.try_acquire("k")
         cache.release("k")
         assert cache.refs("k") == 1
@@ -88,8 +99,7 @@ class TestBasicContract:
 
     def test_evict_removes_and_returns_true(self):
         cache: ResourceCache[_Resource] = ResourceCache()
-        r = _Resource()
-        cache.try_add("k", r)
+        r = _seed(cache, "k")
         assert cache.evict("k") is True
         assert "k" not in cache
         assert r.closed is True
@@ -102,7 +112,7 @@ class TestBasicContract:
         """``evict`` is forceful — it does not respect ref counts."""
         cache: ResourceCache[object] = ResourceCache()
         closed: List[str] = []
-        cache.try_add("k", object(), lambda: closed.append("k"))
+        cache.try_insert_or_acquire("k", object(), lambda: closed.append("k"))
         cache.try_acquire("k")  # refs=2
         assert cache.evict("k") is True
         assert closed == ["k"]
@@ -110,21 +120,18 @@ class TestBasicContract:
 
     def test_clear_invokes_all_cleanups(self):
         cache: ResourceCache[_Resource] = ResourceCache()
-        resources = [_Resource(f"r{i}") for i in range(5)]
-        for i, r in enumerate(resources):
-            cache.try_add(f"k{i}", r)
+        resources = [_seed(cache, f"k{i}", f"r{i}") for i in range(5)]
         cache.clear()
         assert all(r.closed for r in resources)
         assert len(cache) == 0
 
     def test_lru_eviction_skips_referenced(self):
         cache: ResourceCache[_Resource] = ResourceCache(max_size=2)
-        r1, r2, r3 = _Resource("1"), _Resource("2"), _Resource("3")
-        cache.try_add("k1", r1)
+        _seed(cache, "k1", "1")
         cache.try_acquire("k1")  # refs=2; never evictable
-        cache.try_add("k2", r2)
+        _seed(cache, "k2", "2")
         cache.release("k2")  # refs=0, evictable
-        cache.try_add("k3", r3)
+        _seed(cache, "k3", "3")
         cache.release("k3")  # triggers cleanup; size>max
         # k1 stays (still referenced); the older of {k2, k3} drops.
         assert "k1" in cache
@@ -140,16 +147,16 @@ class TestInspection:
     def test_len_tracks_entries(self):
         cache: ResourceCache[_Resource] = ResourceCache()
         assert len(cache) == 0
-        cache.try_add("a", _Resource())
+        _seed(cache, "a")
         assert len(cache) == 1
-        cache.try_add("b", _Resource())
+        _seed(cache, "b")
         assert len(cache) == 2
         cache.evict("a")
         assert len(cache) == 1
 
     def test_contains_reflects_membership(self):
         cache: ResourceCache[_Resource] = ResourceCache()
-        cache.try_add("k", _Resource())
+        _seed(cache, "k")
         assert "k" in cache
         cache.evict("k")
         assert "k" not in cache
@@ -160,7 +167,7 @@ class TestInspection:
 
     def test_refs_tracks_acquires_and_releases(self):
         cache: ResourceCache[_Resource] = ResourceCache()
-        cache.try_add("k", _Resource())
+        _seed(cache, "k")
         cache.try_acquire("k")
         cache.try_acquire("k")
         assert cache.refs("k") == 3
@@ -176,15 +183,14 @@ class TestInspection:
 class TestDefaultCleanupCallback:
     def test_default_callback_calls_exit(self):
         cache: ResourceCache[_Resource] = ResourceCache()
-        r = _Resource()
-        cache.try_add("k", r)  # default callback uses obj.__exit__
+        r = _seed(cache, "k")  # default callback uses obj.__exit__
         cache.evict("k")
         assert r.closed is True
 
     def test_default_callback_requires_context_manager(self):
         cache: ResourceCache[object] = ResourceCache()
         with pytest.raises(ValueError):
-            cache.try_add("k", object())  # plain object lacks __exit__
+            cache.try_insert_or_acquire("k", object())  # plain object lacks __exit__
 
 
 # ---------------------------------------------------------------------------
@@ -201,26 +207,26 @@ class TestCleanupCallback:
     def test_evict_invokes_custom_cleanup_callback(self):
         cache: ResourceCache[object] = ResourceCache()
         closed: List[str] = []
-        cache.try_add("k", object(), lambda: closed.append("k"))
+        cache.try_insert_or_acquire("k", object(), lambda: closed.append("k"))
         cache.evict("k")
         assert closed == ["k"]
 
     def test_clear_invokes_custom_cleanup_callback(self):
         cache: ResourceCache[object] = ResourceCache()
         closed: List[str] = []
-        cache.try_add("a", object(), lambda: closed.append("a"))
-        cache.try_add("b", object(), lambda: closed.append("b"))
+        cache.try_insert_or_acquire("a", object(), lambda: closed.append("a"))
+        cache.try_insert_or_acquire("b", object(), lambda: closed.append("b"))
         cache.clear()
         assert sorted(closed) == ["a", "b"]
 
     def test_lru_eviction_invokes_custom_cleanup_callback(self):
         cache: ResourceCache[object] = ResourceCache(max_size=2)
         closed: List[str] = []
-        cache.try_add("a", object(), lambda: closed.append("a"))
+        cache.try_insert_or_acquire("a", object(), lambda: closed.append("a"))
         cache.release("a")  # refs=0, evictable
-        cache.try_add("b", object(), lambda: closed.append("b"))
+        cache.try_insert_or_acquire("b", object(), lambda: closed.append("b"))
         cache.release("b")  # refs=0, evictable
-        cache.try_add("c", object(), lambda: closed.append("c"))
+        cache.try_insert_or_acquire("c", object(), lambda: closed.append("c"))
         cache.release("c")  # triggers LRU cleanup; size>max
         assert "a" in closed  # oldest unreferenced was evicted
         assert "a" not in cache
@@ -239,7 +245,7 @@ class TestCleanupCallback:
             except KeyError:
                 observations.append("missing")
 
-        cache.try_add("k", object(), reentrant_callback)
+        cache.try_insert_or_acquire("k", object(), reentrant_callback)
         cache.evict("k")
         assert "k" not in cache
         assert len(observations) == 1
@@ -252,23 +258,32 @@ class TestCleanupCallback:
 
 class TestThreadSafety:
     @pytest.mark.parametrize("n_threads", [50])
-    def test_concurrent_try_add_exactly_one_succeeds(self, n_threads):
+    def test_concurrent_try_insert_exactly_one_added(self, n_threads):
+        """N threads racing for the same fresh key: exactly one's obj is
+        committed (was_added=True); the others receive the winner's instance.
+        """
         cache: ResourceCache[_Resource] = ResourceCache()
         barrier = threading.Barrier(n_threads)
 
         def attempt(_):
-            return _wait_then(barrier, lambda: cache.try_add("k", _Resource()))
+            return _wait_then(barrier, lambda: cache.try_insert_or_acquire("k", _Resource()))
 
         with ThreadPoolExecutor(max_workers=n_threads) as ex:
             results = list(ex.map(attempt, range(n_threads)))
 
-        assert sum(results) == 1
-        assert cache.refs("k") == 1
+        added = [r for r in results if r[1] is True]
+        not_added = [r for r in results if r[1] is False]
+        assert len(added) == 1
+        assert len(not_added) == n_threads - 1
+        winner = added[0][0]
+        assert all(r[0] is winner for r in not_added)
+        # Every caller got refs incremented (each holds a ref to release).
+        assert cache.refs("k") == n_threads
 
     @pytest.mark.parametrize("n_threads", [100])
     def test_concurrent_acquire_increments_correctly(self, n_threads):
         cache: ResourceCache[_Resource] = ResourceCache()
-        cache.try_add("k", _Resource())
+        _seed(cache, "k")
         starting_refs = cache.refs("k")
 
         barrier = threading.Barrier(n_threads)
@@ -280,7 +295,7 @@ class TestThreadSafety:
     @pytest.mark.parametrize("n_threads", [100])
     def test_concurrent_release_decrements_correctly(self, n_threads):
         cache: ResourceCache[_Resource] = ResourceCache()
-        cache.try_add("k", _Resource())
+        _seed(cache, "k")
         for _ in range(n_threads):
             cache.try_acquire("k")
         starting_refs = cache.refs("k")
@@ -292,10 +307,9 @@ class TestThreadSafety:
         assert cache.refs("k") == starting_refs - n_threads
 
     def test_concurrent_mix_does_not_crash(self):
-        """Stress test mixing add / acquire / release / evict / clear from
-        many threads. No specific final state asserted — just that no thread
-        raises and internal invariants hold (ref counts stay integer-valued,
-        no exceptions escape outside the documented contract).
+        """Stress test mixing try_insert_or_acquire / try_acquire / release / evict /
+        clear from many threads. No specific final state asserted — just that no
+        thread raises and the documented contract is upheld.
         """
         cache: ResourceCache[_Resource] = ResourceCache(max_size=20)
         keys = [f"k{i}" for i in range(50)]
@@ -307,7 +321,9 @@ class TestThreadSafety:
                     k = keys[(seed + i) % len(keys)]
                     op = i % 5
                     if op == 0:
-                        cache.try_add(k, _Resource(k))
+                        _, was_added = cache.try_insert_or_acquire(k, _Resource(k))
+                        if not was_added:
+                            cache.release(k)  # discard the unwanted ref
                     elif op == 1:
                         cache.try_acquire(k)
                     elif op == 2:
@@ -333,35 +349,36 @@ class TestThreadSafety:
 
 
 # ---------------------------------------------------------------------------
-# Lazy-init pattern (composed from try_acquire + try_add at the call site)
+# Lazy-init pattern (the canonical caller composition)
 # ---------------------------------------------------------------------------
 
 
 class TestLazyInitPattern:
-    """The cache deliberately omits a ``get_or_add`` primitive — the lazy-init
-    pattern is composed by the caller. These tests pin down what that
-    composition looks like, including the contended case where two threads
-    both build a value for the same key.
+    """The lazy-init pattern is what production callers (cached_av,
+    TorchCodecVideoDecoder) compose on top of the primitives. Pin the
+    composition explicitly so it survives future refactors.
     """
 
     @staticmethod
     def _get_or_create(cache: ResourceCache[_Resource], key: str, factory):
-        """Reference implementation of the lazy-init pattern.
+        """Reference impl. Heavy construction runs *outside* the cache lock.
 
-        Heavy construction runs *outside* the cache lock, so concurrent
-        ``_get_or_create`` calls for *different* keys do not serialize. For the
-        same key, the loser of the ``try_add`` race discards its throwaway
-        and acquires the winner's entry on the next iteration.
+        Calls ``try_acquire`` first for the cache-hit fast path; on miss
+        builds via ``factory()`` and atomically commits via
+        ``try_insert_or_acquire``. On race-loss the caller's throwaway is
+        discarded and the canonical entry (already ref-incremented for this
+        caller) is returned.
         """
-        for _ in range(8):
-            cached = cache.try_acquire(key)
-            if cached is not None:
-                return cached
-            obj = factory()
-            if cache.try_add(key, obj):
-                return obj
-            obj.__exit__(None, None, None)
-        raise RuntimeError(f"persistent contention for {key!r}")
+        cached = cache.try_acquire(key)
+        if cached is not None:
+            return cached
+        obj = factory()
+        canonical, was_added = cache.try_insert_or_acquire(key, obj)
+        if was_added:
+            return obj
+        # Lost the race: discard our throwaway, return the winner's canonical.
+        obj.__exit__(None, None, None)
+        return canonical
 
     def test_factory_runs_only_once_under_contention(self):
         cache: ResourceCache[_Resource] = ResourceCache()
@@ -387,8 +404,8 @@ class TestLazyInitPattern:
         # Every thread sees the same final cached object.
         assert all(r is results[0] for r in results)
         assert cache.refs("k") == n_threads
-        # Some throwaways are expected under contention, but the cache holds exactly one.
         assert len(cache) == 1
+        # Some throwaways are expected under contention; at least one factory call.
         assert factory_calls >= 1
 
 
@@ -407,7 +424,7 @@ class TestSharedInstanceCloseSemantics:
         """
         n_owners = 32
         cache: ResourceCache[_Resource] = ResourceCache()
-        cache.try_add("k", _Resource(), lambda: None)
+        cache.try_insert_or_acquire("k", _Resource(), lambda: None)
         for _ in range(n_owners - 1):
             cache.try_acquire("k")
         assert cache.refs("k") == n_owners
