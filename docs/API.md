@@ -164,8 +164,9 @@ frames = batch_decode(refs, decoder="torchcodec")    # GPU-accelerated
 | Backend | PyAV (FFmpeg) | TorchCodec (FFmpeg) |
 | Acceleration | CPU only | CUDA |
 | Install | `pip install 'mediaref[video]'` | `pip install torchcodec` separately (see note) |
+| URI schemes | any fsspec-routable URI (`file://`, bare path, `http(s)://`, `s3://`, `gs://`, `hf://`, `memory://`, …) — opened via fsspec inside `cached_av` | only what FFmpeg natively understands: file paths, `file://`, `http(s)://`, `rtsp://`. **No fsspec dispatch** — `s3://`, `gs://`, `hf://`, etc. fail at the FFmpeg layer. Use `decoder="pyav"` for those. |
 
-Both backends share unified [playback semantics](playback_semantics.md), so a given `pts_ns` returns the same frame regardless of decoder.
+Both backends share unified [playback semantics](playback_semantics.md), so a given `pts_ns` (when supported by both) returns the same frame regardless of decoder.
 
 **TorchCodec install note.** TorchCodec links against its own FFmpeg shared libraries, which often don't match the FFmpeg version PyAV bundles. If `from mediaref.video_decoder import TorchCodecVideoDecoder` (or a `decoder="torchcodec"` call) raises `libavcodec.so.NN: cannot open shared object file`, repair the install by patching torchcodec's RPATH onto PyAV's bundled FFmpeg:
 
