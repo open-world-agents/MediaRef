@@ -16,6 +16,15 @@ authors:
 repository-code: "https://github.com/open-world-agents/MediaRef"
 url: "https://github.com/open-world-agents/MediaRef"
 license: MIT
+version: 1.0.0
+date-released: 2026-04-29
+identifiers:
+  - type: doi
+    value: 10.5281/zenodo.19892316
+    description: "Zenodo concept DOI (always resolves to latest release)"
+  - type: doi
+    value: 10.5281/zenodo.19892317
+    description: "Zenodo DOI for v1.0.0"
 keywords:
   - video
   - dataset
@@ -25,10 +34,3 @@ keywords:
   - video-frame
   - data-uri
   - mcap
-# After enabling Zenodo integration and cutting the first GitHub Release,
-# replace this `identifiers` block with the Zenodo-issued DOI:
-#
-# identifiers:
-#   - type: doi
-#     value: 10.5281/zenodo.XXXXXXX
-#     description: "Zenodo concept DOI (always resolves to latest release)"
