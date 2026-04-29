@@ -91,7 +91,7 @@ If you reference MediaRef in writing, the [`CITATION.cff`](CITATION.cff) file at
   author = {Choi, Suhwan},
   title  = {MediaRef: a portable frame-level media reference primitive},
   url    = {https://github.com/open-world-agents/MediaRef},
-  year   = {2026}
+  year   = {2025}
 }
 ```
 
