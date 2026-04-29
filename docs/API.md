@@ -21,12 +21,15 @@ class MediaRef(BaseModel):
 A two-field Pydantic v2 model. URIs follow [RFC 3986](https://datatracker.ietf.org/doc/html/rfc3986); `pts_ns` is an int64 nanosecond presentation timestamp. See [`SPEC.md`](SPEC.md) for the wire-format specification.
 
 ```python
-from mediaref import MediaRef
+from mediaref import MediaRef, DataURI
 
 ref = MediaRef(uri="image.png")
 ref = MediaRef(uri="https://example.com/img.jpg")
 ref = MediaRef(uri="s3://bucket/clip.mp4", pts_ns=1_500_000_000)
 ref = MediaRef(uri="data:image/png;base64,iVBORw0…")
+
+# A DataURI instance is accepted directly — its `uri` string is extracted.
+ref = MediaRef(uri=DataURI.from_image(rgb, format="png"))
 ```
 
 ### Properties
@@ -36,7 +39,8 @@ ref = MediaRef(uri="data:image/png;base64,iVBORw0…")
 | `is_embedded` | `bool` | True if the URI is a `data:` URI carrying embedded bytes. |
 | `is_video` | `bool` | True if `pts_ns is not None`. |
 | `is_remote` | `bool` | True if the URI is `http://` or `https://`. |
-| `is_relative_path` | `bool` | True if the URI is a relative POSIX path. |
+| `is_cloud_uri` | `bool` | True if the URI is delegated to fsspec (any scheme other than `file:` / `data:` / bare path — includes `http(s)://`, `s3://`, `gs://`, `hf://`, …). Overlaps with `is_remote` on http(s). |
+| `is_relative_path` | `bool` | True if the URI is a relative path (not absolute, not a URI scheme). Uses platform-specific path semantics — behavior differs on Windows vs POSIX. |
 
 ### Methods
 
@@ -215,7 +219,22 @@ ds.save_to_disk("path/to/ds")
 load_from_disk("path/to/ds")[0]["frame"].to_ndarray()  # round-trips as MediaRef
 ```
 
-`push_to_hub` / `load_dataset` round-trip identically. Pass `MediaRefFeature(decode=False)` to receive the raw `{"uri", "pts_ns"}` dict instead of a `MediaRef` instance.
+`push_to_hub` / `load_dataset` round-trip identically.
+
+### `MediaRefFeature`
+
+```python
+@dataclass
+class MediaRefFeature:
+    decode: bool = True
+```
+
+| Field / method | Description |
+| --- | --- |
+| `decode` (default `True`) | When `True`, accessing a column returns a `MediaRef` instance. When `False`, returns the raw `{"uri": ..., "pts_ns": ...}` dict — useful for deferring object construction or feeding values straight into PyArrow compute. |
+| `pa_type` | Arrow storage type: `struct<uri: string, pts_ns: int64>`. |
+| `encode_example(value)` | Accepts a `MediaRef` or a dict; emits the canonical struct dict for storage. |
+| `decode_example(value)` | The inverse — used by `datasets` on row access. Honors `self.decode`. |
 
 ### Required: register the feature in the consumer process
 
@@ -247,6 +266,8 @@ refs = lerobot_episode_to_refs(
 )
 ```
 
+`to_videoframe` raises `ValueError` if `ref.pts_ns is None` (still-image MediaRefs can't be expressed as a `VideoFrame`, which always carries a timestamp).
+
 ---
 
 ## CLI
@@ -259,4 +280,7 @@ The `mediaref` CLI handles environment-level concerns:
 | `mediaref disable-hf-feature` | Reverse the patch. |
 | `mediaref status` | Show whether the patch is currently applied. |
 
-Re-run `enable-hf-feature` after `pip upgrade datasets` (the upgrade overwrites the patched file).
+Caveats:
+
+- Re-run `enable-hf-feature` after `pip upgrade datasets` — the upgrade overwrites the patched file.
+- The patch writes to the `datasets` package inside site-packages. In a system Python or [PEP 668](https://peps.python.org/pep-0668/) environment, the write will fail with `PermissionError`; install MediaRef in a virtualenv or user-writable environment first.

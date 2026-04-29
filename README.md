@@ -95,6 +95,14 @@ If you reference MediaRef in writing, the [`CITATION.cff`](CITATION.cff) file at
 }
 ```
 
+<!--
+## Roadmap
+
+- [ ] **msgspec backend** — replace the Pydantic v2 model with [msgspec](https://jcristharif.com/msgspec/) for faster (de)serialization while keeping the wire format identical.
+- [ ] **Audio support** — extend MediaRef to audio references (timestamp-based extraction).
+- [ ] **Additional video decoders** — OpenCV, decord, etc., behind the same `batch_decode(decoder=...)` interface.
+-->
+
 ## Acknowledgments
 
 The video decoder interface design references [TorchCodec](https://github.com/pytorch/torchcodec)'s API design.
