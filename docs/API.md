@@ -207,6 +207,14 @@ frames = batch_decode(refs)
 
 `fsspec` is a core dependency. Each cloud backend (`s3fs` for `s3://`, `gcsfs` for `gs://`, `huggingface_hub` for `hf://`, `adlfs` for `az://`/`abfs://`, …) must be installed separately for the schemes it serves; fsspec raises a clear error otherwise.
 
+**Credentials and per-backend configuration.** MediaRef opens cloud URIs with the default fsspec configuration — it does not currently expose a `storage_options=` parameter on its public API. Use any mechanism fsspec already supports:
+
+- environment variables — e.g. `AWS_ACCESS_KEY_ID` / `AWS_SECRET_ACCESS_KEY` for `s3fs`, `HF_TOKEN` for `huggingface_hub`, `GOOGLE_APPLICATION_CREDENTIALS` for `gcsfs`;
+- per-user config files — `~/.aws/credentials`, `~/.config/gcloud/...`, `~/.cache/huggingface/token`;
+- programmatic registration — `fsspec.config.set(...)` or backend-specific kwargs registered globally before calling `to_ndarray` / `batch_decode`.
+
+For the common public-bucket case (e.g. the D2E HuggingFace datasets) no configuration is required.
+
 ---
 
 ## HuggingFace `datasets` integration
