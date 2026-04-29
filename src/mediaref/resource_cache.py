@@ -25,13 +25,12 @@ class CacheEntry(Generic[T]):
 class ResourceCache(Generic[T], Dict[str, CacheEntry[T]]):
     """Thread-safe reference-counted resource cache with LRU eviction.
 
-    All mutating operations and compound check-then-act primitives are
-    serialized through an internal :class:`threading.RLock`. Read-only
-    Dict accesses (``key in cache``, ``cache[key]``) inherit Python's
-    GIL-level atomicity but are *not* lock-protected — call sites that
-    need check-then-act semantics must use :meth:`try_acquire`,
-    :meth:`try_add`, or :meth:`get_or_add` instead of composing
-    ``__contains__`` and :meth:`acquire_entry` themselves.
+    All mutating operations and compound check-then-act primitives are serialized through
+    an internal :class:`threading.RLock`. Read-only Dict accesses (``key in cache``,
+    ``cache[key]``) inherit Python's GIL-level atomicity but are *not* lock-protected —
+    call sites that need check-then-act semantics must use :meth:`try_acquire`,
+    :meth:`try_add`, or :meth:`get_or_add` rather than composing ``__contains__`` and
+    :meth:`acquire_entry` themselves.
     """
 
     def __init__(self, *args, max_size: int = 0, **kwargs):
@@ -52,100 +51,83 @@ class ResourceCache(Generic[T], Dict[str, CacheEntry[T]]):
             raise ValueError(f"Object {obj} does not implement context manager protocol")
         return lambda: obj.__exit__(None, None, None)
 
+    # ------------------------------------------------------------------
+    # Internal lock-held helpers
+    # ------------------------------------------------------------------
+
+    def _insert_locked(self, key: str, obj: T, cleanup_callback: Optional[Callable]) -> None:
+        """Insert a new entry with refs=1. Caller must hold ``self._lock``."""
+        if cleanup_callback is None:
+            cleanup_callback = self._default_cleanup(obj)
+        self[key] = CacheEntry(obj=obj, cleanup_callback=cleanup_callback, refs=1, last_used=time.time())
+        logger.debug(f"cache add: {key=}, total={len(self)}")
+
+    def _acquire_locked(self, key: str) -> T:
+        """Increment refs of an existing entry and return its object. Caller must hold ``self._lock``."""
+        entry = self[key]
+        entry.refs += 1
+        entry.last_used = time.time()
+        return entry.obj
+
+    # ------------------------------------------------------------------
+    # Public API
+    # ------------------------------------------------------------------
+
     def add_entry(self, key: str, obj: T, cleanup_callback: Optional[Callable] = None):
         """Add new entry with refs=1. Raises ``ValueError`` if key already exists.
 
-        Thread-safe. Prefer :meth:`try_add` or :meth:`get_or_add` from
-        concurrent code paths to avoid the check-then-add race.
+        Thread-safe. Prefer :meth:`try_add` or :meth:`get_or_add` from concurrent
+        code paths to avoid the check-then-add race.
         """
         with self._lock:
             if key in self:
                 raise ValueError(f"Entry {key} already exists. Use acquire_entry() to increment refs.")
-            if cleanup_callback is None:
-                cleanup_callback = self._default_cleanup(obj)
-            self[key] = CacheEntry(obj=obj, cleanup_callback=cleanup_callback, refs=1, last_used=time.time())
-            logger.info(f"Added entry to cache: {key=}, total {len(self)}")
-            logger.debug(f"Cache entry for {key=} has {self[key].refs=}")
+            self._insert_locked(key, obj, cleanup_callback)
 
-    def try_add(
-        self,
-        key: str,
-        obj: T,
-        cleanup_callback: Optional[Callable] = None,
-    ) -> bool:
-        """Atomically add entry only if key is absent. Thread-safe.
-
-        Returns True if added, False if key already exists.
-        """
+    def try_add(self, key: str, obj: T, cleanup_callback: Optional[Callable] = None) -> bool:
+        """Atomically add entry only if key is absent. Returns True if added. Thread-safe."""
         with self._lock:
             if key in self:
                 return False
-            if cleanup_callback is None:
-                cleanup_callback = self._default_cleanup(obj)
-            self[key] = CacheEntry(obj=obj, cleanup_callback=cleanup_callback, refs=1, last_used=time.time())
-            logger.info(f"Added entry to cache: {key=}, total {len(self)}")
+            self._insert_locked(key, obj, cleanup_callback)
             return True
 
     def acquire_entry(self, key: str) -> T:
-        """Increment refs and return cached object. Raises ``KeyError`` if not found.
-
-        Thread-safe.
-        """
+        """Increment refs and return cached object. Raises ``KeyError`` if not found. Thread-safe."""
         with self._lock:
             if key not in self:
                 raise KeyError(f"Entry {key} not found in cache")
-            self[key].refs += 1
-            self[key].last_used = time.time()
-            logger.debug(f"Acquired entry: {key=}, {self[key].refs=}")
-            return self[key].obj
+            return self._acquire_locked(key)
 
     def try_acquire(self, key: str) -> Optional[T]:
-        """Atomic check-and-acquire. Thread-safe.
-
-        Returns the cached object with refs incremented if present, else
-        ``None``. Replaces the racy ``key in cache; cache.acquire_entry(key)``
-        composition.
-        """
+        """Atomic check-and-acquire. Returns the object with refs incremented, or ``None`` if absent."""
         with self._lock:
             if key not in self:
                 return None
-            self[key].refs += 1
-            self[key].last_used = time.time()
-            return self[key].obj
+            return self._acquire_locked(key)
 
-    def get_or_add(
-        self,
-        key: str,
-        factory: Callable[[], Tuple[T, Optional[Callable]]],
-    ) -> T:
-        """Atomically acquire if present, else create via ``factory()`` and add.
+    def get_or_add(self, key: str, factory: Callable[[], Tuple[T, Optional[Callable]]]) -> T:
+        """Atomically acquire if present, else create via ``factory()`` and add. Thread-safe.
 
-        ``factory()`` must return ``(obj, cleanup_callback)``; the callback
-        may be ``None`` to fall back to the context-manager default. The
-        factory is invoked while the cache lock is held — keep it cheap.
-        For heavy construction that should not serialize across cache keys,
-        use :meth:`try_acquire` followed by an unlocked construction and
-        :meth:`try_add` to commit.
-
-        Thread-safe.
+        ``factory()`` must return ``(obj, cleanup_callback)``; the callback may be ``None``
+        to fall back to the context-manager default. The factory is invoked while the cache
+        lock is held — keep it cheap. For heavy construction that should not serialize
+        across cache keys, use :meth:`try_acquire` followed by an unlocked construction
+        and :meth:`try_add` to commit.
         """
         with self._lock:
             if key in self:
-                self[key].refs += 1
-                self[key].last_used = time.time()
-                return self[key].obj
+                return self._acquire_locked(key)
             obj, cleanup_callback = factory()
-            if cleanup_callback is None:
-                cleanup_callback = self._default_cleanup(obj)
-            self[key] = CacheEntry(obj=obj, cleanup_callback=cleanup_callback, refs=1, last_used=time.time())
-            logger.info(f"Added entry to cache via factory: {key=}, total {len(self)}")
+            self._insert_locked(key, obj, cleanup_callback)
             return obj
 
     def release_entry(self, key: str):
         """Decrement refs and trigger LRU cleanup if needed. Thread-safe."""
         with self._lock:
-            self[key].refs -= 1
-            logger.debug(f"Released entry: {key=}, {self[key].refs=}")
+            entry = self[key]
+            entry.refs -= 1
+            logger.debug(f"cache release: {key=}, refs={entry.refs}")
             self._cleanup_if_needed()
 
     def pop(self, key: str, default: Optional[CacheEntry[T]] = None) -> Optional[CacheEntry[T]]:  # type: ignore[override]
@@ -153,7 +135,7 @@ class ResourceCache(Generic[T], Dict[str, CacheEntry[T]]):
         with self._lock:
             if key in self:
                 self[key].cleanup_callback()
-            logger.info(f"Popped entry from cache: {key=}, total {len(self)}")
+            logger.debug(f"cache pop: {key=}, total={len(self) - (1 if key in self else 0)}")
             return super().pop(key, default)
 
     def clear(self):
@@ -161,7 +143,7 @@ class ResourceCache(Generic[T], Dict[str, CacheEntry[T]]):
         with self._lock:
             for entry in self.values():
                 entry.cleanup_callback()
-            logger.info(f"Cache cleared, total {len(self)}")
+            logger.debug(f"cache clear: total={len(self)}")
             super().clear()
 
     def _cleanup_if_needed(self):
