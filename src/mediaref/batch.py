@@ -7,7 +7,7 @@ from typing import TYPE_CHECKING, List, Literal, Optional, Type
 import numpy as np
 import numpy.typing as npt
 
-from ._internal import is_cloud_uri, resolve_video_source
+from ._internal import resolve_video_source
 
 if TYPE_CHECKING:
     from .core import MediaRef
@@ -146,6 +146,10 @@ def cleanup_cache():
     This function should be called when you're done with batch decoding
     to free up resources. It's automatically called on process exit.
 
+    No-op when the ``[video]`` extra isn't installed (nothing was ever
+    cached). Calling this without ``av`` MUST NOT raise — callers may
+    invoke it defensively without knowing which extras are present.
+
     Examples:
         >>> from mediaref import MediaRef, batch_decode, cleanup_cache
         >>>
@@ -156,6 +160,8 @@ def cleanup_cache():
         >>> # Clean up when done
         >>> cleanup_cache()
     """
-    from . import cached_av
-
+    try:
+        from . import cached_av
+    except ImportError:
+        return
     cached_av.cleanup_cache()
