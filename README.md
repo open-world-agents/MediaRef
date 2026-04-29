@@ -98,12 +98,16 @@ If you reference MediaRef in writing, the [`CITATION.cff`](CITATION.cff) file at
 
 ```bibtex
 @software{mediaref,
-  author = {Choi, Suhwan},
-  title  = {MediaRef: a portable frame-level media reference primitive},
-  url    = {https://github.com/open-world-agents/MediaRef},
-  year   = {2025}
+  author  = {Choi, Suhwan},
+  title   = {MediaRef: a portable frame-level media reference primitive},
+  version = {1.0.0},
+  year    = {2026},
+  doi     = {10.5281/zenodo.19892316},
+  url     = {https://github.com/open-world-agents/MediaRef}
 }
 ```
+
+The `doi` above is the Zenodo *concept DOI* — it always resolves to the latest published release. To cite v1.0.0 specifically, use [`10.5281/zenodo.19892317`](https://doi.org/10.5281/zenodo.19892317).
 
 <!--
 ## Roadmap
