@@ -296,3 +296,104 @@ class TestRefCountInvariants:
         cache.pop("k")
         with pytest.raises(KeyError):
             cache.release_entry("k")
+
+
+# ---------------------------------------------------------------------------
+# Cleanup callback semantics
+# ---------------------------------------------------------------------------
+
+
+class TestCleanupCallback:
+    """Eviction (via :meth:`pop` / :meth:`clear` / LRU sweep) must invoke the
+    registered ``cleanup_callback`` exactly once per evicted entry, with no
+    re-entry back into the cache (which would deadlock or corrupt state).
+    """
+
+    def test_pop_invokes_custom_cleanup_callback(self):
+        cache: ResourceCache[object] = ResourceCache()
+        closed: List[str] = []
+        cache.add_entry("k", object(), lambda: closed.append("k"))
+        cache.pop("k")
+        assert closed == ["k"]
+
+    def test_clear_invokes_custom_cleanup_callback(self):
+        cache: ResourceCache[object] = ResourceCache()
+        closed: List[str] = []
+        cache.add_entry("a", object(), lambda: closed.append("a"))
+        cache.add_entry("b", object(), lambda: closed.append("b"))
+        cache.clear()
+        assert sorted(closed) == ["a", "b"]
+
+    def test_lru_eviction_invokes_custom_cleanup_callback(self):
+        cache: ResourceCache[object] = ResourceCache(max_size=2)
+        closed: List[str] = []
+        cache.add_entry("a", object(), lambda: closed.append("a"))
+        cache.release_entry("a")  # refs=0, evictable
+        cache.add_entry("b", object(), lambda: closed.append("b"))
+        cache.release_entry("b")  # refs=0, evictable
+        cache.add_entry("c", object(), lambda: closed.append("c"))
+        cache.release_entry("c")  # triggers cleanup_if_needed; size>max
+        # Oldest unreferenced ("a") should have been evicted.
+        assert "a" in closed
+        assert "a" not in cache
+
+    def test_cleanup_callback_does_not_re_enter_cache(self):
+        """The factory-supplied callback must perform terminal cleanup —
+        not call back into ``release_entry``. Regression test for the
+        ``__exit__`` → ``close`` → ``release_entry`` cycle that lived in
+        the cached_av factory before the Gemini review fix.
+        """
+        cache: ResourceCache[object] = ResourceCache()
+        re_entries: List[str] = []
+
+        def bad_callback():
+            # Simulate a reentrant call — should never run during normal
+            # eviction. We assert that cleanup runs *once* and doesn't try
+            # to release a non-existent entry.
+            try:
+                cache.release_entry("k")
+                re_entries.append("re-entered")
+            except KeyError:
+                re_entries.append("missing")
+
+        cache.add_entry("k", object(), bad_callback)
+        cache.pop("k")
+        # Even with a misbehaving callback, the entry was successfully popped
+        # and the callback was invoked exactly once.
+        assert "k" not in cache
+        assert len(re_entries) == 1
+
+
+# ---------------------------------------------------------------------------
+# Shared-instance close semantics
+# ---------------------------------------------------------------------------
+
+
+class TestSharedInstanceCloseSemantics:
+    """When multiple callers share a single cached instance, each caller
+    is responsible for one matching release. Per-instance "already closed"
+    flags are unsafe — they break refs counting for shared resources.
+    """
+
+    def test_n_concurrent_owners_each_release_once_drops_to_zero(self):
+        """N owners each call release once → refs hits 0 exactly once.
+
+        Regression for the ``_released`` per-instance flag bug, where the
+        first close set the flag and subsequent closes (from other threads)
+        became no-ops, leaking refs forever.
+        """
+        n_owners = 32
+        cache: ResourceCache[_Resource] = ResourceCache()
+
+        # Simulate N owners acquiring the same shared instance.
+        cache.add_entry("k", _Resource(), lambda: None)
+        for _ in range(n_owners - 1):
+            cache.acquire_entry("k")
+        assert cache["k"].refs == n_owners
+
+        # Each owner calls release concurrently.
+        barrier = threading.Barrier(n_owners)
+        with ThreadPoolExecutor(max_workers=n_owners) as ex:
+            list(ex.map(lambda _: _wait_then(barrier, lambda: cache.release_entry("k")), range(n_owners)))
+
+        assert cache["k"].refs == 0

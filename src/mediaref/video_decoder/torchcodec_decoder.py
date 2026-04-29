@@ -1,6 +1,5 @@
 """TorchCodec-based video decoder."""
 
-import threading
 from typing import ClassVar, List, Optional
 
 import numpy as np
@@ -26,10 +25,12 @@ class TorchCodecVideoDecoder(VideoDecoder, BaseVideoDecoder):
         ...     batch = decoder.get_frames_played_at([0.0, 1.0, 2.0])
 
     Thread-safety: cache lookup uses atomic ``try_acquire`` / ``try_add``
-    primitives, so concurrent constructors for the same source produce a
-    single cached instance with refs incremented per caller. Under
-    contention an extra fresh instance may be constructed and discarded
-    (its file handle is released by GC); functionally this is safe.
+    primitives. The heavy ``super().__init__`` runs outside the cache
+    lock, so concurrent constructors for *distinct* sources do not
+    serialize. For the *same* source, concurrent constructors may both
+    build a fresh decoder; the loser's instance becomes uncached and
+    its underlying decoder is closed by its own :meth:`close`. Each
+    cached caller is responsible for exactly one matching ``close``.
     """
 
     cache: ClassVar[ResourceCache[VideoDecoder]] = ResourceCache(max_size=10)
@@ -56,15 +57,13 @@ class TorchCodecVideoDecoder(VideoDecoder, BaseVideoDecoder):
         if getattr(self, "_skip_init", False):
             return
         super().__init__(str(source), **kwargs)
-        self._close_lock = threading.Lock()
-        self._released = False
         # Atomic try_add: returns False if a concurrent thread cached an
         # instance for this key first. In that case the fresh instance is
-        # still functional for this caller, but it's not the cached one,
-        # so close() must not release_entry against the foreign cached
-        # instance.
+        # still functional for this caller (the construction above
+        # already opened the file), but it's not the cached one, so
+        # close() must close it directly rather than touch the cache.
         cache_key = str(source)
-        if self.cache.try_add(cache_key, self, lambda: None):
+        if self.cache.try_add(cache_key, self, lambda: VideoDecoder.close(self)):
             self._cache_key = cache_key
         else:
             self._cache_key = None
@@ -133,10 +132,22 @@ class TorchCodecVideoDecoder(VideoDecoder, BaseVideoDecoder):
         )
 
     def close(self):
-        """Release cache reference. Idempotent and thread-safe."""
-        with self._close_lock:
-            if self._released:
-                return
-            self._released = True
-        if self._cache_key is not None and self._cache_key in self.cache and self.cache[self._cache_key].refs > 0:
-            self.cache.release_entry(self._cache_key)
+        """Release cache reference, or close the underlying decoder if uncached.
+
+        For cached instances: each caller decrements the refs by one;
+        eviction at refs=0 closes the underlying decoder via the cleanup
+        callback registered in :meth:`__init__`. Calling ``close`` after
+        the cache has evicted the entry (e.g. via ``cleanup_cache()``)
+        is a silent no-op.
+
+        For uncached instances (race-lost during ``__init__``): the
+        underlying decoder is closed directly.
+        """
+        if self._cache_key is not None:
+            try:
+                self.cache.release_entry(self._cache_key)
+            except KeyError:
+                # Already evicted by LRU or cleanup_cache().
+                pass
+        else:
+            VideoDecoder.close(self)
