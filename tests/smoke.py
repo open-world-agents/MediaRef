@@ -45,8 +45,9 @@ DataURI.from_uri(
 # cleanup_cache must be safe without the [video] extra.
 cleanup_cache()
 
-# CLI entry point installed.
-eps = importlib.metadata.entry_points(group="console_scripts")
-assert any(ep.name == "mediaref" for ep in eps), "mediaref CLI entry point missing"
+# CLI entry point installed. Use Distribution.entry_points for py3.9
+# compatibility — entry_points(group=...) is py3.10+.
+eps = importlib.metadata.distribution("mediaref").entry_points
+assert any(ep.group == "console_scripts" and ep.name == "mediaref" for ep in eps), "mediaref CLI entry point missing"
 
 print(f"smoke OK — mediaref {mediaref.__version__}")
