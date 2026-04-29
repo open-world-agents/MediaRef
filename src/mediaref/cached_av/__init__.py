@@ -9,7 +9,6 @@ from .._typing import PathLike
 from ..resource_cache import ResourceCache
 from .input_container_mixin import InputContainerMixin
 
-# Ensure video dependencies are available
 require_video()
 
 DEFAULT_CACHE_SIZE = int(os.environ.get("AV_CACHE_SIZE", 10))
@@ -28,20 +27,7 @@ def open(file: PathLike, mode: Literal["w"], **kwargs) -> av.container.OutputCon
 
 
 def open(file: PathLike, mode: Literal["r", "w"], *, keep_av_open: bool = False, **kwargs):
-    """
-    Open video container with optional caching for read operations.
-
-    Args:
-        file: Video file path or URL
-        mode: Access mode ('r' for read, 'w' for write)
-        keep_av_open: Enable caching for read containers
-        **kwargs: Additional arguments passed to av.open
-
-    When ``keep_av_open=True`` the cache lookup and the insertion of a freshly-opened
-    container are atomic via :meth:`ResourceCache.try_acquire` / :meth:`ResourceCache.try_add`.
-    The actual ``av.open`` runs outside the cache lock, so concurrent opens for different
-    files do not serialize.
-    """
+    """Open a video container, optionally caching read containers across calls."""
     if mode == "r":
         if not keep_av_open:
             return av.open(file, "r", **kwargs)
@@ -50,29 +36,18 @@ def open(file: PathLike, mode: Literal["r", "w"], *, keep_av_open: bool = False,
 
 
 def _open_cached(cache_key: str, file: PathLike, **kwargs) -> "MockedInputContainer":
-    """Atomic open-and-cache without serializing ``av.open`` across cache keys.
-
-    Cache hit fast path: a single ``try_acquire`` avoids opening the file at all.
-    On miss, the (potentially heavy) ``av.open`` runs *outside* the cache lock;
-    the result is committed via the atomic ``try_insert_or_acquire``, which closes
-    the race window where a concurrent insert+evict could otherwise vanish the
-    entry between two separate cache calls.
-    """
     cached = _container_cache.try_acquire(cache_key)
     if cached is not None:
         return cached
 
     container = MockedInputContainer(file, **kwargs)
-    # The eviction callback closes the underlying av container directly; routing through
-    # ``MockedInputContainer.close`` would re-enter ``release`` on an entry that is
-    # already being evicted.
+    # Eviction callback closes the underlying av container; routing through
+    # MockedInputContainer.close would re-enter release on the entry being evicted.
     canonical, was_added = _container_cache.try_insert_or_acquire(
         cache_key, container, lambda c=container: InputContainerMixin.close(c)
     )
     if was_added:
         return container
-    # Lost the race: ``canonical`` is the winner's container with refs already incremented.
-    # Discard our throwaway.
     InputContainerMixin.close(container)
     return canonical
 
@@ -83,13 +58,9 @@ def cleanup_cache():
 
 
 class MockedInputContainer(InputContainerMixin):
-    """Cached wrapper for PyAV InputContainer with reference counting.
-
-    A single instance is shared across concurrent callers of :func:`open` for the same
-    file; each caller is responsible for exactly one matching :meth:`close` call. ``close``
-    decrements the cache reference once per call and silently no-ops if the entry has
-    already been evicted.
-    """
+    """Cached PyAV InputContainer wrapper. One instance is shared across concurrent
+    callers of :func:`open` for the same file; each caller pairs its acquire with a
+    single :meth:`close`."""
 
     def __init__(self, file: PathLike, **kwargs):
         self._cache_key = str(file)
@@ -99,7 +70,6 @@ class MockedInputContainer(InputContainerMixin):
         return self
 
     def close(self):
-        """Release the cache reference held by this caller. No-op if already evicted."""
         try:
             _container_cache.release(self._cache_key)
         except KeyError:

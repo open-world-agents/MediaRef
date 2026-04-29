@@ -12,13 +12,8 @@ from .frame_batch import FrameBatch
 
 
 class TorchCodecVideoDecoder(VideoDecoder, BaseVideoDecoder):
-    """Cached TorchCodec video decoder.
-
-    Wraps TorchCodec's VideoDecoder with reference-counted caching for efficient resource
-    management. Each caller of the constructor is responsible for exactly one matching
-    :meth:`close`. Concurrent constructors for the same source share one cached instance;
-    if two threads race past the cache miss check, the loser's instance becomes uncached
-    and its underlying decoder is closed directly by its own ``close``.
+    """Cached TorchCodec video decoder. Concurrent constructors for the same source share
+    one cached instance; each caller pairs its construction with a single :meth:`close`.
 
     Args:
         source: Path to video file or URL
@@ -30,7 +25,6 @@ class TorchCodecVideoDecoder(VideoDecoder, BaseVideoDecoder):
     """
 
     cache: ClassVar[ResourceCache[VideoDecoder]] = ResourceCache(max_size=10)
-    _skip_init = False
 
     def __new__(cls, source: PathLike, **kwargs):
         cache_key = str(source)
@@ -47,12 +41,9 @@ class TorchCodecVideoDecoder(VideoDecoder, BaseVideoDecoder):
             return
         super().__init__(str(source), **kwargs)
         cache_key = str(source)
-        # ``__new__`` already returned ``self`` to the caller, so we cannot replace it
-        # with the canonical instance on race-loss. Instead, the loser releases the
-        # incidental ref it picked up from ``try_insert_or_acquire`` and keeps ``self``
-        # as an uncached decoder; ``close`` then disposes of the underlying decoder
-        # directly rather than touching the cache.
-        canonical, was_added = self.cache.try_insert_or_acquire(cache_key, self, lambda: VideoDecoder.close(self))
+        # __new__ already returned self; we cannot replace it with the canonical on
+        # race-loss. Loser keeps self as uncached, releases the incidental ref.
+        _, was_added = self.cache.try_insert_or_acquire(cache_key, self, lambda: VideoDecoder.close(self))
         if was_added:
             self._cache_key = cache_key
         else:
@@ -123,10 +114,6 @@ class TorchCodecVideoDecoder(VideoDecoder, BaseVideoDecoder):
         )
 
     def close(self):
-        """Release the cache reference held by this caller, or close the underlying decoder
-        directly when this instance is the race-loser of a concurrent construction. No-op
-        if the cache entry has already been evicted.
-        """
         if self._cache_key is not None:
             try:
                 self.cache.release(self._cache_key)
