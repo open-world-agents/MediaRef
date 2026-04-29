@@ -13,7 +13,7 @@ import numpy as np
 import pytest
 
 from mediaref import MediaRef, batch_decode, cleanup_cache
-from tests import TORCHCODEC_AVAILABLE, TORCHCODEC_INSTALLED
+from tests import TORCHCODEC_INSTALLED
 
 
 @pytest.mark.video

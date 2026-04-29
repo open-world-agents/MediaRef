@@ -254,6 +254,7 @@ class TestVideoLoadingFromMemoryFS:
 
         # Spy on fsspec.open as imported by mediaref.cached_av.
         import mediaref.cached_av as cav_mod
+
         open_calls = []
         real_open = cav_mod.fsspec.open
 
@@ -315,6 +316,7 @@ class TestHfDatasetIntegration:
         # Ensure the URI is actually reachable before running the decode tests
         # (gives a clearer skip reason than a mid-decode failure).
         import fsspec
+
         try:
             with fsspec.open(self.HF_VIDEO_URI, "rb") as f:
                 f.read(1)
@@ -330,10 +332,7 @@ class TestHfDatasetIntegration:
         assert rgb.shape[0] >= 240, f"unexpected height: {rgb.shape}"
 
     def test_batch_decode_from_hf(self, _hf_available):
-        refs = [
-            MediaRef(uri=self.HF_VIDEO_URI, pts_ns=int(t * 1e9))
-            for t in (0.5, 1.0, 2.0)
-        ]
+        refs = [MediaRef(uri=self.HF_VIDEO_URI, pts_ns=int(t * 1e9)) for t in (0.5, 1.0, 2.0)]
         frames = batch_decode(refs)
         assert len(frames) == 3
         shapes = {f.shape for f in frames}

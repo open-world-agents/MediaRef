@@ -50,8 +50,7 @@ def __getattr__(name: str):
             from .torchcodec_decoder import TorchCodecVideoDecoder
         except ImportError as e:
             raise ImportError(
-                "TorchCodecVideoDecoder requires the optional `torchcodec` "
-                "package: pip install torchcodec"
+                "TorchCodecVideoDecoder requires the optional `torchcodec` package: pip install torchcodec"
             ) from e
         # OSError / RuntimeError from torchcodec's .so load (e.g. FFmpeg ABI
         # mismatch — `libavcodec.so.NN: cannot open shared object file`)
