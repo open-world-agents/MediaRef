@@ -63,12 +63,22 @@ pip install 'mediaref[video,hf]'      # all extras
 
 For UV: `uv add 'mediaref[video,hf]~=0.5.0'`. MediaRef follows [semantic versioning](https://semver.org/); patch releases are bug-only, minor releases are backward-compatible. The wire schema (`uri`, `pts_ns`) is frozen for the life of Spec 1.x.
 
+**Optional TorchCodec backend.** `batch_decode(refs, decoder="torchcodec")` uses TorchCodec for CUDA-accelerated decoding. TorchCodec ships its own FFmpeg shared-library expectations that may not match PyAV's bundled copies; if you see `libavcodec.so.NN: cannot open shared object file` after `pip install torchcodec`, repair the install with [`patch-torchcodec`](scripts/patch_torchcodec/) (it patches torchcodec's RPATH onto PyAV's bundled FFmpeg):
+
+```bash
+pip install patch-torchcodec && patch-torchcodec
+```
+
 ## Documentation
 
 - **[API Reference](docs/API.md)** — full API: `MediaRef`, `DataURI`, `batch_decode`, cloud URIs, HuggingFace integration, lerobot interop, the CLI.
 - **[MediaRef Specification 1.0](docs/SPEC.md)** — wire format, URI grammar, `pts_ns` semantics, conformance criteria.
 - **[Comparisons](docs/COMPARISONS.md)** — how MediaRef relates to `datasets.Video` and lerobot's `VideoFrame`.
 - **[Playback Semantics](docs/playback_semantics.md)** — how frame selection works at specific timestamps.
+
+## Examples
+
+- **[ROS bag conversion](examples/ros/)** — convert ROS1/ROS2 bags with `CompressedImage` topics to MediaRef-referenced video, recovering 70–90% storage via inter-frame compression. Works without a ROS install (uses `rosbags`).
 
 ## Datasets shipped with MediaRef
 

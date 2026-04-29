@@ -163,9 +163,17 @@ frames = batch_decode(refs, decoder="torchcodec")    # GPU-accelerated
 | --- | --- | --- |
 | Backend | PyAV (FFmpeg) | TorchCodec (FFmpeg) |
 | Acceleration | CPU only | CUDA |
-| Install | `pip install 'mediaref[video]'` | `pip install torchcodec` separately |
+| Install | `pip install 'mediaref[video]'` | `pip install torchcodec` separately (see note) |
 
 Both backends share unified [playback semantics](playback_semantics.md), so a given `pts_ns` returns the same frame regardless of decoder.
+
+**TorchCodec install note.** TorchCodec links against its own FFmpeg shared libraries, which often don't match the FFmpeg version PyAV bundles. If `from mediaref.video_decoder import TorchCodecVideoDecoder` (or a `decoder="torchcodec"` call) raises `libavcodec.so.NN: cannot open shared object file`, repair the install by patching torchcodec's RPATH onto PyAV's bundled FFmpeg:
+
+```bash
+pip install patch-torchcodec && patch-torchcodec
+```
+
+See [`scripts/patch_torchcodec/`](../scripts/patch_torchcodec/) for details. (PyAV-only callers are unaffected — `mediaref.video_decoder` resolves `TorchCodecVideoDecoder` lazily, so a broken torchcodec install never blocks `import mediaref`.)
 
 `cleanup_cache()` — clears the PyAV container cache. Call between long-running decode sessions if you want to release decoder memory before automatic eviction.
 
