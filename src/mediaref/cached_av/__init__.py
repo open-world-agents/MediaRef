@@ -101,9 +101,9 @@ class MockedInputContainer(InputContainerMixin):
     def close(self):
         """Release one cache reference. Real teardown happens at eviction.
         Idempotent: extra calls past the acquire count are no-ops."""
-        if _container_cache.refs(self._cache_key) <= 0:
-            return
         try:
+            if _container_cache.refs(self._cache_key) <= 0:
+                return
             _container_cache.release(self._cache_key)
         except KeyError:
             pass
