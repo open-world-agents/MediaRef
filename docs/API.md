@@ -163,9 +163,18 @@ frames = batch_decode(refs, decoder="torchcodec")    # GPU-accelerated
 | --- | --- | --- |
 | Backend | PyAV (FFmpeg) | TorchCodec (FFmpeg) |
 | Acceleration | CPU only | CUDA |
-| Install | `pip install 'mediaref[video]'` | `pip install torchcodec` separately |
+| Install | `pip install 'mediaref[video]'` | `pip install torchcodec` separately (see note) |
+| URI schemes | any fsspec-routable URI (`file://`, bare path, `http(s)://`, `s3://`, `gs://`, `hf://`, `memory://`, …) — opened via fsspec inside `cached_av` | only what FFmpeg natively understands: file paths, `file://`, `http(s)://`, `rtsp://`. **No fsspec dispatch** — `s3://`, `gs://`, `hf://`, etc. fail at the FFmpeg layer. Use `decoder="pyav"` for those. |
 
-Both backends share unified [playback semantics](playback_semantics.md), so a given `pts_ns` returns the same frame regardless of decoder.
+Both backends share unified [playback semantics](playback_semantics.md), so a given `pts_ns` (when supported by both) returns the same frame regardless of decoder.
+
+**TorchCodec install note.** TorchCodec links against its own FFmpeg shared libraries, which often don't match the FFmpeg version PyAV bundles. If `from mediaref.video_decoder import TorchCodecVideoDecoder` (or a `decoder="torchcodec"` call) raises `libavcodec.so.NN: cannot open shared object file`, repair the install by patching torchcodec's RPATH onto PyAV's bundled FFmpeg:
+
+```bash
+pip install patch-torchcodec && patch-torchcodec
+```
+
+See [`scripts/patch_torchcodec/`](../scripts/patch_torchcodec/) for details. (PyAV-only callers are unaffected — `mediaref.video_decoder` resolves `TorchCodecVideoDecoder` lazily, so a broken torchcodec install never blocks `import mediaref`.)
 
 `cleanup_cache()` — clears the PyAV container cache. Call between long-running decode sessions if you want to release decoder memory before automatic eviction.
 
@@ -197,6 +206,14 @@ frames = batch_decode(refs)
 ```
 
 `fsspec` is a core dependency. Each cloud backend (`s3fs` for `s3://`, `gcsfs` for `gs://`, `huggingface_hub` for `hf://`, `adlfs` for `az://`/`abfs://`, …) must be installed separately for the schemes it serves; fsspec raises a clear error otherwise.
+
+**Credentials and per-backend configuration.** MediaRef opens cloud URIs with the default fsspec configuration — it does not currently expose a `storage_options=` parameter on its public API. Use any mechanism fsspec already supports:
+
+- environment variables — e.g. `AWS_ACCESS_KEY_ID` / `AWS_SECRET_ACCESS_KEY` for `s3fs`, `HF_TOKEN` for `huggingface_hub`, `GOOGLE_APPLICATION_CREDENTIALS` for `gcsfs`;
+- per-user config files — `~/.aws/credentials`, `~/.config/gcloud/...`, `~/.cache/huggingface/token`;
+- programmatic registration — `fsspec.config.set(...)` or backend-specific kwargs registered globally before calling `to_ndarray` / `batch_decode`.
+
+For the common public-bucket case (e.g. the D2E HuggingFace datasets) no configuration is required.
 
 ---
 

@@ -175,6 +175,31 @@ reference contains values matching §1.1 or §1.2.
 Compliant libraries SHOULD declare compliance in their README and tag their
 HuggingFace Hub datasets with `mediaref`.
 
+### 6.1 Two levels of decode conformance
+
+Decode behavior is split into two levels with different stability guarantees:
+
+- **Frame-index conformance** (REQUIRED). Given the same `(uri, pts_ns)`,
+  every compliant decoder MUST select the same logical frame from the same
+  source bitstream — i.e. the frame `i` such that `pts[i] ≤ pts_ns/1e9 <
+  pts[i+1]`, per §3.2. This is the contract MediaRef itself owns.
+
+- **Pixel-byte conformance** (NOT GUARANTEED ACROSS ENVIRONMENTS).
+  Reconstruction of the selected frame's pixel bytes is delegated to the
+  underlying codec implementation (e.g. FFmpeg via PyAV, TorchCodec).
+  Pixel bytes MAY differ across:
+    - decoder backends (`pyav` vs `torchcodec`);
+    - codec library major versions (e.g. FFmpeg 6 vs 7), which can change
+      reference-frame management, error concealment, and YUV→RGB rounding;
+    - hardware paths (CPU SIMD vs GPU).
+  Compliant libraries MUST NOT rely on bit-identical pixel output across
+  these axes. For tasks that require bit-exact reproducibility, pin the
+  full decode environment (codec library + version + backend).
+
+Implementations MAY publish pixel-equivalence tests against fixed codec
+versions for their own QA, but those tests are not part of this
+specification.
+
 ---
 
 ## 7. Versioning

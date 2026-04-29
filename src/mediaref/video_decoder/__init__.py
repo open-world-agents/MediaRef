@@ -7,49 +7,47 @@ Classes:
     BaseVideoDecoder: Abstract base class defining the decoder interface
     FrameBatch: Data structure for batch frame data
     PyAVVideoDecoder: PyAV-based decoder implementation
-    TorchCodecVideoDecoder: TorchCodec-based decoder implementation (optional)
+    TorchCodecVideoDecoder: TorchCodec-based decoder implementation (lazy; optional)
 
 Examples:
     >>> with PyAVVideoDecoder("video.mp4") as decoder:
     ...     batch = decoder.get_frames_played_at([0.0, 1.0, 2.0])
 """
 
+from typing import TYPE_CHECKING
+
 from .._features import require_video
-from .._typing import PathLike
 from .base import BaseVideoDecoder
 from .frame_batch import FrameBatch
 from .pyav_decoder import PyAVVideoDecoder
 from .types import VideoStreamMetadata
 
-# Ensure video dependencies are available
 require_video()
 
-# Conditional import with graceful fallback for optional dependency
-try:
-    from .torchcodec_decoder import TorchCodecVideoDecoder
+if TYPE_CHECKING:
+    from .torchcodec_decoder import TorchCodecVideoDecoder  # noqa: F401
 
-    __all__ = [
-        "BaseVideoDecoder",
-        "FrameBatch",
-        "PyAVVideoDecoder",
-        "TorchCodecVideoDecoder",
-        "VideoStreamMetadata",
-    ]
-except ImportError:
-    # Provide informative error when TorchCodec is unavailable
-    class TorchCodecVideoDecoder:
-        """Placeholder for TorchCodec decoder when dependency is not installed."""
+__all__ = [
+    "BaseVideoDecoder",
+    "FrameBatch",
+    "PyAVVideoDecoder",
+    "TorchCodecVideoDecoder",
+    "VideoStreamMetadata",
+]
 
-        def __init__(self, source: PathLike, **kwargs):
-            raise ImportError("TorchCodec is not available. Install it separately: pip install torchcodec")
 
-        def __new__(cls, source: PathLike, **kwargs):
-            raise ImportError("TorchCodec is not available. Install it separately: pip install torchcodec")
-
-    __all__ = [
-        "BaseVideoDecoder",
-        "FrameBatch",
-        "PyAVVideoDecoder",
-        "TorchCodecVideoDecoder",
-        "VideoStreamMetadata",
-    ]
+def __getattr__(name: str):
+    """Lazy resolver (PEP 562) for optional decoders."""
+    if name == "TorchCodecVideoDecoder":
+        try:
+            from .torchcodec_decoder import TorchCodecVideoDecoder
+        except ImportError as e:
+            raise ImportError(
+                "TorchCodecVideoDecoder requires the optional `torchcodec` package: pip install torchcodec"
+            ) from e
+        # OSError / RuntimeError from torchcodec's .so load propagate
+        # unchanged — users see the real FFmpeg-ABI cause and can run
+        # `patch-torchcodec` (see scripts/patch_torchcodec/).
+        globals()[name] = TorchCodecVideoDecoder
+        return TorchCodecVideoDecoder
+    raise AttributeError(f"module {__name__!r} has no attribute {name!r}")

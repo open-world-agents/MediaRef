@@ -309,3 +309,53 @@ class TestSerializationEdgeCases:
         restored = MediaRef.model_validate_json(json_str)
 
         assert restored.uri == uri_with_newline
+
+
+class TestFrozenSpec1xJson:
+    """Frozen JSON snapshots from earlier 0.x releases.
+
+    The wire format ``(uri, pts_ns)`` is frozen for the life of MediaRef Spec 1.x
+    (see docs/SPEC.md). These literal strings were emitted by ``model_dump_json``
+    on past releases. Any change that breaks parsing here is a wire-format
+    regression and must be reverted (or accompanied by a Spec 2.x bump).
+    """
+
+    # Captured from mediaref==0.5.3 via `MediaRef(**input).model_dump_json()`.
+    LEGACY_FROM_V053 = [
+        ('{"uri":"image.png","pts_ns":null}', {"uri": "image.png", "pts_ns": None}),
+        (
+            '{"uri":"video.mp4","pts_ns":1000000000}',
+            {"uri": "video.mp4", "pts_ns": 1_000_000_000},
+        ),
+        (
+            '{"uri":"https://example.com/x.jpg","pts_ns":null}',
+            {"uri": "https://example.com/x.jpg", "pts_ns": None},
+        ),
+        (
+            '{"uri":"s3://bucket/x.jpg","pts_ns":0}',
+            {"uri": "s3://bucket/x.jpg", "pts_ns": 0},
+        ),
+        (
+            '{"uri":"file:///abs/path.png","pts_ns":null}',
+            {"uri": "file:///abs/path.png", "pts_ns": None},
+        ),
+        (
+            '{"uri":"data:image/png;base64,iVBORw0KGgoAAAA=","pts_ns":null}',
+            {"uri": "data:image/png;base64,iVBORw0KGgoAAAA=", "pts_ns": None},
+        ),
+    ]
+
+    @pytest.mark.parametrize("legacy_json,expected_dump", LEGACY_FROM_V053)
+    def test_legacy_v053_json_still_parses(self, legacy_json, expected_dump):
+        """JSON emitted by older releases must remain parseable byte-for-byte."""
+        ref = MediaRef.model_validate_json(legacy_json)
+        assert ref.model_dump() == expected_dump
+
+    @pytest.mark.parametrize("legacy_json,expected_dump", LEGACY_FROM_V053)
+    def test_round_trip_emits_legacy_compatible_json(self, legacy_json, expected_dump):
+        """Re-emitted JSON must itself parse to the same model. The exact byte
+        layout may vary across pydantic patch releases; the constraint is
+        round-trip equality at the model level."""
+        ref = MediaRef.model_validate(expected_dump)
+        re_emitted = ref.model_dump_json()
+        assert MediaRef.model_validate_json(re_emitted).model_dump() == expected_dump

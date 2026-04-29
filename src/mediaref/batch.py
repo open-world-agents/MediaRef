@@ -7,7 +7,7 @@ from typing import TYPE_CHECKING, List, Literal, Optional, Type
 import numpy as np
 import numpy.typing as npt
 
-from ._internal import open_media_source
+from ._internal import resolve_video_source
 
 if TYPE_CHECKING:
     from .core import MediaRef
@@ -21,10 +21,16 @@ DecoderBackend = Literal["pyav", "torchcodec"]
 
 def _decode_video_group(
     decoder_class: Type["BaseVideoDecoder"],
-    source,
+    uri: str,
     pts_seconds: List[float],
 ) -> List[npt.NDArray[np.uint8]]:
-    """Decode all timestamps from one source. Returns RGB HWC frames in input order."""
+    """Decode all timestamps from one source. Returns RGB HWC frames in input order.
+
+    ``uri`` is passed straight to the decoder. For cloud schemes the decoder
+    layer (``cached_av``) opens fsspec internally and caches both the av
+    container and its file-like as a single unit (see cached_av/__init__.py).
+    """
+    source = resolve_video_source(uri)
     with decoder_class(source) as video_decoder:
         batch = video_decoder.get_frames_played_at(pts_seconds)
         return [np.transpose(f, (1, 2, 0)) for f in batch.data]
@@ -123,12 +129,7 @@ def batch_decode(
             pts_seconds.append(ref.pts_ns / NANOSECOND)
 
         try:
-            # open_media_source yields a file-like for fsspec URIs (one
-            # range-served handle reused across the group's timestamps; cached_av
-            # cannot retain file-likes so cross-call caching is forfeited) or a
-            # verified local path string for file://-and-bare-paths.
-            with open_media_source(uri) as source:
-                frames = _decode_video_group(decoder_class, source, pts_seconds)
+            frames = _decode_video_group(decoder_class, uri, pts_seconds)
             for idx, frame in zip(indices, frames):
                 results[idx] = frame
         except ImportError:
@@ -145,6 +146,10 @@ def cleanup_cache():
     This function should be called when you're done with batch decoding
     to free up resources. It's automatically called on process exit.
 
+    No-op when the ``[video]`` extra isn't installed (nothing was ever
+    cached). Calling this without ``av`` MUST NOT raise — callers may
+    invoke it defensively without knowing which extras are present.
+
     Examples:
         >>> from mediaref import MediaRef, batch_decode, cleanup_cache
         >>>
@@ -155,6 +160,8 @@ def cleanup_cache():
         >>> # Clean up when done
         >>> cleanup_cache()
     """
-    from . import cached_av
-
+    try:
+        from . import cached_av
+    except ImportError:
+        return
     cached_av.cleanup_cache()
