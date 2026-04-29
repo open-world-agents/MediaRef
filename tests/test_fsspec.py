@@ -252,17 +252,18 @@ class TestVideoLoadingFromMemoryFS:
         data, pts_ns_list = sample_video_bytes
         _put_bytes("memory://videos/clip.mp4", data)
 
-        # Spy on fsspec.open as imported by mediaref.cached_av.
-        import mediaref.cached_av as cav_mod
+        # Spy on fsspec.open as imported by mediaref._internal (the source of
+        # open_cloud, which cached_av delegates to for cloud URIs).
+        import mediaref._internal as internal_mod
 
         open_calls = []
-        real_open = cav_mod.fsspec.open
+        real_open = internal_mod.fsspec.open
 
         def spy(*args, **kwargs):
             open_calls.append(args[0] if args else kwargs.get("urlpath"))
             return real_open(*args, **kwargs)
 
-        monkeypatch.setattr(cav_mod.fsspec, "open", spy)
+        monkeypatch.setattr(internal_mod.fsspec, "open", spy)
 
         refs = [MediaRef(uri="memory://videos/clip.mp4", pts_ns=pts_ns_list[1])]
         batch_decode(refs)  # 1st call: cache miss → opens fsspec once

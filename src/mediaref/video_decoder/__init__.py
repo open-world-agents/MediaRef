@@ -22,29 +22,22 @@ from .frame_batch import FrameBatch
 from .pyav_decoder import PyAVVideoDecoder
 from .types import VideoStreamMetadata
 
-# Ensure video dependencies are available
 require_video()
 
 if TYPE_CHECKING:
-    # IDE / mypy / static analysis can see the symbol; runtime resolution is lazy.
     from .torchcodec_decoder import TorchCodecVideoDecoder  # noqa: F401
 
 __all__ = [
     "BaseVideoDecoder",
     "FrameBatch",
     "PyAVVideoDecoder",
-    "TorchCodecVideoDecoder",  # surfaced lazily via __getattr__ below
+    "TorchCodecVideoDecoder",
     "VideoStreamMetadata",
 ]
 
 
 def __getattr__(name: str):
-    """Lazy resolver for optional decoders (PEP 562).
-
-    Defers loading torchcodec until first access. PyAV-only callers never
-    trigger torchcodec's shared-library load, so a broken torchcodec install
-    (e.g. FFmpeg ABI mismatch) cannot break ``import mediaref``.
-    """
+    """Lazy resolver (PEP 562) for optional decoders."""
     if name == "TorchCodecVideoDecoder":
         try:
             from .torchcodec_decoder import TorchCodecVideoDecoder
@@ -52,10 +45,9 @@ def __getattr__(name: str):
             raise ImportError(
                 "TorchCodecVideoDecoder requires the optional `torchcodec` package: pip install torchcodec"
             ) from e
-        # OSError / RuntimeError from torchcodec's .so load (e.g. FFmpeg ABI
-        # mismatch — `libavcodec.so.NN: cannot open shared object file`)
-        # propagate unchanged so users see the real cause and can run
-        # `patch-torchcodec` to repair (see scripts/patch_torchcodec/).
+        # OSError / RuntimeError from torchcodec's .so load propagate
+        # unchanged — users see the real FFmpeg-ABI cause and can run
+        # `patch-torchcodec` (see scripts/patch_torchcodec/).
         globals()[name] = TorchCodecVideoDecoder
         return TorchCodecVideoDecoder
     raise AttributeError(f"module {__name__!r} has no attribute {name!r}")

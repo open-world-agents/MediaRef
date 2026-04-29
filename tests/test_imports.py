@@ -23,17 +23,9 @@ def _run(script: str) -> subprocess.CompletedProcess:
 
 @pytest.mark.video
 def test_pyav_only_import_does_not_load_torchcodec():
-    """``import mediaref.video_decoder`` must not transitively import
-    ``torchcodec``. PyAV-only users should never pay torchcodec's import
-    cost, and a broken torchcodec install (e.g. FFmpeg ABI mismatch) must
-    not break ``import mediaref``.
+    """`import mediaref.video_decoder` must not transitively load torchcodec.
 
-    Marked ``video`` because importing ``mediaref.video_decoder`` requires
-    PyAV (``require_video()``); the lazy-resolution guarantee for
-    TorchCodec is conditional on the video extra being installed.
-
-    See ``video_decoder/__init__.py``: ``TorchCodecVideoDecoder`` is
-    exposed lazily via PEP 562 ``__getattr__``.
+    Marked ``video`` because the import requires PyAV (`require_video()`).
     """
     result = _run("""
         import sys
@@ -47,12 +39,8 @@ def test_pyav_only_import_does_not_load_torchcodec():
 
 
 def test_top_level_mediaref_import_does_not_load_torchcodec():
-    """``import mediaref`` must not load torchcodec either.
-
-    Runs unconditionally (no ``video`` marker): ``import mediaref`` itself
-    has no PyAV dependency at the top level — the decoder modules are
-    imported lazily through ``batch_decode``.
-    """
+    """`import mediaref` must not load torchcodec either. Runs unconditionally
+    — the top-level package has no PyAV dependency."""
     result = _run("""
         import sys
         import mediaref  # noqa: F401

@@ -1,12 +1,12 @@
 import os
+from contextlib import AbstractContextManager
 from typing import Literal, Optional, overload
 
 import av
 import av.container
-import fsspec
 
 from .._features import require_video
-from .._internal import is_cloud_uri
+from .._internal import is_cloud_uri, open_cloud
 from .._typing import PathLike
 from ..resource_cache import ResourceCache
 from .input_container_mixin import InputContainerMixin
@@ -53,8 +53,6 @@ def _open_cached(cache_key: str, file: PathLike, **kwargs) -> "MockedInputContai
         return cached
 
     container = MockedInputContainer(file, **kwargs)
-    # Eviction callback disposes both the av container and any fsspec
-    # file-like the cache entry owns.
     canonical, was_added = _container_cache.try_insert_or_acquire(
         cache_key, container, lambda c=container: c._dispose()
     )
@@ -70,30 +68,23 @@ def cleanup_cache():
 
 
 class MockedInputContainer(InputContainerMixin):
-    """Cached PyAV InputContainer wrapper. One instance is shared across
-    concurrent callers of :func:`open` for the same source; each caller
-    pairs its acquire with a single :meth:`close`.
-
-    For cloud URIs the entry also owns the underlying fsspec ``OpenFile``
-    context manager: a single ``MockedInputContainer`` ⊇ one
-    ``av.container`` ⊇ one fsspec ``OpenFile``, all disposed together by
-    :meth:`_dispose` at eviction.
+    """Refcounted PyAV InputContainer wrapper. One instance is shared by
+    concurrent acquirers of the same source; each pairs its acquire with
+    one :meth:`close`. For cloud URIs the entry also owns the fsspec
+    ``OpenFile`` so its lifetime cannot outlast the av container's I/O.
     """
 
-    _owned_open_ctx: Optional[object]
+    _owned_open_ctx: Optional[AbstractContextManager]
 
     def __init__(self, file: PathLike, **kwargs):
         self._cache_key = str(file)
         self._owned_open_ctx = None
         try:
             if isinstance(file, str) and is_cloud_uri(file):
-                # Take ownership of the fsspec OpenFile for the lifetime of
-                # this cache entry. We store the context manager itself (not
-                # just its yielded file-like) so :meth:`_dispose` can call
-                # ``__exit__`` — some fsspec backends (cached/chained openers,
-                # connection pools) do extra cleanup there beyond closing
-                # the inner file.
-                self._owned_open_ctx = fsspec.open(file, "rb")
+                # Own the OpenFile (not just its yielded file): some fsspec
+                # backends do connection-pool / tempfile cleanup in __exit__
+                # beyond closing the inner file.
+                self._owned_open_ctx = open_cloud(file)
                 fileobj = self._owned_open_ctx.__enter__()
                 self._container = av.open(fileobj, "r", **kwargs)
             else:
@@ -108,14 +99,8 @@ class MockedInputContainer(InputContainerMixin):
         return self
 
     def close(self):
-        """Public close = release one cache reference. The container and
-        its owned I/O are not actually torn down until the cache decides
-        to evict (capacity LRU or :func:`cleanup_cache`).
-
-        Idempotent: extra calls beyond what was acquired are no-ops, so
-        manual ``close()`` followed by an ``__exit__`` (or vice versa) is
-        safe. Refcount is checked under the cache lock.
-        """
+        """Release one cache reference. Real teardown happens at eviction.
+        Idempotent: extra calls past the acquire count are no-ops."""
         if _container_cache.refs(self._cache_key) <= 0:
             return
         try:
@@ -124,8 +109,7 @@ class MockedInputContainer(InputContainerMixin):
             pass
 
     def _dispose(self):
-        """Eviction-time real cleanup. Closes the av container and the
-        fsspec OpenFile context this entry owns."""
+        """Eviction-time teardown: close av container and owned OpenFile."""
         try:
             self._container.close()
         finally:
