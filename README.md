@@ -42,7 +42,7 @@ See [API Reference](docs/API.md) for full details — `DataURI`, `batch_decode`,
 
 ## Why MediaRef?
 
-**1. Separate heavy media from lightweight metadata.** Store 1 TB of videos separately and keep only a few KB of references in your tables. MediaRef is decoupled, format-agnostic, and works wherever you can store a string. Already used in production: the [D2E research project](https://worv-ai.github.io/d2e/) stores **1TB+** of gameplay data referenced by MediaRef via [OWAMcap](https://open-world-agents.github.io/open-world-agents/data/technical-reference/format-guide/).
+**1. Separate heavy media from lightweight metadata.** Store 1 TB of videos separately and keep only a few KB of references in your tables. MediaRef is decoupled, format-agnostic, and works wherever you can store a string. Already used in production: the [D2E research project](https://worv-ai.github.io/d2e/) stores **1 TB+** of gameplay data referenced by MediaRef via [OWAMcap](https://open-world-agents.github.io/open-world-agents/data/technical-reference/format-guide/).
 
 **2. Permanent schema built on RFCs.** `(uri, pts_ns)` is frozen for the life of [Spec 1.x](docs/SPEC.md). No proprietary formats, no breaking changes.
 
