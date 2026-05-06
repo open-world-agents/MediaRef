@@ -239,7 +239,7 @@ class TestVideoLoadingFromMemoryFS:
             MediaRef(uri=str(local_path), pts_ns=pts_ns_list[1]),
             MediaRef(uri="memory://videos/clip.mp4", pts_ns=pts_ns_list[3]),
         ]
-        frames = batch_decode(refs)
+        frames = batch_decode(refs, allow_multiple_videos=True)
         assert len(frames) == 2
         assert all(f.shape == (48, 64, 3) for f in frames)
 
