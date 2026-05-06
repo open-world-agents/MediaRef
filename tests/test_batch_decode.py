@@ -382,7 +382,7 @@ class TestBatchDecodeErrorHandling:
 
 @pytest.mark.video
 class TestBatchDecodeValidation:
-    """Test allow_images, allow_multiple_videos, allow_gap, and gap_threshold."""
+    """Test allow_images, allow_multi_video, allow_gap, and gap_threshold."""
 
     def test_images_rejected_by_default(self, sample_image_files: list[Path]):
         refs = [MediaRef(uri=str(sample_image_files[0]))]
@@ -406,7 +406,7 @@ class TestBatchDecodeValidation:
             MediaRef(uri=str(video_path), pts_ns=timestamps[0]),
             MediaRef(uri=str(second_video), pts_ns=timestamps[0]),
         ]
-        with pytest.raises(ValueError, match="allow_multiple_videos=False"):
+        with pytest.raises(ValueError, match="allow_multi_video=False"):
             batch_decode(refs)
 
     def test_multiple_videos_accepted_when_allowed(self, sample_video_file: tuple[Path, list[int]], tmp_path: Path):
@@ -420,7 +420,7 @@ class TestBatchDecodeValidation:
             MediaRef(uri=str(video_path), pts_ns=timestamps[0]),
             MediaRef(uri=str(second_video), pts_ns=timestamps[0]),
         ]
-        results = batch_decode(refs, allow_multiple_videos=True)
+        results = batch_decode(refs, allow_multi_video=True)
         assert len(results) == 2
 
     def test_gap_auto_chunks_by_default(self, sample_video_file: tuple[Path, list[int]]):

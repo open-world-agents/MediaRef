@@ -82,7 +82,7 @@ def batch_decode(
     decoder: DecoderBackend = "pyav",
     *,
     allow_images: bool = False,
-    allow_multiple_videos: bool = False,
+    allow_multi_video: bool = False,
     gap_threshold: float = 2.0,
     allow_gap: bool = True,
     **kwargs,
@@ -98,7 +98,7 @@ def batch_decode(
         decoder: Decoder backend (``'pyav'`` or ``'torchcodec'``).
         allow_images: If ``True``, image refs are accepted and decoded individually.
             If ``False`` (default), image refs raise ``ValueError``.
-        allow_multiple_videos: If ``True``, refs may span multiple video files.
+        allow_multi_video: If ``True``, refs may span multiple video files.
             If ``False`` (default), more than one video URI raises ``ValueError``.
         gap_threshold: Minimum gap in seconds between consecutive sorted timestamps that triggers
             chunking (or an error when *allow_gap* is ``False``).
@@ -111,7 +111,7 @@ def batch_decode(
         List of RGB numpy arrays in the same order as *refs*.
 
     Raises:
-        ValueError: When a constraint (*allow_images*, *allow_multiple_videos*, or *allow_gap*)
+        ValueError: When a constraint (*allow_images*, *allow_multi_video*, or *allow_gap*)
             is violated.
 
     Examples:
@@ -148,11 +148,11 @@ def batch_decode(
             f"or use ref.to_ndarray() directly."
         )
 
-    if len(video_groups) > 1 and not allow_multiple_videos:
+    if len(video_groups) > 1 and not allow_multi_video:
         uris = list(video_groups.keys())
         raise ValueError(
             f"batch_decode() received refs from {len(uris)} different video files "
-            f"but allow_multiple_videos=False. URIs: {uris}"
+            f"but allow_multi_video=False. URIs: {uris}"
         )
 
     results: list[npt.NDArray[np.uint8] | None] = [None] * len(refs)
