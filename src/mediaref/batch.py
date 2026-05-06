@@ -23,8 +23,7 @@ def _split_by_gap(
 ) -> list[tuple[list[int], list[float]]]:
     """Split timestamps into contiguous chunks at gaps exceeding *gap_threshold*.
 
-    Returns a list of ``(indices, pts_seconds)`` tuples — one per chunk —
-    sorted by time within each chunk.
+    Returns a list of ``(indices, pts_seconds)`` tuples — one per chunk — sorted by time within each chunk.
     """
     if len(pts_seconds) <= 1:
         return [(indices, pts_seconds)]
@@ -47,9 +46,9 @@ def _decode_video_chunks(
 ) -> list[list[npt.NDArray[np.uint8]]]:
     """Decode multiple timestamp chunks from one source with a single decoder open.
 
-    Each chunk is decoded via a separate ``get_frames_played_at`` call so the
-    decoder can seek past large gaps instead of decoding every intermediate
-    frame.  Returns one list of RGB HWC frames per chunk, in input order.
+    Each chunk is decoded via a separate ``get_frames_played_at`` call so the decoder can seek past
+    large gaps instead of decoding every intermediate frame.  Returns one list of RGB HWC frames per
+    chunk, in input order.
     """
     source = resolve_video_source(uri)
     with decoder_class(source) as video_decoder:
@@ -90,35 +89,30 @@ def batch_decode(
 ) -> list[npt.NDArray[np.uint8]]:
     """Decode multiple media references efficiently using batch decoding.
 
-    Groups video frames by file and decodes them in one pass for efficiency.
-    When timestamps within a single video have large gaps, the decoder
-    automatically splits them into contiguous chunks and seeks between them
-    instead of decoding all intermediate frames.
+    Groups video frames by file and decodes them in one pass for efficiency.  When timestamps within
+    a single video have large gaps, the decoder automatically splits them into contiguous chunks and
+    seeks between them instead of decoding all intermediate frames.
 
     Args:
         refs: List of MediaRef objects to decode.
         decoder: Decoder backend (``'pyav'`` or ``'torchcodec'``).
-        allow_images: If ``True``, image refs are accepted and decoded
-            individually.  If ``False`` (default), image refs raise
-            ``ValueError``.
-        allow_multiple_videos: If ``True``, refs may span multiple video
-            files.  If ``False`` (default), more than one video URI raises
-            ``ValueError``.
-        gap_threshold: Minimum gap in seconds between consecutive sorted
-            timestamps that triggers chunking (or an error when
-            *allow_gap* is ``False``).
-        allow_gap: If ``True`` (default), gaps exceeding *gap_threshold*
-            cause automatic chunk splitting for efficient decoding.  If
-            ``False``, such gaps raise ``ValueError``.
-        **kwargs: Additional options forwarded to ``to_ndarray()`` for
-            image loading (only used when *allow_images* is ``True``).
+        allow_images: If ``True``, image refs are accepted and decoded individually.
+            If ``False`` (default), image refs raise ``ValueError``.
+        allow_multiple_videos: If ``True``, refs may span multiple video files.
+            If ``False`` (default), more than one video URI raises ``ValueError``.
+        gap_threshold: Minimum gap in seconds between consecutive sorted timestamps that triggers
+            chunking (or an error when *allow_gap* is ``False``).
+        allow_gap: If ``True`` (default), gaps exceeding *gap_threshold* cause automatic chunk
+            splitting for efficient decoding.  If ``False``, such gaps raise ``ValueError``.
+        **kwargs: Additional options forwarded to ``to_ndarray()`` for image loading
+            (only used when *allow_images* is ``True``).
 
     Returns:
         List of RGB numpy arrays in the same order as *refs*.
 
     Raises:
-        ValueError: When a constraint (*allow_images*, *allow_multiple_videos*,
-            or *allow_gap*) is violated.
+        ValueError: When a constraint (*allow_images*, *allow_multiple_videos*, or *allow_gap*)
+            is violated.
 
     Examples:
         >>> refs = [MediaRef(uri="video.mp4", pts_ns=i * 1_000_000_000) for i in range(3)]
