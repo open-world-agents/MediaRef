@@ -54,8 +54,7 @@ def _decode_video_chunks(
     source = resolve_video_source(uri)
     with decoder_class(source) as video_decoder:
         return [
-            [np.transpose(f, (1, 2, 0)) for f in video_decoder.get_frames_played_at(chunk).data]
-            for chunk in chunks
+            [np.transpose(f, (1, 2, 0)) for f in video_decoder.get_frames_played_at(chunk).data] for chunk in chunks
         ]
 
 
@@ -181,9 +180,7 @@ def batch_decode(
         chunks = _split_by_gap(indices, pts_seconds, gap_threshold)
 
         if len(chunks) > 1 and not allow_gap:
-            max_gap = max(
-                chunks[j + 1][1][0] - chunks[j][1][-1] for j in range(len(chunks) - 1)
-            )
+            max_gap = max(chunks[j + 1][1][0] - chunks[j][1][-1] for j in range(len(chunks) - 1))
             raise ValueError(
                 f"Timestamps for '{uri}' have a gap of {max_gap:.1f}s "
                 f"(threshold: {gap_threshold}s) but allow_gap=False."

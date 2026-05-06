@@ -394,9 +394,7 @@ class TestBatchDecodeValidation:
         results = batch_decode(refs, allow_images=True)
         assert len(results) == 1
 
-    def test_multiple_videos_rejected_by_default(
-        self, sample_video_file: tuple[Path, list[int]], tmp_path: Path
-    ):
+    def test_multiple_videos_rejected_by_default(self, sample_video_file: tuple[Path, list[int]], tmp_path: Path):
         video_path, timestamps = sample_video_file
         # Create a second video by copying
         import shutil
@@ -411,9 +409,7 @@ class TestBatchDecodeValidation:
         with pytest.raises(ValueError, match="allow_multiple_videos=False"):
             batch_decode(refs)
 
-    def test_multiple_videos_accepted_when_allowed(
-        self, sample_video_file: tuple[Path, list[int]], tmp_path: Path
-    ):
+    def test_multiple_videos_accepted_when_allowed(self, sample_video_file: tuple[Path, list[int]], tmp_path: Path):
         video_path, timestamps = sample_video_file
         import shutil
 
