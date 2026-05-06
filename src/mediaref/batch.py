@@ -1,39 +1,60 @@
 """Batch loading utilities for MediaRef."""
 
-import warnings
 from collections import defaultdict
-from typing import TYPE_CHECKING, List, Literal, Optional, Type
+from typing import TYPE_CHECKING, Literal, Type
 
 import numpy as np
 import numpy.typing as npt
 
-from ._internal import resolve_video_source
+from ._internal import NANOSECOND, resolve_video_source
 
 if TYPE_CHECKING:
     from .core import MediaRef
     from .video_decoder import BaseVideoDecoder
 
-NANOSECOND = 1_000_000_000  # 1 second in nanoseconds
-
 # Type alias for decoder backend selection
 DecoderBackend = Literal["pyav", "torchcodec"]
 
 
-def _decode_video_group(
+def _split_by_gap(
+    indices: list[int],
+    pts_seconds: list[float],
+    gap_threshold: float,
+) -> list[tuple[list[int], list[float]]]:
+    """Split timestamps into contiguous chunks at gaps exceeding *gap_threshold*.
+
+    Returns a list of ``(indices, pts_seconds)`` tuples — one per chunk — sorted by time within each chunk.
+    """
+    if len(pts_seconds) <= 1:
+        return [(indices, pts_seconds)]
+
+    paired = sorted(zip(indices, pts_seconds), key=lambda x: x[1])
+
+    chunks: list[tuple[list[int], list[float]]] = [([paired[0][0]], [paired[0][1]])]
+    for i in range(1, len(paired)):
+        if paired[i][1] - paired[i - 1][1] > gap_threshold:
+            chunks.append(([], []))
+        chunks[-1][0].append(paired[i][0])
+        chunks[-1][1].append(paired[i][1])
+    return chunks
+
+
+def _decode_video_chunks(
     decoder_class: Type["BaseVideoDecoder"],
     uri: str,
-    pts_seconds: List[float],
-) -> List[npt.NDArray[np.uint8]]:
-    """Decode all timestamps from one source. Returns RGB HWC frames in input order.
+    chunks: list[list[float]],
+) -> list[list[npt.NDArray[np.uint8]]]:
+    """Decode multiple timestamp chunks from one source with a single decoder open.
 
-    ``uri`` is passed straight to the decoder. For cloud schemes the decoder
-    layer (``cached_av``) opens fsspec internally and caches both the av
-    container and its file-like as a single unit (see cached_av/__init__.py).
+    Each chunk is decoded via a separate ``get_frames_played_at`` call so the decoder can seek past
+    large gaps instead of decoding every intermediate frame.  Returns one list of RGB HWC frames per
+    chunk, in input order.
     """
     source = resolve_video_source(uri)
     with decoder_class(source) as video_decoder:
-        batch = video_decoder.get_frames_played_at(pts_seconds)
-        return [np.transpose(f, (1, 2, 0)) for f in batch.data]
+        return [
+            [np.transpose(f, (1, 2, 0)) for f in video_decoder.get_frames_played_at(chunk).data] for chunk in chunks
+        ]
 
 
 def _get_decoder_class(backend: DecoderBackend) -> Type["BaseVideoDecoder"]:
@@ -59,26 +80,47 @@ def _get_decoder_class(backend: DecoderBackend) -> Type["BaseVideoDecoder"]:
 def batch_decode(
     refs: list["MediaRef"],
     decoder: DecoderBackend = "pyav",
+    *,
+    allow_images: bool = False,
+    allow_multi_video: bool = False,
+    gap_threshold: float = 2.0,
+    allow_gap: bool = True,
     **kwargs,
 ) -> list[npt.NDArray[np.uint8]]:
     """Decode multiple media references efficiently using batch decoding.
 
-    Groups video frames by file and decodes them in one pass for efficiency.
-    Images are decoded individually.
+    Groups video frames by file and decodes them in one pass for efficiency.  When timestamps within
+    a single video have large gaps, the decoder automatically splits them into contiguous chunks and
+    seeks between them instead of decoding all intermediate frames.
 
     Args:
-        refs: List of MediaRef objects to decode
-        decoder: Decoder backend ('pyav' or 'torchcodec'). Default: 'pyav'
-        **kwargs: Additional options passed to to_ndarray() for image loading
+        refs: List of MediaRef objects to decode.
+        decoder: Decoder backend (``'pyav'`` or ``'torchcodec'``).
+        allow_images: If ``True``, image refs are accepted and decoded individually.
+            If ``False`` (default), image refs raise ``ValueError``.
+        allow_multi_video: If ``True``, refs may span multiple video files.
+            If ``False`` (default), more than one video URI raises ``ValueError``.
+        gap_threshold: Minimum gap in seconds between consecutive sorted timestamps that triggers
+            chunking (or an error when *allow_gap* is ``False``).
+        allow_gap: If ``True`` (default), gaps exceeding *gap_threshold* cause automatic chunk
+            splitting for efficient decoding.  If ``False``, such gaps raise ``ValueError``.
+        **kwargs: Additional options forwarded to ``to_ndarray()`` for image loading
+            (only used when *allow_images* is ``True``).
 
     Returns:
-        List of RGB numpy arrays in the same order as input refs
+        List of RGB numpy arrays in the same order as *refs*.
+
+    Raises:
+        ValueError: When a constraint (*allow_images*, *allow_multi_video*, or *allow_gap*)
+            is violated.
 
     Examples:
-        >>> refs = [MediaRef(uri="video.mp4", pts_ns=i*1_000_000_000) for i in range(3)]
+        >>> refs = [MediaRef(uri="video.mp4", pts_ns=i * 1_000_000_000) for i in range(3)]
         >>> frames = batch_decode(refs)
+
+        >>> # Strict mode: single video, no large gaps
+        >>> frames = batch_decode(refs, allow_gap=False)
     """
-    # Input validation
     if not refs:
         return []
 
@@ -88,11 +130,9 @@ def batch_decode(
     if any(ref is None for ref in refs):
         raise ValueError("refs list contains None values")
 
-    # Get the decoder class for the specified backend
     decoder_class = _get_decoder_class(decoder)
 
-    # Group refs by video file for efficient batch loading
-    video_groups = defaultdict(list)
+    video_groups: dict[str, list[tuple[int, "MediaRef"]]] = defaultdict(list)
     image_refs: list[tuple[int, "MediaRef"]] = []
 
     for i, ref in enumerate(refs):
@@ -101,37 +141,51 @@ def batch_decode(
         else:
             image_refs.append((i, ref))
 
-    # Prepare results array
-    results: List[Optional[npt.NDArray[np.uint8]]] = [None] * len(refs)
-
-    # Load images (no batching needed)
-    if image_refs:
-        warnings.warn(
-            f"batch_decode() received {len(image_refs)} image reference(s). "
-            f"Batch decoding is only optimized for video frames. "
-            f"Images will be decoded individually. "
-            f"Consider using ref.to_ndarray() directly for images.",
-            UserWarning,
-            stacklevel=2,
+    if image_refs and not allow_images:
+        raise ValueError(
+            f"batch_decode() received {len(image_refs)} image reference(s) "
+            f"but allow_images=False. Pass allow_images=True to decode images, "
+            f"or use ref.to_ndarray() directly."
         )
+
+    if len(video_groups) > 1 and not allow_multi_video:
+        uris = list(video_groups.keys())
+        raise ValueError(
+            f"batch_decode() received refs from {len(uris)} different video files "
+            f"but allow_multi_video=False. URIs: {uris}"
+        )
+
+    results: list[npt.NDArray[np.uint8] | None] = [None] * len(refs)
+
+    # Decode images individually
     for i, ref in image_refs:
         results[i] = ref.to_ndarray(**kwargs)
 
-    # Load video frames using optimized batch decoding
+    # Decode video frames with gap-aware chunking
     for uri, group in video_groups.items():
         indices = [i for i, _ in group]
 
-        # Validate pts_ns and convert to seconds
-        pts_seconds = []
+        pts_seconds: list[float] = []
         for _, ref in group:
             if ref.pts_ns is None:
                 raise ValueError(f"Video reference missing pts_ns: {ref.uri}")
             pts_seconds.append(ref.pts_ns / NANOSECOND)
 
+        chunks = _split_by_gap(indices, pts_seconds, gap_threshold)
+
+        if len(chunks) > 1 and not allow_gap:
+            max_gap = max(chunks[j + 1][1][0] - chunks[j][1][-1] for j in range(len(chunks) - 1))
+            raise ValueError(
+                f"Timestamps for '{uri}' have a gap of {max_gap:.1f}s "
+                f"(threshold: {gap_threshold}s) but allow_gap=False."
+            )
+
         try:
-            frames = _decode_video_group(decoder_class, uri, pts_seconds)
-            for idx, frame in zip(indices, frames):
-                results[idx] = frame
+            chunk_pts = [pts for _, pts in chunks]
+            decoded = _decode_video_chunks(decoder_class, uri, chunk_pts)
+            for (chunk_indices, _), frames in zip(chunks, decoded):
+                for idx, frame in zip(chunk_indices, frames):
+                    results[idx] = frame
         except ImportError:
             raise
         except Exception as e:

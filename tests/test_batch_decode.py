@@ -5,7 +5,6 @@ These tests require the [video] extra to be installed.
 
 import sys
 import time
-import warnings
 from pathlib import Path
 from unittest.mock import patch
 
@@ -23,9 +22,7 @@ class TestBatchDecodeImages:
     def test_batch_decode_single_image(self, sample_image_files: list[Path]):
         """Test batch decoding with single image."""
         refs = [MediaRef(uri=str(sample_image_files[0]))]
-        with warnings.catch_warnings():
-            warnings.filterwarnings("ignore", message="batch_decode.*received.*image")
-            results = batch_decode(refs)
+        results = batch_decode(refs, allow_images=True)
 
         assert len(results) == 1
         assert isinstance(results[0], np.ndarray)
@@ -34,9 +31,7 @@ class TestBatchDecodeImages:
     def test_batch_decode_multiple_images(self, sample_image_files: list[Path]):
         """Test batch decoding with multiple images."""
         refs = [MediaRef(uri=str(img)) for img in sample_image_files]
-        with warnings.catch_warnings():
-            warnings.filterwarnings("ignore", message="batch_decode.*received.*image")
-            results = batch_decode(refs)
+        results = batch_decode(refs, allow_images=True)
 
         assert len(results) == 3
         for rgb in results:
@@ -47,9 +42,7 @@ class TestBatchDecodeImages:
     def test_batch_decode_images_different_content(self, sample_image_files: list[Path]):
         """Test that different images have different content."""
         refs = [MediaRef(uri=str(img)) for img in sample_image_files]
-        with warnings.catch_warnings():
-            warnings.filterwarnings("ignore", message="batch_decode.*received.*image")
-            results = batch_decode(refs)
+        results = batch_decode(refs, allow_images=True)
 
         # Images should be different (different intensities)
         with pytest.raises(AssertionError):
@@ -65,9 +58,7 @@ class TestBatchDecodeImages:
     def test_batch_decode_preserves_order(self, sample_image_files: list[Path]):
         """Test that batch_decode preserves input order."""
         refs = [MediaRef(uri=str(img)) for img in sample_image_files]
-        with warnings.catch_warnings():
-            warnings.filterwarnings("ignore", message="batch_decode.*received.*image")
-            results = batch_decode(refs)
+        results = batch_decode(refs, allow_images=True)
 
         # Verify order by checking individual loads
         for ref, result in zip(refs, results):
@@ -141,9 +132,7 @@ class TestBatchDecodeMixed:
             MediaRef(uri=str(sample_image_files[1])),
             MediaRef(uri=str(video_path), pts_ns=timestamps[1]),  # Already in nanoseconds
         ]
-        with warnings.catch_warnings():
-            warnings.filterwarnings("ignore", message="batch_decode.*received.*image")
-            results = batch_decode(refs)
+        results = batch_decode(refs, allow_images=True)
 
         assert len(results) == 4
         for rgb in results:
@@ -161,9 +150,7 @@ class TestBatchDecodeMixed:
             MediaRef(uri=str(video_path), pts_ns=timestamps[0]),  # Already in nanoseconds
             MediaRef(uri=str(sample_image_files[1])),
         ]
-        with warnings.catch_warnings():
-            warnings.filterwarnings("ignore", message="batch_decode.*received.*image")
-            results = batch_decode(refs)
+        results = batch_decode(refs, allow_images=True)
 
         # Verify order
         for ref, result in zip(refs, results):
@@ -390,6 +377,84 @@ class TestBatchDecodeErrorHandling:
         ]
 
         with pytest.raises(Exception):
-            with warnings.catch_warnings():
-                warnings.filterwarnings("ignore", message="batch_decode.*received.*image")
-                batch_decode(refs)
+            batch_decode(refs, allow_images=True)
+
+
+@pytest.mark.video
+class TestBatchDecodeValidation:
+    """Test allow_images, allow_multi_video, allow_gap, and gap_threshold."""
+
+    def test_images_rejected_by_default(self, sample_image_files: list[Path]):
+        refs = [MediaRef(uri=str(sample_image_files[0]))]
+        with pytest.raises(ValueError, match="allow_images=False"):
+            batch_decode(refs)
+
+    def test_images_accepted_when_allowed(self, sample_image_files: list[Path]):
+        refs = [MediaRef(uri=str(sample_image_files[0]))]
+        results = batch_decode(refs, allow_images=True)
+        assert len(results) == 1
+
+    def test_multiple_videos_rejected_by_default(self, sample_video_file: tuple[Path, list[int]], tmp_path: Path):
+        video_path, timestamps = sample_video_file
+        # Create a second video by copying
+        import shutil
+
+        second_video = tmp_path / "second.mkv"
+        shutil.copy2(video_path, second_video)
+
+        refs = [
+            MediaRef(uri=str(video_path), pts_ns=timestamps[0]),
+            MediaRef(uri=str(second_video), pts_ns=timestamps[0]),
+        ]
+        with pytest.raises(ValueError, match="allow_multi_video=False"):
+            batch_decode(refs)
+
+    def test_multiple_videos_accepted_when_allowed(self, sample_video_file: tuple[Path, list[int]], tmp_path: Path):
+        video_path, timestamps = sample_video_file
+        import shutil
+
+        second_video = tmp_path / "second.mkv"
+        shutil.copy2(video_path, second_video)
+
+        refs = [
+            MediaRef(uri=str(video_path), pts_ns=timestamps[0]),
+            MediaRef(uri=str(second_video), pts_ns=timestamps[0]),
+        ]
+        results = batch_decode(refs, allow_multi_video=True)
+        assert len(results) == 2
+
+    def test_gap_auto_chunks_by_default(self, sample_video_file: tuple[Path, list[int]]):
+        """Sparse timestamps should succeed (auto-chunked) with default settings."""
+        video_path, timestamps = sample_video_file
+        if len(timestamps) < 2:
+            pytest.skip("Need at least 2 timestamps")
+        # Use first and last timestamps — likely > 2s apart
+        refs = [
+            MediaRef(uri=str(video_path), pts_ns=timestamps[0]),
+            MediaRef(uri=str(video_path), pts_ns=timestamps[-1]),
+        ]
+        results = batch_decode(refs)
+        assert len(results) == 2
+
+    def test_gap_raises_when_disallowed(self, sample_video_file: tuple[Path, list[int]]):
+        video_path, timestamps = sample_video_file
+        if len(timestamps) < 2:
+            pytest.skip("Need at least 2 timestamps")
+        # Use timestamps far apart with a tiny threshold to guarantee a gap
+        refs = [
+            MediaRef(uri=str(video_path), pts_ns=timestamps[0]),
+            MediaRef(uri=str(video_path), pts_ns=timestamps[-1]),
+        ]
+        with pytest.raises(ValueError, match="allow_gap=False"):
+            batch_decode(refs, allow_gap=False, gap_threshold=0.001)
+
+    def test_gap_threshold_adjustable(self, sample_video_file: tuple[Path, list[int]]):
+        """A large gap_threshold should prevent chunking/errors even for spread timestamps."""
+        video_path, timestamps = sample_video_file
+        refs = [
+            MediaRef(uri=str(video_path), pts_ns=timestamps[0]),
+            MediaRef(uri=str(video_path), pts_ns=timestamps[-1]),
+        ]
+        # Very large threshold → no gap detected → no error even with allow_gap=False
+        results = batch_decode(refs, allow_gap=False, gap_threshold=9999.0)
+        assert len(results) == 2
