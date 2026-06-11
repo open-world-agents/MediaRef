@@ -624,3 +624,22 @@ class TestBatchConversionReformatter:
         reformatter = av.video.reformatter.VideoReformatter()
         for frame in frames:
             np.testing.assert_array_equal(_frame_to_rgba(frame, reformatter), _frame_to_rgba(frame))
+
+    def test_reformatter_handles_mixed_shapes_and_formats(self):
+        """One reformatter across odd dimensions and mixed source formats stays byte-identical."""
+        import av
+
+        from mediaref.video_decoder.pyav_decoder import _frame_to_rgba
+
+        rng = np.random.default_rng(0)
+        reformatter = av.video.reformatter.VideoReformatter()
+        # Odd/even sizes and several decoder-realistic source formats, alternated
+        # through ONE reformatter to exercise parameter changes between calls.
+        cases = [(64, 48), (63, 47), (128, 128), (37, 21), (64, 48)]
+        for fmt in ("yuv420p", "yuv444p", "nv12", "rgb24"):
+            for w, h in cases:
+                rgb = rng.integers(0, 255, (h, w, 3), dtype=np.uint8)
+                frame = av.VideoFrame.from_ndarray(rgb, format="rgb24").reformat(format=fmt)
+                np.testing.assert_array_equal(
+                    _frame_to_rgba(frame, reformatter), _frame_to_rgba(frame), err_msg=f"{fmt} {w}x{h}"
+                )

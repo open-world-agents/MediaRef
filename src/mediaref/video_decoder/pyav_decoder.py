@@ -40,13 +40,13 @@ def _frame_to_rgba(
 
     Args:
         frame: PyAV VideoFrame to convert
-        reformatter: Optional shared ``av.video.reformatter.VideoReformatter``. PyAV's
-            ``to_ndarray(format=...)`` builds a fresh SwsContext per call; at small
-            resolutions the context init dominates the pixel work (~10x measured at
-            128x128), so batch callers pass one reformatter to amortize it. Safe for
-            varying frame shapes/formats: the reformatter wraps FFmpeg's
-            ``sws_getCachedContext``, which rebuilds itself whenever the parameters
-            change (output stays identical; only the caching benefit degrades).
+        reformatter: Optional shared ``av.video.reformatter.VideoReformatter``.
+            PyAV's ``to_ndarray(format=...)`` sets up a fresh reformatter on every
+            call; at small resolutions that per-call setup dominates the pixel work
+            (~10x measured at 128x128), so batch callers pass one reformatter to
+            amortize it. Output is byte-identical to the stateless path, including
+            across varying frame shapes/formats through one reformatter (covered by
+            tests; only the reuse benefit degrades when parameters change).
 
     Returns:
         RGBA numpy array (H, W, 4) with uint8 dtype
