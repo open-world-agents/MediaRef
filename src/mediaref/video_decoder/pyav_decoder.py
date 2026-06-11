@@ -25,7 +25,9 @@ _GC_COLLECTION_INTERVAL = 10
 _SPARSE_QUERY_GAP_THRESHOLD = 1.0
 
 
-def _frame_to_rgba(frame: av.VideoFrame) -> npt.NDArray[np.uint8]:
+def _frame_to_rgba(
+    frame: av.VideoFrame, reformatter: "av.video.reformatter.VideoReformatter | None" = None
+) -> npt.NDArray[np.uint8]:
     """Convert PyAV frame to RGBA numpy array.
 
     NOTE: Convert ARGB to RGBA manually instead of using `to_ndarray(format="rgba")`.
@@ -38,11 +40,21 @@ def _frame_to_rgba(frame: av.VideoFrame) -> npt.NDArray[np.uint8]:
 
     Args:
         frame: PyAV VideoFrame to convert
+        reformatter: Optional shared ``av.video.reformatter.VideoReformatter``. PyAV's
+            ``to_ndarray(format=...)`` builds a fresh SwsContext per call; at small
+            resolutions the context init dominates the pixel work (~10x measured at
+            128x128), so batch callers pass one reformatter to amortize it. Safe for
+            varying frame shapes/formats: the reformatter wraps FFmpeg's
+            ``sws_getCachedContext``, which rebuilds itself whenever the parameters
+            change (output stays identical; only the caching benefit degrades).
 
     Returns:
         RGBA numpy array (H, W, 4) with uint8 dtype
     """
-    argb_array = frame.to_ndarray(format="argb")
+    if reformatter is not None:
+        argb_array = reformatter.reformat(frame, format="argb").to_ndarray()
+    else:
+        argb_array = frame.to_ndarray(format="argb")
     # ARGB format stores channels as [A, R, G, B], so we reorder to [R, G, B, A]
     rgba_array: npt.NDArray[np.uint8] = argb_array[:, :, [1, 2, 3, 0]]
     return rgba_array
@@ -50,9 +62,11 @@ def _frame_to_rgba(frame: av.VideoFrame) -> npt.NDArray[np.uint8]:
 
 def _convert_av_frames_to_nchw(av_frames: List[av.VideoFrame]) -> List[npt.NDArray[np.uint8]]:
     """Convert a list of PyAV frames to NCHW numpy arrays (RGB)."""
+    # One SwsContext for the whole batch instead of one per frame (see _frame_to_rgba).
+    reformatter = av.video.reformatter.VideoReformatter()
     frames = []
     for frame in av_frames:
-        rgba_array = _frame_to_rgba(frame)
+        rgba_array = _frame_to_rgba(frame, reformatter)
         rgb_array = cv2.cvtColor(rgba_array, cv2.COLOR_RGBA2RGB)
         frame_nchw = np.transpose(rgb_array, (2, 0, 1)).astype(np.uint8)
         frames.append(frame_nchw)

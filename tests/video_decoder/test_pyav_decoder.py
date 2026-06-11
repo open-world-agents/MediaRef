@@ -600,3 +600,27 @@ class TestPyAVVideoDecoderGetFramesPlayedInRange:
 
 # Note: Decoder consistency tests (PyAV vs TorchCodec) have been moved to
 # tests/video_decoder/test_decoder_consistency.py
+
+
+@pytest.mark.video
+class TestBatchConversionReformatter:
+    """Batch conversion shares one VideoReformatter (one SwsContext per batch)."""
+
+    def test_reformatter_output_matches_stateless(self, sample_video_file: tuple[Path, list[int]]):
+        """The shared-reformatter path must be byte-identical to per-frame to_ndarray."""
+        import av
+
+        from mediaref.video_decoder.pyav_decoder import _frame_to_rgba
+
+        video_path, _ = sample_video_file
+        with av.open(str(video_path)) as container:
+            frames = []
+            for frame in container.decode(video=0):
+                frames.append(frame)
+                if len(frames) >= 8:
+                    break
+
+        assert frames, "fixture video yielded no frames"
+        reformatter = av.video.reformatter.VideoReformatter()
+        for frame in frames:
+            np.testing.assert_array_equal(_frame_to_rgba(frame, reformatter), _frame_to_rgba(frame))
