@@ -1,5 +1,7 @@
 """Internal loading and encoding utilities."""
 
+from __future__ import annotations
+
 import hashlib
 import io
 from pathlib import Path
