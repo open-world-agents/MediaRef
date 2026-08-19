@@ -1,7 +1,9 @@
 """Batch loading utilities for MediaRef."""
 
+import re
 import sys
 from collections import defaultdict
+from importlib.metadata import PackageNotFoundError, version
 from typing import TYPE_CHECKING, Any, Literal, Mapping, Optional, Type
 
 import numpy as np
@@ -43,9 +45,18 @@ def _split_by_gap(
 def _coalesce_native_sparse_chunks(
     chunks: list[tuple[list[int], list[float]]],
     backend: DecoderBackend,
+    torchcodec_version: Optional[str] = None,
 ) -> list[tuple[list[int], list[float]]]:
     """Use one native sparse request when the backend optimizes sparse seeks."""
     if backend != "torchcodec" or len(chunks) <= 1:
+        return chunks
+    if torchcodec_version is None:
+        try:
+            torchcodec_version = version("torchcodec")
+        except PackageNotFoundError:
+            return chunks
+    match = re.match(r"^(\d+)\.(\d+)", torchcodec_version)
+    if match is None or tuple(map(int, match.groups())) < (0, 15):
         return chunks
     return [
         (

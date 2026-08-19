@@ -505,9 +505,14 @@ class TestSparseBackendPlanning:
     def test_torchcodec_coalesces_gap_chunks(self):
         chunks = [([0, 1], [0.0, 0.1]), ([2], [10.0]), ([3], [20.0])]
 
-        assert _coalesce_native_sparse_chunks(chunks, "torchcodec") == [
+        assert _coalesce_native_sparse_chunks(chunks, "torchcodec", "0.15.0") == [
             ([0, 1, 2, 3], [0.0, 0.1, 10.0, 20.0])
         ]
+
+    def test_old_torchcodec_preserves_gap_chunks(self):
+        chunks = [([0], [0.0]), ([1], [10.0])]
+
+        assert _coalesce_native_sparse_chunks(chunks, "torchcodec", "0.14.1") == chunks
 
     def test_pyav_preserves_gap_chunks(self):
         chunks = [([0], [0.0]), ([1], [10.0])]
