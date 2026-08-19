@@ -26,15 +26,64 @@ def _run(script: str) -> subprocess.CompletedProcess:
 
 @pytest.mark.video
 def test_pyav_only_import_does_not_load_torchcodec():
-    """`import mediaref.video_decoder` must not transitively load torchcodec.
+    """Loading the PyAV backend must not transitively load TorchCodec."""
+    result = _run("""
+        import sys
+        from mediaref.video_decoder import PyAVVideoDecoder  # noqa: F401
+        leaked = [m for m in sys.modules if m.startswith("torchcodec")]
+        assert not leaked, f"torchcodec leaked: {leaked}"
+        print("OK")
+    """)
+    assert result.returncode == 0, f"stdout={result.stdout!r} stderr={result.stderr!r}"
+    assert result.stdout.strip() == "OK"
 
-    Marked ``video`` because the import requires PyAV (`require_video()`).
-    """
+
+def test_common_video_decoder_import_loads_neither_backend():
     result = _run("""
         import sys
         import mediaref.video_decoder  # noqa: F401
-        leaked = [m for m in sys.modules if m.startswith("torchcodec")]
-        assert not leaked, f"torchcodec leaked: {leaked}"
+        assert "av" not in sys.modules
+        assert not [m for m in sys.modules if m.startswith("torchcodec")]
+        print("OK")
+    """)
+    assert result.returncode == 0, f"stdout={result.stdout!r} stderr={result.stderr!r}"
+    assert result.stdout.strip() == "OK"
+
+
+def test_torchcodec_backend_does_not_require_pyav():
+    result = _run("""
+        import sys
+        from types import ModuleType
+
+        torchcodec = ModuleType("torchcodec")
+        decoders = ModuleType("torchcodec.decoders")
+        decoders.VideoDecoder = type("VideoDecoder", (), {})
+        torchcodec.decoders = decoders
+        sys.modules["torchcodec"] = torchcodec
+        sys.modules["torchcodec.decoders"] = decoders
+        sys.modules["av"] = None
+
+        from mediaref.video_decoder import TorchCodecVideoDecoder  # noqa: F401
+
+        assert "mediaref.video_decoder.pyav_decoder" not in sys.modules
+        print("OK")
+    """)
+    assert result.returncode == 0, f"stdout={result.stdout!r} stderr={result.stderr!r}"
+    assert result.stdout.strip() == "OK"
+
+
+def test_pyav_backend_has_specific_install_error():
+    result = _run("""
+        import sys
+        sys.modules["av"] = None
+
+        import mediaref.video_decoder  # common interfaces remain available
+        try:
+            from mediaref.video_decoder import PyAVVideoDecoder  # noqa: F401
+        except ImportError as error:
+            assert "mediaref[video]" in str(error)
+        else:
+            raise AssertionError("PyAV import unexpectedly succeeded")
         print("OK")
     """)
     assert result.returncode == 0, f"stdout={result.stdout!r} stderr={result.stderr!r}"
