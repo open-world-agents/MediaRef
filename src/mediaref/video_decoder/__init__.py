@@ -16,15 +16,12 @@ Examples:
 
 from typing import TYPE_CHECKING
 
-from .._features import require_video
 from .base import BaseVideoDecoder
 from .frame_batch import FrameBatch
-from .pyav_decoder import PyAVVideoDecoder
 from .types import VideoStreamMetadata
 
-require_video()
-
 if TYPE_CHECKING:
+    from .pyav_decoder import PyAVVideoDecoder
     from .torchcodec_decoder import TorchCodecVideoDecoder
 
 __all__ = [
@@ -38,12 +35,21 @@ __all__ = [
 
 def __getattr__(name: str):
     """Lazy resolver (PEP 562) for optional decoders."""
+    if name == "PyAVVideoDecoder":
+        from .._features import require_video
+
+        require_video()
+        from .pyav_decoder import PyAVVideoDecoder
+
+        globals()[name] = PyAVVideoDecoder
+        return PyAVVideoDecoder
     if name == "TorchCodecVideoDecoder":
         try:
             from .torchcodec_decoder import TorchCodecVideoDecoder
         except ImportError as e:
             raise ImportError(
-                "TorchCodecVideoDecoder requires the optional `torchcodec` package: pip install torchcodec"
+                "TorchCodecVideoDecoder requires the TorchCodec extra. "
+                "Install with: pip install 'mediaref[torchcodec]'"
             ) from e
         # TorchCodec 0.16 defers FFmpeg load failures until a video operation;
         # construction errors propagate unchanged so callers see the root cause.
