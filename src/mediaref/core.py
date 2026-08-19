@@ -192,8 +192,10 @@ class MediaRef(BaseModel):
         *,
         decoder: Literal["pyav", "torchcodec"] = "pyav",
         decoder_options: Optional[Mapping[str, Any]] = None,
+        image_decoder: Literal["pillow", "torchcodec"] = "pillow",
+        image_decoder_options: Optional[Mapping[str, Any]] = None,
         storage_options: Optional[Mapping[str, Any]] = None,
-    ) -> npt.NDArray[np.uint8]:
+    ) -> npt.NDArray[np.generic]:
         """Load and return media as numpy ndarray in specified format.
 
         Args:
@@ -205,6 +207,8 @@ class MediaRef(BaseModel):
                 - "gray": Grayscale (H, W)
             decoder: Video decoder backend. Ignored for image refs.
             decoder_options: Options passed to the video decoder constructor.
+            image_decoder: Image decoder backend. Ignored for video refs.
+            image_decoder_options: Options passed to TorchCodec's ``decode_image``.
             storage_options: Credentials and backend options passed to fsspec.
         Returns:
             Numpy ndarray in requested format
@@ -223,6 +227,8 @@ class MediaRef(BaseModel):
         rgba = self._load_as_rgba(
             decoder=decoder,
             decoder_options=decoder_options,
+            image_decoder=image_decoder,
+            image_decoder_options=image_decoder_options,
             storage_options=storage_options,
         )
 
@@ -245,6 +251,8 @@ class MediaRef(BaseModel):
         *,
         decoder: Literal["pyav", "torchcodec"] = "pyav",
         decoder_options: Optional[Mapping[str, Any]] = None,
+        image_decoder: Literal["pillow", "torchcodec"] = "pillow",
+        image_decoder_options: Optional[Mapping[str, Any]] = None,
         storage_options: Optional[Mapping[str, Any]] = None,
     ) -> PIL.Image.Image:
         """Load and return media as PIL Image.
@@ -256,6 +264,8 @@ class MediaRef(BaseModel):
                 - "gray": Grayscale
             decoder: Video decoder backend. Ignored for image refs.
             decoder_options: Options passed to the video decoder constructor.
+            image_decoder: Image decoder backend. Ignored for video refs.
+            image_decoder_options: Options passed to TorchCodec's ``decode_image``.
             storage_options: Credentials and backend options passed to fsspec.
 
         Returns:
@@ -272,14 +282,20 @@ class MediaRef(BaseModel):
         if format in ("bgr", "bgra"):
             raise ValueError(f"Format '{format}' is not compatible with to_pil_image. Use 'rgb', 'rgba', or 'gray'.")
 
-        return PIL.Image.fromarray(
-            self.to_ndarray(
-                format=format,
-                decoder=decoder,
-                decoder_options=decoder_options,
-                storage_options=storage_options,
-            )
+        array = self.to_ndarray(
+            format=format,
+            decoder=decoder,
+            decoder_options=decoder_options,
+            image_decoder=image_decoder,
+            image_decoder_options=image_decoder_options,
+            storage_options=storage_options,
         )
+        if array.dtype != np.uint8:
+            raise ValueError(
+                f"to_pil_image() requires uint8 output, got {array.dtype}. "
+                "Use to_ndarray() to preserve high-dynamic-range data."
+            )
+        return PIL.Image.fromarray(array)
 
     # ========== Internal ==========
 
@@ -288,8 +304,10 @@ class MediaRef(BaseModel):
         *,
         decoder: Literal["pyav", "torchcodec"] = "pyav",
         decoder_options: Optional[Mapping[str, Any]] = None,
+        image_decoder: Literal["pillow", "torchcodec"] = "pillow",
+        image_decoder_options: Optional[Mapping[str, Any]] = None,
         storage_options: Optional[Mapping[str, Any]] = None,
-    ) -> npt.NDArray[np.uint8]:
+    ) -> npt.NDArray[np.generic]:
         """Internal: Load media as RGBA array.
 
         Raises:
@@ -307,4 +325,9 @@ class MediaRef(BaseModel):
                 storage_options=storage_options,
             )
         else:
-            return load_image_as_rgba(self.uri, storage_options=storage_options)
+            return load_image_as_rgba(
+                self.uri,
+                decoder=image_decoder,
+                decoder_options=image_decoder_options,
+                storage_options=storage_options,
+            )

@@ -46,6 +46,9 @@ torchcodec = [
     "torchcodec>=0.7,<0.8; python_version < '3.10'",
     "torchcodec>=0.7; python_version >= '3.10'",
 ]
+torchcodec-image = [
+    "torchcodec>=0.16; python_version >= '3.10'",
+]
 hf = [
     "datasets>=2.14.0",  # register_feature has been stable since 2.x
     "pyarrow",           # transitively required by datasets, listed for clarity

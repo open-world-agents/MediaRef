@@ -75,7 +75,7 @@ def _decode_video_chunks(
     chunks: list[list[float]],
     decoder_options: Mapping[str, Any],
     storage_options: Optional[Mapping[str, Any]],
-) -> list[list[npt.NDArray[np.uint8]]]:
+) -> list[list[npt.NDArray[np.generic]]]:
     """Decode multiple timestamp chunks from one source with a single decoder open.
 
     Each chunk is decoded via a separate ``get_frames_played_at`` call so the decoder can seek past
@@ -117,13 +117,15 @@ def batch_decode(
     decoder: DecoderBackend = "pyav",
     *,
     decoder_options: Optional[Mapping[str, Any]] = None,
+    image_decoder: Literal["pillow", "torchcodec"] = "pillow",
+    image_decoder_options: Optional[Mapping[str, Any]] = None,
     storage_options: Optional[Mapping[str, Any]] = None,
     allow_images: bool = False,
     allow_multi_video: bool = False,
     gap_threshold: float = 2.0,
     allow_gap: bool = True,
     **kwargs,
-) -> list[npt.NDArray[np.uint8]]:
+) -> list[npt.NDArray[np.generic]]:
     """Decode multiple media references efficiently using batch decoding.
 
     Groups video frames by file and decodes them in one pass for efficiency.  When timestamps within
@@ -137,6 +139,8 @@ def batch_decode(
             For TorchCodec this includes options such as ``device``, ``seek_mode``,
             ``num_ffmpeg_threads``, and ``dimension_order``. These options apply to
             video refs only.
+        image_decoder: Image decoder backend (``'pillow'`` or ``'torchcodec'``).
+        image_decoder_options: Options passed to TorchCodec's ``decode_image``.
         storage_options: Credentials and backend options passed to fsspec for
             image and video URIs.
         allow_images: If ``True``, image refs are accepted and decoded individually.
@@ -196,11 +200,16 @@ def batch_decode(
             f"but allow_multi_video=False. URIs: {uris}"
         )
 
-    results: list[npt.NDArray[np.uint8] | None] = [None] * len(refs)
+    results: list[npt.NDArray[np.generic] | None] = [None] * len(refs)
 
     # Decode images individually
     for i, ref in image_refs:
-        results[i] = ref.to_ndarray(storage_options=storage_options, **kwargs)
+        results[i] = ref.to_ndarray(
+            image_decoder=image_decoder,
+            image_decoder_options=image_decoder_options,
+            storage_options=storage_options,
+            **kwargs,
+        )
 
     # Decode video frames with gap-aware chunking
     decoder_class = _get_decoder_class(decoder) if video_groups else None

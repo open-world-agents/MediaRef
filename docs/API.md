@@ -44,15 +44,18 @@ ref = MediaRef(uri=DataURI.from_image(rgb, format="png"))
 
 ### Methods
 
-`to_ndarray(format="rgb", *, decoder="pyav", decoder_options=None, storage_options=None) -> np.ndarray`
+`to_ndarray(format="rgb", *, decoder="pyav", decoder_options=None, image_decoder="pillow", image_decoder_options=None, storage_options=None) -> np.ndarray`
 - Loads the media as a numpy array in the requested format.
 - Formats: `"rgb"` (default), `"bgr"`, `"rgba"`, `"bgra"`, `"gray"`.
 - Returns shape: `(H, W, 3)` for RGB/BGR, `(H, W, 4)` for RGBA/BGRA, `(H, W)` for grayscale.
 - For video URIs (`pts_ns is not None`), decodes the single frame at that timestamp.
-- `decoder` and `decoder_options` select and configure the video backend; `storage_options` is passed to fsspec.
+- `decoder` and `decoder_options` select and configure the video backend.
+- `image_decoder` selects Pillow (default) or TorchCodec 0.16+; `image_decoder_options` configures TorchCodec's `decode_image` call.
+- `storage_options` is passed to fsspec for either media type.
 
-`to_pil_image(format="rgb", *, decoder="pyav", decoder_options=None, storage_options=None) -> PIL.Image`
+`to_pil_image(format="rgb", *, decoder="pyav", decoder_options=None, image_decoder="pillow", image_decoder_options=None, storage_options=None) -> PIL.Image`
 - Same as `to_ndarray` but returns a PIL Image. Formats: `"rgb"`, `"rgba"`, `"gray"`.
+- PIL output requires `uint8`; use `to_ndarray` when preserving TorchCodec `uint16` image or `float32` HDR video output.
 
 `resolve_relative_path(base_path, on_unresolvable="warn") -> MediaRef`
 - Returns a new `MediaRef` with the relative path resolved against `base_path`.
@@ -145,7 +148,7 @@ ref = MediaRef(uri=DataURI.from_file("photo.png"))
 ## `batch_decode`
 
 ```python
-batch_decode(refs, decoder="pyav", *, decoder_options=None, storage_options=None, ...) -> list[np.ndarray]
+batch_decode(refs, decoder="pyav", *, decoder_options=None, image_decoder="pillow", image_decoder_options=None, storage_options=None, ...) -> list[np.ndarray]
 ```
 
 Decode many `MediaRef` video frames efficiently by grouping refs that share a URI, opening each container once, and seeking through the requested timestamps in order. Significantly faster than per-ref decoding when refs cluster on the same video file.
@@ -165,6 +168,14 @@ frames = batch_decode(
     decoder="torchcodec",
     decoder_options={"device": "cuda", "seek_mode": "approximate"},
 )
+
+images = batch_decode(
+    [MediaRef(uri="s3://bucket/frame.png")],
+    allow_images=True,
+    image_decoder="torchcodec",
+    image_decoder_options={"output_dtype": "auto"},
+    storage_options={"anon": False},
+)
 ```
 
 ### Decoder backends
@@ -178,7 +189,32 @@ frames = batch_decode(
 
 Both backends share unified [playback semantics](playback_semantics.md), so a given `pts_ns` (when supported by both) returns the same frame regardless of decoder.
 
-`decoder_options` is passed to the selected decoder constructor. TorchCodec options include `device`, `seek_mode`, `num_ffmpeg_threads`, `dimension_order`, `stream_index`, and newer version-specific options. MediaRef always normalizes the returned frame batch to NCHW internally and the final `batch_decode` result to RGB HWC NumPy arrays, including when TorchCodec decodes on CUDA or uses `dimension_order="NHWC"`.
+`decoder_options` is passed to the selected decoder constructor. TorchCodec options include `device`, `seek_mode`, `num_ffmpeg_threads`, `dimension_order`, `stream_index`, `transforms`, and `output_dtype`. MediaRef always normalizes the returned frame batch to NCHW internally and the final `batch_decode` result to RGB HWC NumPy arrays, including when TorchCodec decodes on CUDA or uses `dimension_order="NHWC"`. TorchCodec 0.14+ accepts `output_dtype="auto"`, returning `uint8` for SDR and `float32` in `[0, 1]` for detected HDR content; MediaRef preserves that dtype and uses `1.0` for an added opaque alpha channel.
+
+```python
+frames = batch_decode(
+    refs,
+    decoder="torchcodec",
+    decoder_options={
+        "output_dtype": "auto",
+        "transforms": [resize_transform],
+    },
+)
+```
+
+### Image decoders
+
+Pillow remains the default for compatibility. On Python 3.10+, install `mediaref[torchcodec-image]` to guarantee TorchCodec 0.16+, which can decode JPEG, PNG, WebP, GIF, AVIF, and HEIC without loading FFmpeg:
+
+```python
+image = MediaRef(uri="s3://bucket/high-bit-depth.png").to_ndarray(
+    image_decoder="torchcodec",
+    image_decoder_options={"output_dtype": "auto"},
+    storage_options={"anon": False},
+)
+```
+
+MediaRef requests `RGB_ALPHA` internally so its existing `format=` conversion remains authoritative. Pass `output_dtype="auto"` to preserve 16-bit PNG/AVIF/HEIC data as `uint16`; the default is `uint8`. Animated or multi-image inputs use their first frame, matching MediaRef's single-image reference model. HEIC additionally requires `libheif`, as documented by TorchCodec. Local paths are passed directly; data URIs and fsspec sources are materialized as encoded bytes because TorchCodec's image entry point accepts paths, bytes, or tensors rather than file-like objects.
 
 `storage_options` is passed unchanged to fsspec and applies to every image or video URI in the call. Both decoder caches include these options in an opaque hash, so calls using different credentials or backend settings never share an open resource and secrets are not embedded in cache keys.
 

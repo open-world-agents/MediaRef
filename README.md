@@ -63,14 +63,17 @@ See [API Reference](docs/API.md) for full details — `DataURI`, `batch_decode`,
 ```bash
 pip install mediaref                  # core: image loading + cloud-storage URIs (fsspec)
 pip install 'mediaref[video]'         # + PyAV for video frame decoding
-pip install 'mediaref[torchcodec]'    # + TorchCodec video backend (PyAV not required)
+pip install 'mediaref[torchcodec]'    # + TorchCodec video backend, compatible with 0.7+
+pip install 'mediaref[torchcodec-image]'  # + TorchCodec 0.16+ image/video (Python 3.10+)
 pip install 'mediaref[hf]'            # + HuggingFace datasets feature registration
-pip install 'mediaref[video,torchcodec,hf]'  # all extras
+pip install 'mediaref[video,torchcodec-image,hf]'  # all extras
 ```
 
-For uv: `uv add 'mediaref[video,torchcodec,hf]'`. MediaRef follows [semantic versioning](https://semver.org/); the wire schema (`uri`, `pts_ns`) is frozen for the life of Spec 1.x.
+For uv: `uv add 'mediaref[video,torchcodec-image,hf]'`. MediaRef follows [semantic versioning](https://semver.org/); the wire schema (`uri`, `pts_ns`) is frozen for the life of Spec 1.x.
 
-**Optional TorchCodec backend.** Install `mediaref[torchcodec]`; PyAV is not required. `batch_decode(refs, decoder="torchcodec")` uses TorchCodec on CPU. To opt into CUDA decoding, pass `decoder_options={"device": "cuda"}`; MediaRef moves the result back to host memory for its NumPy return type. Video decoding still requires an FFmpeg installation with shared libraries even though TorchCodec 0.16 can import without FFmpeg. Verify the runtime, not just the import:
+**Optional TorchCodec backend.** On Python 3.10+, install `mediaref[torchcodec-image]` for the 0.16+ image API; PyAV is not required. It decodes JPEG, PNG, WebP, GIF, AVIF, and HEIC images without FFmpeg via `ref.to_ndarray(image_decoder="torchcodec")`. Use `image_decoder_options={"output_dtype": "auto"}` to preserve native high-bit-depth image data as `uint16`. The broader `mediaref[torchcodec]` extra keeps TorchCodec 0.7+ support for video-only users, including Python 3.9.
+
+`batch_decode(refs, decoder="torchcodec")` uses TorchCodec for video on CPU. To opt into CUDA decoding, pass `decoder_options={"device": "cuda"}`; MediaRef moves the result back to host memory for its NumPy return type. Video decoding still requires an FFmpeg installation with shared libraries. Verify the runtime, not just the import:
 
 ```bash
 python -c 'from torchcodec._core import get_ffmpeg_library_versions; print(get_ffmpeg_library_versions())'
