@@ -149,3 +149,19 @@ def test_cleanup_cache_drops_loaded_torchcodec_state(torchcodec_decoder_module):
 
     assert len(decoder_class.cache) == 0
     decoder.close()
+
+
+def test_old_lease_does_not_release_replacement_state(torchcodec_decoder_module):
+    decoder_class = torchcodec_decoder_module.TorchCodecVideoDecoder
+    old = decoder_class("video.mp4")
+
+    decoder_class.clear_cache()
+    replacement = decoder_class("video.mp4")
+    assert old._state is not replacement._state
+    assert decoder_class.cache.refs("video.mp4") == 1
+
+    old.close()
+
+    assert decoder_class.cache.refs("video.mp4") == 1
+    assert replacement.get_frames_played_at([0.0]).data.shape == (1, 3, 3, 4)
+    replacement.close()
