@@ -55,6 +55,13 @@ class TestBatchDecodeImages:
         results = batch_decode([])
         assert results == []
 
+    def test_image_only_batch_does_not_load_video_backend(self, sample_image_files: list[Path]):
+        refs = [MediaRef(uri=str(sample_image_files[0]))]
+        with patch("mediaref.batch._get_decoder_class", side_effect=AssertionError("backend loaded")):
+            results = batch_decode(refs, decoder="torchcodec", allow_images=True)
+
+        assert results[0].shape == (48, 64, 3)
+
     def test_batch_decode_preserves_order(self, sample_image_files: list[Path]):
         """Test that batch_decode preserves input order."""
         refs = [MediaRef(uri=str(img)) for img in sample_image_files]

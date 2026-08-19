@@ -27,6 +27,12 @@ ref = MediaRef(uri="video.mp4", pts_ns=1_000_000_000)   # frame at 1.0s
 rgb = ref.to_ndarray()      # (H, W, 3) RGB
 pil = ref.to_pil_image()
 
+# Private storage and either video backend use the same fsspec path.
+frame = MediaRef(uri="s3://bucket/video.mp4", pts_ns=0).to_ndarray(
+    decoder="torchcodec",
+    storage_options={"anon": False},
+)
+
 # 3. Embed bytes inside a MediaRef (self-contained reference).
 ref = MediaRef(uri=DataURI.from_image(rgb, format="png"))
 

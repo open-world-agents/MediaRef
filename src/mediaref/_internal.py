@@ -1,8 +1,9 @@
 """Internal loading and encoding utilities."""
 
+import hashlib
 import io
 from pathlib import Path
-from typing import Union
+from typing import Any, Mapping, Optional, Union
 from urllib.request import url2pathname
 
 import fsspec
@@ -42,9 +43,50 @@ def is_cloud_uri(uri: str) -> bool:
     return bool(scheme) and scheme not in _DIRECT_URI_SCHEMES
 
 
-def open_cloud(uri: str):
+def _freeze_cache_value(value: Any) -> Any:
+    """Return a deterministic, repr-safe shape for cache-key hashing."""
+    if isinstance(value, Mapping):
+        return tuple(sorted((str(key), _freeze_cache_value(item)) for key, item in value.items()))
+    if isinstance(value, (list, tuple)):
+        return tuple(_freeze_cache_value(item) for item in value)
+    if isinstance(value, (set, frozenset)):
+        return tuple(sorted((_freeze_cache_value(item) for item in value), key=repr))
+    if isinstance(value, Path):
+        return str(value)
+    if isinstance(value, bytes):
+        return ("bytes", len(value), hashlib.sha256(value).hexdigest())
+    if isinstance(value, np.ndarray):
+        contiguous = np.ascontiguousarray(value)
+        return (
+            "ndarray",
+            contiguous.dtype.str,
+            contiguous.shape,
+            hashlib.sha256(contiguous.tobytes()).hexdigest(),
+        )
+    if isinstance(value, (str, int, float, bool, type(None))):
+        return value
+    return (type(value).__module__, type(value).__qualname__, id(value))
+
+
+def make_cache_key(source: str, *options: Mapping[str, Any]) -> str:
+    """Build an opaque cache key from a source and option mappings."""
+    nonempty = tuple(option for option in options if option)
+    if not nonempty:
+        return source
+    payload = _freeze_cache_value(nonempty)
+    digest = hashlib.sha256(repr(payload).encode()).hexdigest()
+    return f"{source}#{digest}"
+
+
+def open_cloud(uri: str, storage_options: Optional[Mapping[str, Any]] = None):
     """Open a fsspec-routed URI as a binary file-like (context manager)."""
-    return fsspec.open(uri, "rb")
+    return fsspec.open(uri, "rb", **dict(storage_options or {}))
+
+
+def cloud_uri_exists(uri: str, storage_options: Optional[Mapping[str, Any]] = None) -> bool:
+    """Return whether a fsspec-routed URI exists."""
+    filesystem, path = fsspec.core.url_to_fs(uri, **dict(storage_options or {}))
+    return filesystem.exists(path)
 
 
 def _file_uri_to_path(uri: str) -> str:
@@ -85,7 +127,10 @@ def resolve_video_source(uri: str) -> str:
 # ============================================================================
 
 
-def load_image_as_rgba(path_or_uri: str) -> npt.NDArray[np.uint8]:
+def load_image_as_rgba(
+    path_or_uri: str,
+    storage_options: Optional[Mapping[str, Any]] = None,
+) -> npt.NDArray[np.uint8]:
     """Load image from any source and return as RGBA numpy array.
 
     Args:
@@ -103,7 +148,7 @@ def load_image_as_rgba(path_or_uri: str) -> npt.NDArray[np.uint8]:
             from .data_uri import DataURI
 
             return DataURI.from_uri(path_or_uri).to_ndarray(format="rgba")
-        pil_image = _load_pil_image(path_or_uri)
+        pil_image = _load_pil_image(path_or_uri, storage_options=storage_options)
         return np.array(pil_image.convert("RGBA"))
     except FileNotFoundError:
         raise
@@ -111,7 +156,10 @@ def load_image_as_rgba(path_or_uri: str) -> npt.NDArray[np.uint8]:
         raise ValueError(f"Failed to load image from {path_or_uri}: {e}") from e
 
 
-def _load_pil_image(image: Union[str, PIL.Image.Image]) -> PIL.Image.Image:
+def _load_pil_image(
+    image: Union[str, PIL.Image.Image],
+    storage_options: Optional[Mapping[str, Any]] = None,
+) -> PIL.Image.Image:
     """Load image to PIL Image."""
     if isinstance(image, str):
         if is_cloud_uri(image):
@@ -119,7 +167,7 @@ def _load_pil_image(image: Union[str, PIL.Image.Image]) -> PIL.Image.Image:
             # streaming-only when the server doesn't advertise byte-range
             # support. Materializing bytes once keeps loading robust across
             # all backends (s3, gs, hf, http(s) chunked, …).
-            with open_cloud(image) as f:
+            with open_cloud(image, storage_options=storage_options) as f:
                 data = f.read()
             image = PIL.Image.open(io.BytesIO(data))
             image.load()
@@ -139,7 +187,14 @@ def _load_pil_image(image: Union[str, PIL.Image.Image]) -> PIL.Image.Image:
 # ============================================================================
 
 
-def load_video_frame_as_rgba(path_or_url: str, pts_ns: int) -> npt.NDArray[np.uint8]:
+def load_video_frame_as_rgba(
+    path_or_url: str,
+    pts_ns: int,
+    *,
+    decoder: str = "pyav",
+    decoder_options: Optional[Mapping[str, Any]] = None,
+    storage_options: Optional[Mapping[str, Any]] = None,
+) -> npt.NDArray[np.uint8]:
     """Load video frame and return as RGBA numpy array.
 
     Args:
@@ -154,14 +209,25 @@ def load_video_frame_as_rgba(path_or_url: str, pts_ns: int) -> npt.NDArray[np.ui
         ValueError: If loading fails
         FileNotFoundError: If local file doesn't exist
     """
-    from .video_decoder import PyAVVideoDecoder
+    if decoder == "pyav":
+        from .video_decoder import PyAVVideoDecoder
+
+        decoder_class = PyAVVideoDecoder
+    elif decoder == "torchcodec":
+        from .video_decoder import TorchCodecVideoDecoder
+
+        decoder_class = TorchCodecVideoDecoder
+    else:
+        raise ValueError(f"Unknown decoder backend: {decoder}. Must be 'pyav' or 'torchcodec'")
 
     pts_seconds = pts_ns / NANOSECOND
 
     try:
         source = resolve_video_source(path_or_url)
-        with PyAVVideoDecoder(source) as decoder:
-            batch = decoder.get_frames_played_at([pts_seconds])
+        options = dict(decoder_options or {})
+        options["storage_options"] = storage_options
+        with decoder_class(source, **options) as video_decoder:
+            batch = video_decoder.get_frames_played_at([pts_seconds])
             rgb_nchw = batch.data[0]
             rgb_hwc = np.transpose(rgb_nchw, (1, 2, 0))
             alpha = np.full((*rgb_hwc.shape[:2], 1), 255, dtype=np.uint8)
