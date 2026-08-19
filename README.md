@@ -76,7 +76,7 @@ For uv: `uv add 'mediaref[video,torchcodec,hf]'`. MediaRef follows [semantic ver
 python -c 'from torchcodec._core import get_ffmpeg_library_versions; print(get_ffmpeg_library_versions())'
 ```
 
-Follow TorchCodec's official FFmpeg installation instructions first. On Linux, if PyAV is installed and you intentionally want to reuse its bundled FFmpeg, [`patch-torchcodec`](scripts/patch_torchcodec/) is an optional recovery tool: `pip install patch-torchcodec && patch-torchcodec --verify`, then run `patch-torchcodec` only if verification fails.
+Follow TorchCodec's official FFmpeg installation instructions first. The standalone verifier is `pip install patch-torchcodec && patch-torchcodec --verify`. On Linux, if verification fails and you intentionally want to reuse PyAV's bundled FFmpeg, install the optional patch dependencies with `pip install 'patch-torchcodec[patch]'`, then run `patch-torchcodec`.
 
 ## Documentation
 

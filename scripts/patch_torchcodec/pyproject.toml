@@ -25,7 +25,10 @@ classifiers = [
     "Programming Language :: Python :: 3.12",
     "Topic :: Multimedia :: Video",
 ]
-dependencies = [
+dependencies = []
+
+[project.optional-dependencies]
+patch = [
     "av>=10.0.0",
     "patchelf",
 ]

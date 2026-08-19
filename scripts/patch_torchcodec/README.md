@@ -14,8 +14,9 @@ Use TorchCodec's official shared-FFmpeg installation instructions first. If a Li
 
 ```bash
 pip install torchcodec
-pip install patch-torchcodec    # installs the optional PyAV/patchelf fallback
+pip install patch-torchcodec    # portable verifier; no PyAV required
 patch-torchcodec --verify       # actual FFmpeg runtime probe
+pip install 'patch-torchcodec[patch]'  # optional Linux PyAV/patchelf fallback
 patch-torchcodec                # run only if the probe fails and PyAV reuse is desired
 ```
 
@@ -37,6 +38,8 @@ patch-torchcodec --quiet       # Silent mode
 ```
 
 ## Python API
+
+The verification API is dependency-free. Install `patch-torchcodec[patch]` before calling patch functions.
 
 ```python
 from patch_torchcodec import setup_with_patchelf, verify_torchcodec, is_rpath_patched

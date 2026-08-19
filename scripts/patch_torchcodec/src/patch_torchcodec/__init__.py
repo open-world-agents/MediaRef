@@ -1,7 +1,7 @@
 """Diagnose TorchCodec video support and optionally reuse PyAV's FFmpeg.
 
 Usage:
-    pip install patch-torchcodec   # installs av + patchelf
+    pip install patch-torchcodec   # portable runtime verifier
     patch-torchcodec --verify      # checks an FFmpeg-backed operation
     patch-torchcodec               # patches RPATH when recovery is needed
 
@@ -12,6 +12,8 @@ Python API:
 Alternative (no binary patching):
     patch-torchcodec --env-only
     export LD_LIBRARY_PATH="<shown path>:$LD_LIBRARY_PATH"
+
+Install ``patch-torchcodec[patch]`` before using patch operations.
 """
 
 from __future__ import annotations

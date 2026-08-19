@@ -146,7 +146,7 @@ def setup(verbose: bool = False) -> bool:
     libs_dir = find_av_libs_dir()
     if libs_dir is None:
         if verbose:
-            print("Error: PyAV not found. Install with: pip install av", file=sys.stderr)
+            print("Error: PyAV not found. Install with: pip install 'patch-torchcodec[patch]'", file=sys.stderr)
         return False
 
     mappings = get_library_mappings(libs_dir)
@@ -290,7 +290,7 @@ def setup_with_patchelf(verbose: bool = False) -> bool:
     libs_dir = find_av_libs_dir()
     if libs_dir is None:
         if verbose:
-            print("Error: PyAV not found. Install with: pip install av", file=sys.stderr)
+            print("Error: PyAV not found. Install with: pip install 'patch-torchcodec[patch]'", file=sys.stderr)
         return False
 
     torchcodec_libs = find_torchcodec_libs()
@@ -302,7 +302,7 @@ def setup_with_patchelf(verbose: bool = False) -> bool:
     patchelf = find_patchelf()
     if patchelf is None:
         if verbose:
-            print("Error: patchelf not found. Install with: pip install patchelf", file=sys.stderr)
+            print("Error: patchelf not found. Install with: pip install 'patch-torchcodec[patch]'", file=sys.stderr)
         return False
 
     # Verify required FFmpeg libs exist before proceeding

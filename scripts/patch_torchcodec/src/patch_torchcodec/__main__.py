@@ -139,7 +139,7 @@ Examples:
 
     if libs_dir is None:
         print("Error: Could not find PyAV's av.libs directory.", file=sys.stderr)
-        print("PyAV is required for patching: pip install av", file=sys.stderr)
+        print("Install patch dependencies with: pip install 'patch-torchcodec[patch]'", file=sys.stderr)
         sys.exit(1)
 
     if verbose:
@@ -179,7 +179,7 @@ Examples:
         patchelf = find_patchelf()
         if patchelf is None:
             print("\nError: patchelf not found.", file=sys.stderr)
-            print("Install with: pip install patchelf", file=sys.stderr)
+            print("Install with: pip install 'patch-torchcodec[patch]'", file=sys.stderr)
             print("\nAlternatively, use --env-only to setup with LD_LIBRARY_PATH.", file=sys.stderr)
             sys.exit(1)
 
