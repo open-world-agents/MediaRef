@@ -151,12 +151,10 @@ class TorchCodecVideoDecoder(BaseVideoDecoder):
         if self._closed:
             return
         self._closed = True
+        state = self._state
         self._state = None
-        try:
-            self.cache.release(self._cache_key)
-        except KeyError:
-            # The process-wide cache may have been cleared before this lease.
-            pass
+        if state is not None:
+            self.cache.release_if(self._cache_key, state)
 
     @classmethod
     def clear_cache(cls) -> None:
