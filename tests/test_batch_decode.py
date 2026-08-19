@@ -514,6 +514,12 @@ class TestSparseBackendPlanning:
 
         assert _coalesce_native_sparse_chunks(chunks, "torchcodec", "0.14.1") == chunks
 
+    @pytest.mark.parametrize("prerelease", ["0.15.0a1", "0.15.0.dev1"])
+    def test_torchcodec_prerelease_preserves_gap_chunks(self, prerelease: str):
+        chunks = [([0], [0.0]), ([1], [10.0])]
+
+        assert _coalesce_native_sparse_chunks(chunks, "torchcodec", prerelease) == chunks
+
     def test_pyav_preserves_gap_chunks(self):
         chunks = [([0], [0.0]), ([1], [10.0])]
 

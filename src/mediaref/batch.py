@@ -1,6 +1,5 @@
 """Batch loading utilities for MediaRef."""
 
-import re
 import sys
 from collections import defaultdict
 from importlib.metadata import PackageNotFoundError, version
@@ -8,6 +7,7 @@ from typing import TYPE_CHECKING, Any, Literal, Mapping, Optional, Type
 
 import numpy as np
 import numpy.typing as npt
+from packaging.version import InvalidVersion, Version
 
 from ._internal import NANOSECOND, resolve_video_source
 
@@ -55,8 +55,11 @@ def _coalesce_native_sparse_chunks(
             torchcodec_version = version("torchcodec")
         except PackageNotFoundError:
             return chunks
-    match = re.match(r"^(\d+)\.(\d+)", torchcodec_version)
-    if match is None or tuple(map(int, match.groups())) < (0, 15):
+    try:
+        supports_native_sparse_requests = Version(torchcodec_version) >= Version("0.15")
+    except InvalidVersion:
+        return chunks
+    if not supports_native_sparse_requests:
         return chunks
     return [
         (
