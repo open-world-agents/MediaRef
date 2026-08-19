@@ -3,7 +3,7 @@
 import gc
 import warnings
 from fractions import Fraction
-from typing import List, Optional
+from typing import Any, List, Mapping, Optional
 
 import av
 import cv2
@@ -81,7 +81,8 @@ class PyAVVideoDecoder(BaseVideoDecoder):
         frame[i].pts <= t < frame[i+1].pts
 
     Args:
-        source: Path to video file or URL
+        source: Local path, fsspec URI, or a binary file-like object.
+        storage_options: Credentials and backend options passed to fsspec.
 
     Examples:
         >>> with PyAVVideoDecoder("video.mp4") as decoder:
@@ -89,11 +90,28 @@ class PyAVVideoDecoder(BaseVideoDecoder):
         ...     print(batch.data.shape)  # (3, 3, H, W)
     """
 
-    def __init__(self, source: PathLike, **kwargs):
+    def __init__(
+        self,
+        source: PathLike,
+        *,
+        storage_options: Optional[Mapping[str, Any]] = None,
+        **kwargs,
+    ):
         """Initialize PyAV video decoder."""
         super().__init__(source, **kwargs)
-        self._container = cached_av.open(source, "r", keep_av_open=True)
-        self._metadata = self._extract_metadata()
+        self._container = cached_av.open(
+            source,
+            "r",
+            keep_av_open=True,
+            storage_options=storage_options,
+            **kwargs,
+        )
+        self._closed = False
+        try:
+            self._metadata = self._extract_metadata()
+        except Exception:
+            self.close()
+            raise
 
     def _extract_metadata(self) -> VideoStreamMetadata:
         """Extract video stream metadata from container.
@@ -424,5 +442,6 @@ class PyAVVideoDecoder(BaseVideoDecoder):
 
     def close(self):
         """Release video decoder resources."""
-        if hasattr(self, "_container"):
+        if not self._closed and hasattr(self, "_container"):
+            self._closed = True
             self._container.close()

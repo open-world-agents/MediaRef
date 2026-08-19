@@ -45,6 +45,7 @@ def _decode_video_chunks(
     uri: str,
     chunks: list[list[float]],
     decoder_options: Mapping[str, Any],
+    storage_options: Optional[Mapping[str, Any]],
 ) -> list[list[npt.NDArray[np.uint8]]]:
     """Decode multiple timestamp chunks from one source with a single decoder open.
 
@@ -53,7 +54,10 @@ def _decode_video_chunks(
     chunk, in input order.
     """
     source = resolve_video_source(uri)
-    with decoder_class(source, **decoder_options) as video_decoder:
+    options = dict(decoder_options)
+    if storage_options is not None:
+        options["storage_options"] = storage_options
+    with decoder_class(source, **options) as video_decoder:
         return [
             [np.transpose(f, (1, 2, 0)) for f in video_decoder.get_frames_played_at(chunk).data] for chunk in chunks
         ]
@@ -84,6 +88,7 @@ def batch_decode(
     decoder: DecoderBackend = "pyav",
     *,
     decoder_options: Optional[Mapping[str, Any]] = None,
+    storage_options: Optional[Mapping[str, Any]] = None,
     allow_images: bool = False,
     allow_multi_video: bool = False,
     gap_threshold: float = 2.0,
@@ -103,6 +108,8 @@ def batch_decode(
             For TorchCodec this includes options such as ``device``, ``seek_mode``,
             ``num_ffmpeg_threads``, and ``dimension_order``. These options apply to
             video refs only.
+        storage_options: Credentials and backend options passed to fsspec for
+            image and video URIs.
         allow_images: If ``True``, image refs are accepted and decoded individually.
             If ``False`` (default), image refs raise ``ValueError``.
         allow_multi_video: If ``True``, refs may span multiple video files.
@@ -137,8 +144,6 @@ def batch_decode(
     if any(ref is None for ref in refs):
         raise ValueError("refs list contains None values")
 
-    decoder_class = _get_decoder_class(decoder)
-
     video_groups: dict[str, list[tuple[int, "MediaRef"]]] = defaultdict(list)
     image_refs: list[tuple[int, "MediaRef"]] = []
 
@@ -166,10 +171,12 @@ def batch_decode(
 
     # Decode images individually
     for i, ref in image_refs:
-        results[i] = ref.to_ndarray(**kwargs)
+        results[i] = ref.to_ndarray(storage_options=storage_options, **kwargs)
 
     # Decode video frames with gap-aware chunking
+    decoder_class = _get_decoder_class(decoder) if video_groups else None
     for uri, group in video_groups.items():
+        assert decoder_class is not None
         indices = [i for i, _ in group]
 
         pts_seconds: list[float] = []
@@ -189,7 +196,13 @@ def batch_decode(
 
         try:
             chunk_pts = [pts for _, pts in chunks]
-            decoded = _decode_video_chunks(decoder_class, uri, chunk_pts, decoder_options or {})
+            decoded = _decode_video_chunks(
+                decoder_class,
+                uri,
+                chunk_pts,
+                decoder_options or {},
+                storage_options,
+            )
             for (chunk_indices, _), frames in zip(chunks, decoded):
                 for idx, frame in zip(chunk_indices, frames):
                     results[idx] = frame

@@ -1,12 +1,13 @@
 import os
 from contextlib import AbstractContextManager
-from typing import Literal, Optional, overload
+from types import TracebackType
+from typing import Any, Literal, Mapping, Optional, Type, overload
 
 import av
 import av.container
 
 from .._features import require_video
-from .._internal import is_cloud_uri, open_cloud
+from .._internal import is_cloud_uri, make_cache_key, open_cloud
 from .._typing import PathLike
 from ..resource_cache import ResourceCache
 from .input_container_mixin import InputContainerMixin
@@ -20,7 +21,12 @@ _container_cache: ResourceCache["MockedInputContainer"] = ResourceCache(max_size
 
 @overload
 def open(
-    file: PathLike, mode: Literal["r"], *, keep_av_open: bool = False, **kwargs
+    file: PathLike,
+    mode: Literal["r"],
+    *,
+    keep_av_open: bool = False,
+    storage_options: Optional[Mapping[str, Any]] = None,
+    **kwargs,
 ) -> av.container.InputContainer: ...
 
 
@@ -28,7 +34,14 @@ def open(
 def open(file: PathLike, mode: Literal["w"], **kwargs) -> av.container.OutputContainer: ...
 
 
-def open(file: PathLike, mode: Literal["r", "w"], *, keep_av_open: bool = False, **kwargs):
+def open(
+    file: PathLike,
+    mode: Literal["r", "w"],
+    *,
+    keep_av_open: bool = False,
+    storage_options: Optional[Mapping[str, Any]] = None,
+    **kwargs,
+):
     """Open a video container, optionally caching read containers across calls.
 
     For cloud URIs (``hf://``, ``s3://``, …) the cached path opens the
@@ -41,18 +54,42 @@ def open(file: PathLike, mode: Literal["r", "w"], *, keep_av_open: bool = False,
         if not isinstance(file, (str, os.PathLike)):
             # Externally-owned file-like: not cacheable.
             return av.open(file, "r", **kwargs)
+        if isinstance(file, str) and is_cloud_uri(file):
+            cache_key = make_cache_key(file, kwargs, storage_options or {})
+            if not keep_av_open:
+                return MockedInputContainer(
+                    file,
+                    cache_key=None,
+                    storage_options=storage_options,
+                    **kwargs,
+                )
+            return _open_cached(cache_key, file, storage_options=storage_options, **kwargs)
         if not keep_av_open:
             return av.open(file, "r", **kwargs)
-        return _open_cached(str(file), file, **kwargs)
+        cache_key = make_cache_key(str(file), kwargs)
+        return _open_cached(cache_key, file, storage_options=storage_options, **kwargs)
+    if storage_options:
+        raise ValueError("storage_options are only supported for reading")
     return av.open(file, mode, **kwargs)
 
 
-def _open_cached(cache_key: str, file: PathLike, **kwargs) -> "MockedInputContainer":
+def _open_cached(
+    cache_key: str,
+    file: PathLike,
+    *,
+    storage_options: Optional[Mapping[str, Any]] = None,
+    **kwargs,
+) -> "MockedInputContainer":
     cached = _container_cache.try_acquire(cache_key)
     if cached is not None:
         return cached
 
-    container = MockedInputContainer(file, **kwargs)
+    container = MockedInputContainer(
+        file,
+        cache_key=cache_key,
+        storage_options=storage_options,
+        **kwargs,
+    )
     canonical, was_added = _container_cache.try_insert_or_acquire(
         cache_key, container, lambda c=container: c._dispose()
     )
@@ -76,15 +113,23 @@ class MockedInputContainer(InputContainerMixin):
 
     _owned_open_ctx: Optional[AbstractContextManager]
 
-    def __init__(self, file: PathLike, **kwargs):
-        self._cache_key = str(file)
+    def __init__(
+        self,
+        file: PathLike,
+        *,
+        cache_key: Optional[str],
+        storage_options: Optional[Mapping[str, Any]] = None,
+        **kwargs,
+    ):
+        self._cache_key = cache_key
         self._owned_open_ctx = None
+        self._disposed = False
         try:
             if isinstance(file, str) and is_cloud_uri(file):
                 # Own the OpenFile (not just its yielded file): some fsspec
                 # backends do connection-pool / tempfile cleanup in __exit__
                 # beyond closing the inner file.
-                self._owned_open_ctx = open_cloud(file)
+                self._owned_open_ctx = open_cloud(file, storage_options=storage_options)
                 fileobj = self._owned_open_ctx.__enter__()
                 self._container = av.open(fileobj, "r", **kwargs)
             else:
@@ -98,18 +143,30 @@ class MockedInputContainer(InputContainerMixin):
     def __enter__(self) -> "MockedInputContainer":
         return self
 
+    def __exit__(
+        self,
+        exc_type: Optional[Type[BaseException]],
+        exc_val: Optional[BaseException],
+        exc_tb: Optional[TracebackType],
+    ) -> bool:
+        self.close()
+        return False
+
     def close(self):
         """Release one cache reference. Real teardown happens at eviction.
         Idempotent: extra calls past the acquire count are no-ops."""
-        try:
-            if _container_cache.refs(self._cache_key) <= 0:
-                return
-            _container_cache.release(self._cache_key)
-        except KeyError:
-            pass
+        if self._cache_key is None:
+            self._dispose()
+            return
+        if _container_cache.refs(self._cache_key) <= 0:
+            return
+        _container_cache.release_if(self._cache_key, self)
 
     def _dispose(self):
         """Eviction-time teardown: close av container and owned OpenFile."""
+        if self._disposed:
+            return
+        self._disposed = True
         try:
             self._container.close()
         finally:

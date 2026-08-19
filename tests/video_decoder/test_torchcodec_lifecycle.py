@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import importlib
+import io
 import sys
 import threading
 import time
@@ -10,6 +11,7 @@ from concurrent.futures import ThreadPoolExecutor
 from types import ModuleType, SimpleNamespace
 from typing import Any
 
+import fsspec
 import numpy as np
 import pytest
 
@@ -33,12 +35,14 @@ class _FakeTensor:
 
 class _FakeVideoDecoder:
     created = 0
+    sources = []
     active_calls = 0
     max_active_calls = 0
     activity_lock = threading.Lock()
 
-    def __init__(self, source: str, **kwargs: Any):
+    def __init__(self, source: Any, **kwargs: Any):
         type(self).created += 1
+        type(self).sources.append(source)
         self.source = source
         self.options = kwargs
         self.metadata = SimpleNamespace(width=4, height=3)
@@ -83,13 +87,21 @@ def torchcodec_decoder_module(monkeypatch: pytest.MonkeyPatch):
     module_name = "mediaref.video_decoder.torchcodec_decoder"
     previous = sys.modules.pop(module_name, None)
     module = importlib.import_module(module_name)
+    decoder_package = importlib.import_module("mediaref.video_decoder")
+    previous_export = decoder_package.__dict__.get("TorchCodecVideoDecoder")
+    decoder_package.TorchCodecVideoDecoder = module.TorchCodecVideoDecoder
     module.TorchCodecVideoDecoder.clear_cache()
     _FakeVideoDecoder.created = 0
+    _FakeVideoDecoder.sources = []
     _FakeVideoDecoder.active_calls = 0
     _FakeVideoDecoder.max_active_calls = 0
     yield module
     module.TorchCodecVideoDecoder.clear_cache()
     sys.modules.pop(module_name, None)
+    if previous_export is None:
+        decoder_package.__dict__.pop("TorchCodecVideoDecoder", None)
+    else:
+        decoder_package.TorchCodecVideoDecoder = previous_export
     if previous is not None:
         sys.modules[module_name] = previous
 
@@ -189,3 +201,68 @@ def test_old_lease_does_not_release_replacement_state(torchcodec_decoder_module)
     assert decoder_class.cache.refs("video.mp4") == 1
     assert replacement.get_frames_played_at([0.0]).data.shape == (1, 3, 3, 4)
     replacement.close()
+
+
+def test_fsspec_source_lifetime_is_owned_by_cache(torchcodec_decoder_module):
+    decoder_class = torchcodec_decoder_module.TorchCodecVideoDecoder
+    uri = "memory://torchcodec/clip.mp4"
+    with fsspec.open(uri, "wb") as file:
+        file.write(b"video bytes")
+
+    decoder = decoder_class(uri, storage_options={"client_kwargs": {"region": "test"}})
+    opened_file = _FakeVideoDecoder.sources[-1]
+    state = decoder._state
+
+    assert not isinstance(opened_file, str)
+    assert not opened_file.closed
+    assert state.owned_open_context is not None
+    decoder.close()
+    assert state.owned_open_context is not None
+
+    decoder_class.clear_cache()
+    assert state.owned_open_context is None
+
+
+def test_storage_options_isolate_cache_without_exposing_values(torchcodec_decoder_module):
+    decoder_class = torchcodec_decoder_module.TorchCodecVideoDecoder
+    uri = "memory://torchcodec/options.mp4"
+    with fsspec.open(uri, "wb") as file:
+        file.write(b"video bytes")
+
+    first = decoder_class(uri, storage_options={"token": "first-secret"})
+    second = decoder_class(uri, storage_options={"token": "second-secret"})
+
+    assert first._state is not second._state
+    assert len(decoder_class.cache) == 2
+    assert all("secret" not in key for key in decoder_class.cache._entries)
+    first.close()
+    second.close()
+
+
+def test_external_file_like_is_not_cached_or_closed(torchcodec_decoder_module):
+    decoder_class = torchcodec_decoder_module.TorchCodecVideoDecoder
+    source = io.BytesIO(b"video bytes")
+
+    first = decoder_class(source)
+    second = decoder_class(source)
+
+    assert first._state is not second._state
+    assert len(decoder_class.cache) == 0
+    first.close()
+    second.close()
+    assert not source.closed
+
+
+def test_mediaref_single_frame_uses_torchcodec_with_fsspec(torchcodec_decoder_module):
+    from mediaref import MediaRef
+
+    uri = "memory://torchcodec/mediaref.mp4"
+    with fsspec.open(uri, "wb") as file:
+        file.write(b"video bytes")
+
+    frame = MediaRef(uri=uri, pts_ns=0).to_ndarray(
+        decoder="torchcodec",
+        storage_options={"token": "secret"},
+    )
+
+    assert frame.shape == (3, 4, 3)

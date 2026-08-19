@@ -2,15 +2,16 @@
 
 from __future__ import annotations
 
-import hashlib
+import os
 import threading
+from contextlib import AbstractContextManager
 from dataclasses import dataclass
-from typing import Any, ClassVar, List, Optional
+from typing import Any, ClassVar, List, Mapping, Optional
 
 import numpy as np
 from torchcodec.decoders import VideoDecoder
 
-from .._typing import PathLike
+from .._internal import is_cloud_uri, make_cache_key, open_cloud
 from ..resource_cache import ResourceCache
 from .base import BaseVideoDecoder
 from .frame_batch import FrameBatch
@@ -20,6 +21,7 @@ from .frame_batch import FrameBatch
 class _DecoderState:
     decoder: VideoDecoder
     lock: threading.RLock
+    owned_open_context: Optional[AbstractContextManager] = None
 
 
 class TorchCodecVideoDecoder(BaseVideoDecoder):
@@ -30,7 +32,8 @@ class TorchCodecVideoDecoder(BaseVideoDecoder):
     shared decoder are serialized because TorchCodec decoders maintain seek state.
 
     Args:
-        source: Path to video file or URL.
+        source: Local path, fsspec URI, bytes, or a binary file-like object.
+        storage_options: Credentials and backend options passed to fsspec.
         **kwargs: Additional arguments passed to TorchCodec's ``VideoDecoder``.
 
     Examples:
@@ -40,35 +43,66 @@ class TorchCodecVideoDecoder(BaseVideoDecoder):
 
     cache: ClassVar[ResourceCache[_DecoderState]] = ResourceCache(max_size=10)
 
-    def __init__(self, source: PathLike, **kwargs: Any):
+    def __init__(
+        self,
+        source: Any,
+        *,
+        storage_options: Optional[Mapping[str, Any]] = None,
+        **kwargs: Any,
+    ):
         super().__init__(source, **kwargs)
-        self._cache_key = self._make_cache_key(source, kwargs)
         self._dimension_order = kwargs.get("dimension_order", "NCHW")
         self._closed = False
 
-        state = self.cache.try_acquire(self._cache_key)
+        cacheable = isinstance(source, (str, os.PathLike))
+        self._cache_key = make_cache_key(str(source), kwargs, storage_options or {}) if cacheable else None
+        state = self.cache.try_acquire(self._cache_key) if self._cache_key is not None else None
         if state is None:
-            candidate = _DecoderState(
-                decoder=VideoDecoder(str(source), **kwargs),
-                lock=threading.RLock(),
-            )
+            candidate = self._create_state(source, storage_options, kwargs)
+            if self._cache_key is None:
+                self._state = candidate
+                return
             state, _ = self.cache.try_insert_or_acquire(
                 self._cache_key,
                 candidate,
-                # TorchCodec's VideoDecoder has no public close() method. Dropping
-                # the final state reference lets its native resources be released.
-                cleanup_callback=lambda: None,
+                cleanup_callback=lambda state=candidate: TorchCodecVideoDecoder._dispose_state(state),
             )
+            if state is not candidate:
+                self._dispose_state(candidate)
         self._state: Optional[_DecoderState] = state
 
     @staticmethod
-    def _make_cache_key(source: PathLike, kwargs: dict[str, Any]) -> str:
-        source_key = str(source)
-        if not kwargs:
-            return source_key
-        options = tuple(sorted(kwargs.items()))
-        digest = hashlib.sha256(repr(options).encode()).hexdigest()
-        return f"{source_key}#{digest}"
+    def _create_state(
+        source: Any,
+        storage_options: Optional[Mapping[str, Any]],
+        decoder_options: Mapping[str, Any],
+    ) -> _DecoderState:
+        owned_context = None
+        decoder_source = source
+        try:
+            if isinstance(source, str) and is_cloud_uri(source):
+                owned_context = open_cloud(source, storage_options=storage_options)
+                decoder_source = owned_context.__enter__()
+            elif isinstance(source, os.PathLike):
+                decoder_source = str(source)
+            decoder = VideoDecoder(decoder_source, **decoder_options)
+        except Exception:
+            if owned_context is not None:
+                owned_context.__exit__(None, None, None)
+            raise
+        return _DecoderState(
+            decoder=decoder,
+            lock=threading.RLock(),
+            owned_open_context=owned_context,
+        )
+
+    @staticmethod
+    def _dispose_state(state: _DecoderState) -> None:
+        # TorchCodec has no public close(). Dropping the state releases the
+        # decoder; explicitly exit fsspec's context to release backend state.
+        if state.owned_open_context is not None:
+            state.owned_open_context.__exit__(None, None, None)
+            state.owned_open_context = None
 
     def _require_state(self) -> _DecoderState:
         if self._closed or self._state is None:
@@ -164,7 +198,7 @@ class TorchCodecVideoDecoder(BaseVideoDecoder):
         self._closed = True
         state = self._state
         self._state = None
-        if state is not None:
+        if state is not None and self._cache_key is not None:
             self.cache.release_if(self._cache_key, state)
 
     @classmethod
