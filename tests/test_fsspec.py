@@ -188,9 +188,7 @@ class TestImageLoadingFromMemoryFS:
             return real_open(*args, **kwargs)
 
         monkeypatch.setattr(internal_mod.fsspec, "open", spy)
-        loaded = MediaRef(uri="memory://imgs/options.png").to_ndarray(
-            storage_options={"test_option": "image"}
-        )
+        loaded = MediaRef(uri="memory://imgs/options.png").to_ndarray(storage_options={"test_option": "image"})
 
         assert loaded.shape == sample_rgb_array.shape
         assert calls[-1]["test_option"] == "image"
