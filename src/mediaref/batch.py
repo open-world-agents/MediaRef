@@ -1,5 +1,6 @@
 """Batch loading utilities for MediaRef."""
 
+import sys
 from collections import defaultdict
 from typing import TYPE_CHECKING, Literal, Type
 
@@ -195,7 +196,7 @@ def batch_decode(
 
 
 def cleanup_cache():
-    """Clear all cached video containers from memory.
+    """Clear all cached video decoder state from memory.
 
     This function should be called when you're done with batch decoding
     to free up resources. It's automatically called on process exit.
@@ -217,5 +218,12 @@ def cleanup_cache():
     try:
         from . import cached_av
     except ImportError:
-        return
-    cached_av.cleanup_cache()
+        pass
+    else:
+        cached_av.cleanup_cache()
+
+    # Do not import an optional backend just to clean it up. If TorchCodec was
+    # used, its module is already loaded and its cache can be cleared directly.
+    module = sys.modules.get("mediaref.video_decoder.torchcodec_decoder")
+    if module is not None:
+        module.TorchCodecVideoDecoder.clear_cache()

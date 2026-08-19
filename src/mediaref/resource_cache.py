@@ -100,6 +100,22 @@ class ResourceCache(Generic[T]):
             logger.debug(f"cache release: {key=}, refs={entry.refs}")
             self._cleanup_if_needed()
 
+    def release_if(self, key: str, obj: T) -> bool:
+        """Release ``key`` only if it still refers to ``obj``.
+
+        Returns ``False`` when the entry was cleared or replaced. This lets a
+        lease safely outlive a cache clear without decrementing a successor's
+        reference count.
+        """
+        with self._lock:
+            entry = self._entries.get(key)
+            if entry is None or entry.obj is not obj:
+                return False
+            entry.refs -= 1
+            logger.debug(f"cache release: {key=}, refs={entry.refs}")
+            self._cleanup_if_needed()
+            return True
+
     def evict(self, key: str) -> bool:
         """Forcefully remove an entry regardless of refs. Returns True if it was present."""
         with self._lock:
