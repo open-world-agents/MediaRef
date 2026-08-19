@@ -71,7 +71,7 @@ def _get_decoder_class(backend: DecoderBackend) -> Type["BaseVideoDecoder"]:
         except ImportError as e:
             raise ImportError(
                 "TorchCodec decoder requested but torchcodec is not installed. "
-                "Install it separately: pip install torchcodec"
+                "Install with: pip install 'mediaref[torchcodec]'"
             ) from e
     else:
         raise ValueError(f"Unknown decoder backend: {backend}. Must be 'pyav' or 'torchcodec'")
@@ -200,9 +200,9 @@ def cleanup_cache():
     This function should be called when you're done with batch decoding
     to free up resources. It's automatically called on process exit.
 
-    No-op when the ``[video]`` extra isn't installed (nothing was ever
-    cached). Calling this without ``av`` MUST NOT raise — callers may
-    invoke it defensively without knowing which extras are present.
+    Optional backends are not imported just to clean them up. Calling this
+    without PyAV or TorchCodec MUST NOT raise, so callers may invoke it
+    defensively without knowing which extras are present.
 
     Examples:
         >>> from mediaref import MediaRef, batch_decode, cleanup_cache
