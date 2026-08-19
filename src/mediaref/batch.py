@@ -2,7 +2,7 @@
 
 import sys
 from collections import defaultdict
-from typing import TYPE_CHECKING, Literal, Type
+from typing import TYPE_CHECKING, Any, Literal, Mapping, Optional, Type
 
 import numpy as np
 import numpy.typing as npt
@@ -44,6 +44,7 @@ def _decode_video_chunks(
     decoder_class: Type["BaseVideoDecoder"],
     uri: str,
     chunks: list[list[float]],
+    decoder_options: Mapping[str, Any],
 ) -> list[list[npt.NDArray[np.uint8]]]:
     """Decode multiple timestamp chunks from one source with a single decoder open.
 
@@ -52,7 +53,7 @@ def _decode_video_chunks(
     chunk, in input order.
     """
     source = resolve_video_source(uri)
-    with decoder_class(source) as video_decoder:
+    with decoder_class(source, **decoder_options) as video_decoder:
         return [
             [np.transpose(f, (1, 2, 0)) for f in video_decoder.get_frames_played_at(chunk).data] for chunk in chunks
         ]
@@ -82,6 +83,7 @@ def batch_decode(
     refs: list["MediaRef"],
     decoder: DecoderBackend = "pyav",
     *,
+    decoder_options: Optional[Mapping[str, Any]] = None,
     allow_images: bool = False,
     allow_multi_video: bool = False,
     gap_threshold: float = 2.0,
@@ -97,6 +99,10 @@ def batch_decode(
     Args:
         refs: List of MediaRef objects to decode.
         decoder: Decoder backend (``'pyav'`` or ``'torchcodec'``).
+        decoder_options: Options passed to the selected video decoder constructor.
+            For TorchCodec this includes options such as ``device``, ``seek_mode``,
+            ``num_ffmpeg_threads``, and ``dimension_order``. These options apply to
+            video refs only.
         allow_images: If ``True``, image refs are accepted and decoded individually.
             If ``False`` (default), image refs raise ``ValueError``.
         allow_multi_video: If ``True``, refs may span multiple video files.
@@ -183,7 +189,7 @@ def batch_decode(
 
         try:
             chunk_pts = [pts for _, pts in chunks]
-            decoded = _decode_video_chunks(decoder_class, uri, chunk_pts)
+            decoded = _decode_video_chunks(decoder_class, uri, chunk_pts, decoder_options or {})
             for (chunk_indices, _), frames in zip(chunks, decoded):
                 for idx, frame in zip(chunk_indices, frames):
                     results[idx] = frame

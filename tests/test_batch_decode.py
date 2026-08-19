@@ -173,6 +173,39 @@ class TestBatchDecodeDecoders:
             assert isinstance(rgb, np.ndarray)
             assert rgb.shape == (48, 64, 3)
 
+    def test_decoder_options_are_forwarded(self, sample_video_file: tuple[Path, list[int]]):
+        """Test that backend-specific constructor options reach the decoder."""
+        from mediaref.video_decoder import FrameBatch
+
+        video_path, timestamps = sample_video_file
+        refs = [MediaRef(uri=str(video_path), pts_ns=timestamps[0])]
+        seen_options = []
+
+        class RecordingDecoder:
+            def __init__(self, source, **kwargs):
+                seen_options.append((source, kwargs))
+
+            def __enter__(self):
+                return self
+
+            def __exit__(self, exc_type, exc_value, traceback):
+                pass
+
+            def get_frames_played_at(self, seconds):
+                count = len(seconds)
+                return FrameBatch(
+                    data=np.zeros((count, 3, 2, 4), dtype=np.uint8),
+                    pts_seconds=np.asarray(seconds, dtype=np.float64),
+                    duration_seconds=np.full(count, 0.1, dtype=np.float64),
+                )
+
+        options = {"device": "cuda", "seek_mode": "approximate", "num_ffmpeg_threads": 2}
+        with patch("mediaref.batch._get_decoder_class", return_value=RecordingDecoder):
+            frames = batch_decode(refs, decoder="torchcodec", decoder_options=options)
+
+        assert seen_options == [(str(video_path), options)]
+        assert frames[0].shape == (2, 4, 3)
+
     def test_batch_decode_invalid_decoder(self, sample_video_file: tuple[Path, list[int]]):
         """Test that invalid decoder raises ValueError."""
         video_path, timestamps = sample_video_file

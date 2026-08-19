@@ -144,7 +144,7 @@ ref = MediaRef(uri=DataURI.from_file("photo.png"))
 ## `batch_decode`
 
 ```python
-batch_decode(refs, decoder="pyav") -> list[np.ndarray]
+batch_decode(refs, decoder="pyav", *, decoder_options=None, ...) -> list[np.ndarray]
 ```
 
 Decode many `MediaRef` video frames efficiently by grouping refs that share a URI, opening each container once, and seeking through the requested timestamps in order. Significantly faster than per-ref decoding when refs cluster on the same video file.
@@ -153,8 +153,13 @@ Decode many `MediaRef` video frames efficiently by grouping refs that share a UR
 from mediaref import MediaRef, batch_decode
 
 refs = [MediaRef(uri="episode.mp4", pts_ns=int(i * 1e9)) for i in range(10)]
-frames = batch_decode(refs)                          # default: PyAV (CPU)
-frames = batch_decode(refs, decoder="torchcodec")    # GPU-accelerated
+frames = batch_decode(refs)  # default: PyAV (CPU)
+frames = batch_decode(refs, decoder="torchcodec")  # TorchCodec on CPU by default
+frames = batch_decode(
+    refs,
+    decoder="torchcodec",
+    decoder_options={"device": "cuda", "seek_mode": "approximate"},
+)
 ```
 
 ### Decoder backends
@@ -162,11 +167,13 @@ frames = batch_decode(refs, decoder="torchcodec")    # GPU-accelerated
 | | `"pyav"` (default) | `"torchcodec"` |
 | --- | --- | --- |
 | Backend | PyAV (FFmpeg) | TorchCodec (FFmpeg) |
-| Acceleration | CPU only | TorchCodec's default device; direct decoder use supports CUDA |
+| Acceleration | CPU only | CPU by default; CUDA with `decoder_options={"device": "cuda"}` |
 | Install | `pip install 'mediaref[video]'` | `pip install 'mediaref[torchcodec]'` (PyAV not required) |
 | URI schemes | any fsspec-routable URI (`file://`, bare path, `http(s)://`, `s3://`, `gs://`, `hf://`, `memory://`, …) — opened via fsspec inside `cached_av` | only what FFmpeg natively understands: file paths, `file://`, `http(s)://`, `rtsp://`. **No fsspec dispatch** — `s3://`, `gs://`, `hf://`, etc. fail at the FFmpeg layer. Use `decoder="pyav"` for those. |
 
 Both backends share unified [playback semantics](playback_semantics.md), so a given `pts_ns` (when supported by both) returns the same frame regardless of decoder.
+
+`decoder_options` is passed to the selected decoder constructor. TorchCodec options include `device`, `seek_mode`, `num_ffmpeg_threads`, `dimension_order`, `stream_index`, and newer version-specific options. MediaRef always normalizes the returned frame batch to NCHW internally and the final `batch_decode` result to RGB HWC NumPy arrays, including when TorchCodec decodes on CUDA or uses `dimension_order="NHWC"`.
 
 **TorchCodec install note.** TorchCodec links against its own FFmpeg shared libraries, which often don't match the FFmpeg version PyAV bundles. If `from mediaref.video_decoder import TorchCodecVideoDecoder` (or a `decoder="torchcodec"` call) raises `libavcodec.so.NN: cannot open shared object file`, repair the install by patching torchcodec's RPATH onto PyAV's bundled FFmpeg:
 
@@ -176,17 +183,22 @@ pip install patch-torchcodec && patch-torchcodec
 
 See [`scripts/patch_torchcodec/`](../scripts/patch_torchcodec/) for details. (PyAV-only callers are unaffected — `mediaref.video_decoder` resolves `TorchCodecVideoDecoder` lazily, so a broken torchcodec install never blocks `import mediaref`.)
 
-`cleanup_cache()` — clears the PyAV container cache. Call between long-running decode sessions if you want to release decoder memory before automatic eviction.
+`cleanup_cache()` — clears loaded PyAV and TorchCodec caches. Call between long-running decode sessions if you want to release decoder memory before automatic eviction.
 
 ### Direct decoder use
 
 For finer control, use the decoder classes directly:
 
 ```python
-from mediaref.decoders import PyAVVideoDecoder, TorchCodecVideoDecoder
+import numpy as np
+from mediaref.video_decoder import PyAVVideoDecoder, TorchCodecVideoDecoder
 
 with PyAVVideoDecoder("episode.mp4") as dec:
-    frame = dec.get_frame_at_pts_ns(1_500_000_000)
+    batch = dec.get_frames_played_at([1.5])
+    frame = np.transpose(batch.data[0], (1, 2, 0))
+
+with TorchCodecVideoDecoder("episode.mp4", device="cuda") as dec:
+    batch = dec.get_frames_played_at([1.5])  # returned as host NumPy arrays
 ```
 
 ---
