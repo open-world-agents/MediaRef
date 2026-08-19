@@ -56,7 +56,7 @@ class FrameBatch:
           duration_seconds: [0.1 0.1 0.1 ...]
     """
 
-    data: npt.NDArray[np.uint8]  # [N, C, H, W]
+    data: npt.NDArray[np.generic]  # [N, C, H, W]
     pts_seconds: npt.NDArray[np.float64]  # [N]
     duration_seconds: npt.NDArray[np.float64]  # [N]
 
