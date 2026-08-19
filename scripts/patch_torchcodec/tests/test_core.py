@@ -83,3 +83,19 @@ def test_verify_torchcodec_keeps_boolean_api(monkeypatch: pytest.MonkeyPatch):
     )
 
     assert core.verify_torchcodec()
+
+
+def test_cli_verify_does_not_require_pyav(monkeypatch: pytest.MonkeyPatch):
+    cli = importlib.import_module("patch_torchcodec.__main__")
+    monkeypatch.setattr(cli, "find_av_libs_dir", lambda: None)
+    monkeypatch.setattr(
+        cli,
+        "diagnose_torchcodec",
+        lambda *args, **kwargs: core.VerificationResult(ok=True, stdout="versions"),
+    )
+    monkeypatch.setattr(sys, "argv", ["patch-torchcodec", "--verify"])
+
+    with pytest.raises(SystemExit) as exit_info:
+        cli.main()
+
+    assert exit_info.value.code == 0

@@ -76,18 +76,15 @@ Examples:
     args = parser.parse_args()
     verbose = not args.quiet
 
-    # Find PyAV libraries
+    # PyAV is optional for standalone verification and required only for the
+    # LD_LIBRARY_PATH fallback or an actual patch operation.
     libs_dir = find_av_libs_dir()
-    if libs_dir is None:
-        print("Error: Could not find PyAV's av.libs directory.", file=sys.stderr)
-        print("Make sure PyAV is installed: pip install av", file=sys.stderr)
-        sys.exit(1)
 
     # Status mode
     if args.status:
         print("patch-torchcodec: Status")
         print("=" * 40)
-        print(f"PyAV av.libs: {libs_dir}")
+        print(f"PyAV av.libs: {libs_dir if libs_dir is not None else 'NOT FOUND'}")
 
         torchcodec_libs = find_torchcodec_libs()
         if torchcodec_libs:
@@ -105,13 +102,16 @@ Examples:
         direct_result = diagnose_torchcodec(libs_dir, require_env=False)
         if direct_result.ok:
             print("✓ TorchCodec works WITHOUT LD_LIBRARY_PATH")
-        else:
+            sys.exit(0)
+        if libs_dir is not None:
             env_result = diagnose_torchcodec(libs_dir, require_env=True)
-        if not direct_result.ok and env_result.ok:
-            print("⚠ TorchCodec works only WITH LD_LIBRARY_PATH")
-        elif not direct_result.ok:
-            print("✗ TorchCodec is NOT working")
-            _print_verification_failure(env_result)
+            if env_result.ok:
+                print("⚠ TorchCodec works only WITH LD_LIBRARY_PATH")
+                sys.exit(0)
+        else:
+            env_result = direct_result
+        print("✗ TorchCodec is NOT working")
+        _print_verification_failure(env_result)
         sys.exit(0)
 
     # Verify only mode
@@ -125,8 +125,8 @@ Examples:
             if verbose:
                 print("✓ TorchCodec works without LD_LIBRARY_PATH (RPATH patched)")
             sys.exit(0)
-        env_result = diagnose_torchcodec(libs_dir, require_env=True)
-        if env_result.ok:
+        env_result = diagnose_torchcodec(libs_dir, require_env=True) if libs_dir is not None else direct_result
+        if libs_dir is not None and env_result.ok:
             if verbose:
                 print("✓ TorchCodec works with LD_LIBRARY_PATH")
                 print(f'  Run: export LD_LIBRARY_PATH="{libs_dir}:$LD_LIBRARY_PATH"')
@@ -136,6 +136,11 @@ Examples:
                 print("✗ TorchCodec verification failed.")
                 _print_verification_failure(env_result)
             sys.exit(1)
+
+    if libs_dir is None:
+        print("Error: Could not find PyAV's av.libs directory.", file=sys.stderr)
+        print("PyAV is required for patching: pip install av", file=sys.stderr)
+        sys.exit(1)
 
     if verbose:
         print("patch-torchcodec: Patching")
