@@ -204,7 +204,7 @@ frames = batch_decode(
 
 ### Image decoders
 
-Pillow remains the default for compatibility. TorchCodec 0.16+ can decode JPEG, PNG, WebP, GIF, AVIF, and HEIC without loading FFmpeg:
+Pillow remains the default for compatibility. On Python 3.10+, install `mediaref[torchcodec-image]` to guarantee TorchCodec 0.16+, which can decode JPEG, PNG, WebP, GIF, AVIF, and HEIC without loading FFmpeg:
 
 ```python
 image = MediaRef(uri="s3://bucket/high-bit-depth.png").to_ndarray(
