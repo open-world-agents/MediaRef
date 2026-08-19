@@ -254,8 +254,8 @@ class TestTorchCodecVideoDecoderContextManager:
 class TestTorchCodecVideoDecoderCaching:
     """Test caching behavior specific to TorchCodecVideoDecoder."""
 
-    def test_cache_hit_returns_same_instance(self, sample_video_file: tuple[Path, list[int]]):
-        """Test that opening the same video twice returns cached instance with correct ref counting."""
+    def test_cache_hit_returns_independent_leases(self, sample_video_file: tuple[Path, list[int]]):
+        """Test that leases share decoder state while closing independently."""
         from mediaref.video_decoder import TorchCodecVideoDecoder
 
         video_path, _ = sample_video_file
@@ -264,11 +264,11 @@ class TestTorchCodecVideoDecoderCaching:
         decoder1 = TorchCodecVideoDecoder(str(video_path))
         decoder2 = TorchCodecVideoDecoder(str(video_path))
 
-        # Should be the exact same object due to cache hit
-        assert decoder1 is decoder2
+        assert decoder1 is not decoder2
+        assert decoder1._state is decoder2._state
 
         # Ref count should be 2 (one per constructor call)
-        assert TorchCodecVideoDecoder.cache[cache_key].refs == 2
+        assert TorchCodecVideoDecoder.cache.refs(cache_key) == 2
 
         # Both should still work
         batch = decoder1.get_frames_played_at([0.0])
@@ -276,9 +276,9 @@ class TestTorchCodecVideoDecoderCaching:
 
         # Each "reference" should close once — ref count decrements correctly
         decoder1.close()
-        assert TorchCodecVideoDecoder.cache[cache_key].refs == 1
+        assert TorchCodecVideoDecoder.cache.refs(cache_key) == 1
         decoder2.close()
-        assert TorchCodecVideoDecoder.cache[cache_key].refs == 0
+        assert TorchCodecVideoDecoder.cache.refs(cache_key) == 0
 
     def test_close_releases_cache_entry(self, sample_video_file: tuple[Path, list[int]]):
         """Test that close() releases the cache reference."""
@@ -289,10 +289,23 @@ class TestTorchCodecVideoDecoderCaching:
 
         decoder = TorchCodecVideoDecoder(str(video_path))
         assert cache_key in TorchCodecVideoDecoder.cache
-        assert TorchCodecVideoDecoder.cache[cache_key].refs == 1
+        assert TorchCodecVideoDecoder.cache.refs(cache_key) == 1
 
         decoder.close()
-        assert TorchCodecVideoDecoder.cache[cache_key].refs == 0
+        assert TorchCodecVideoDecoder.cache.refs(cache_key) == 0
+
+    def test_decoder_options_are_part_of_cache_identity(self, sample_video_file: tuple[Path, list[int]]):
+        """Test that incompatible decoder options never share state."""
+        from mediaref.video_decoder import TorchCodecVideoDecoder
+
+        video_path, _ = sample_video_file
+        exact = TorchCodecVideoDecoder(str(video_path), seek_mode="exact")
+        approximate = TorchCodecVideoDecoder(str(video_path), seek_mode="approximate")
+
+        assert exact._state is not approximate._state
+
+        exact.close()
+        approximate.close()
 
     def test_reopen_after_close(self, sample_video_file: tuple[Path, list[int]]):
         """Test that a decoder can be re-opened after closing."""
