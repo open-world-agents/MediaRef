@@ -368,14 +368,16 @@ class TestTorchCodecVideoDecoderGetFramesPlayedInRange:
 
         from torchcodec.decoders import VideoDecoder
 
-        if "fps" not in inspect.signature(VideoDecoder.get_frames_played_in_range).parameters:
-            pytest.skip("TorchCodec <=0.10 does not support fps resampling")
-
         from mediaref.video_decoder import TorchCodecVideoDecoder
 
         video_path, _ = sample_video_file
+        supports_fps = "fps" in inspect.signature(VideoDecoder.get_frames_played_in_range).parameters
 
         with TorchCodecVideoDecoder(str(video_path)) as decoder:
+            if not supports_fps:
+                with pytest.raises(NotImplementedError, match="does not support"):
+                    decoder.get_frames_played_in_range(0.0, 0.2, fps=20.0)
+                return
             batch = decoder.get_frames_played_in_range(0.0, 0.2, fps=20.0)
 
         assert batch.data.shape[0] == 4
