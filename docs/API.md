@@ -44,13 +44,14 @@ ref = MediaRef(uri=DataURI.from_image(rgb, format="png"))
 
 ### Methods
 
-`to_ndarray(format="rgb") -> np.ndarray`
+`to_ndarray(format="rgb", *, decoder="pyav", decoder_options=None, storage_options=None) -> np.ndarray`
 - Loads the media as a numpy array in the requested format.
 - Formats: `"rgb"` (default), `"bgr"`, `"rgba"`, `"bgra"`, `"gray"`.
 - Returns shape: `(H, W, 3)` for RGB/BGR, `(H, W, 4)` for RGBA/BGRA, `(H, W)` for grayscale.
 - For video URIs (`pts_ns is not None`), decodes the single frame at that timestamp.
+- `decoder` and `decoder_options` select and configure the video backend; `storage_options` is passed to fsspec.
 
-`to_pil_image(format="rgb") -> PIL.Image`
+`to_pil_image(format="rgb", *, decoder="pyav", decoder_options=None, storage_options=None) -> PIL.Image`
 - Same as `to_ndarray` but returns a PIL Image. Formats: `"rgb"`, `"rgba"`, `"gray"`.
 
 `resolve_relative_path(base_path, on_unresolvable="warn") -> MediaRef`
@@ -66,7 +67,7 @@ remote = MediaRef(uri="https://example.com/image.jpg")
 remote.resolve_relative_path("/data", on_unresolvable="ignore")  # returned unchanged
 ```
 
-`validate_uri() -> bool` — checks if the URI exists (local files only).
+`validate_uri(*, storage_options=None) -> bool` — checks whether local, embedded, or fsspec-routed media exists.
 
 ### Serialization
 
@@ -144,7 +145,7 @@ ref = MediaRef(uri=DataURI.from_file("photo.png"))
 ## `batch_decode`
 
 ```python
-batch_decode(refs, decoder="pyav", *, decoder_options=None, ...) -> list[np.ndarray]
+batch_decode(refs, decoder="pyav", *, decoder_options=None, storage_options=None, ...) -> list[np.ndarray]
 ```
 
 Decode many `MediaRef` video frames efficiently by grouping refs that share a URI, opening each container once, and seeking through the requested timestamps in order. Significantly faster than per-ref decoding when refs cluster on the same video file.
@@ -169,11 +170,13 @@ frames = batch_decode(
 | Backend | PyAV (FFmpeg) | TorchCodec (FFmpeg) |
 | Acceleration | CPU only | CPU by default; CUDA with `decoder_options={"device": "cuda"}` |
 | Install | `pip install 'mediaref[video]'` | `pip install 'mediaref[torchcodec]'` (PyAV not required) |
-| URI schemes | any fsspec-routable URI (`file://`, bare path, `http(s)://`, `s3://`, `gs://`, `hf://`, `memory://`, …) — opened via fsspec inside `cached_av` | only what FFmpeg natively understands: file paths, `file://`, `http(s)://`, `rtsp://`. **No fsspec dispatch** — `s3://`, `gs://`, `hf://`, etc. fail at the FFmpeg layer. Use `decoder="pyav"` for those. |
+| Sources | local paths, external file-likes, and any fsspec URI | local paths, bytes, external file-likes, and any fsspec URI |
 
 Both backends share unified [playback semantics](playback_semantics.md), so a given `pts_ns` (when supported by both) returns the same frame regardless of decoder.
 
 `decoder_options` is passed to the selected decoder constructor. TorchCodec options include `device`, `seek_mode`, `num_ffmpeg_threads`, `dimension_order`, `stream_index`, and newer version-specific options. MediaRef always normalizes the returned frame batch to NCHW internally and the final `batch_decode` result to RGB HWC NumPy arrays, including when TorchCodec decodes on CUDA or uses `dimension_order="NHWC"`.
+
+`storage_options` is passed unchanged to fsspec and applies to every image or video URI in the call. Both decoder caches include these options in an opaque hash, so calls using different credentials or backend settings never share an open resource and secrets are not embedded in cache keys.
 
 **TorchCodec install note.** TorchCodec links against its own FFmpeg shared libraries, which often don't match the FFmpeg version PyAV bundles. If `from mediaref.video_decoder import TorchCodecVideoDecoder` (or a `decoder="torchcodec"` call) raises `libavcodec.so.NN: cannot open shared object file`, repair the install by patching torchcodec's RPATH onto PyAV's bundled FFmpeg:
 
@@ -197,7 +200,7 @@ with PyAVVideoDecoder("episode.mp4") as dec:
     batch = dec.get_frames_played_at([1.5])
     frame = np.transpose(batch.data[0], (1, 2, 0))
 
-with TorchCodecVideoDecoder("episode.mp4", device="cuda") as dec:
+with TorchCodecVideoDecoder("s3://bucket/episode.mp4", device="cuda", storage_options={"anon": True}) as dec:
     batch = dec.get_frames_played_at([1.5])  # returned as host NumPy arrays
 ```
 
@@ -211,15 +214,21 @@ Any URI whose scheme is not `file://` or `data:` is delegated to [fsspec](https:
 from mediaref import MediaRef, batch_decode
 
 ref = MediaRef(uri="s3://my-bucket/episode.mp4", pts_ns=1_500_000_000)
-frame = ref.to_ndarray()    # range read via fsspec — no full download
+frame = ref.to_ndarray(
+    decoder="torchcodec",
+    decoder_options={"seek_mode": "approximate"},
+    storage_options={"anon": True},
+)
 
 refs = [MediaRef(uri="hf://datasets/me/clips/cam.mp4", pts_ns=int(i*1e9)) for i in range(10)]
-frames = batch_decode(refs)
+frames = batch_decode(refs, storage_options={"token": "hf_..."})
+
+exists = ref.validate_uri(storage_options={"anon": True})
 ```
 
 `fsspec` is a core dependency. Each cloud backend (`s3fs` for `s3://`, `gcsfs` for `gs://`, `huggingface_hub` for `hf://`, `adlfs` for `az://`/`abfs://`, …) must be installed separately for the schemes it serves; fsspec raises a clear error otherwise.
 
-**Credentials and per-backend configuration.** MediaRef opens cloud URIs with the default fsspec configuration — it does not currently expose a `storage_options=` parameter on its public API. Use any mechanism fsspec already supports:
+**Credentials and per-backend configuration.** Pass the same keyword arguments accepted by the relevant fsspec backend through `storage_options` on `validate_uri`, `to_ndarray`, `to_pil_image`, or `batch_decode`. Environment variables, per-user config files, and `fsspec.config` remain valid alternatives.
 
 - environment variables — e.g. `AWS_ACCESS_KEY_ID` / `AWS_SECRET_ACCESS_KEY` for `s3fs`, `HF_TOKEN` for `huggingface_hub`, `GOOGLE_APPLICATION_CREDENTIALS` for `gcsfs`;
 - per-user config files — `~/.aws/credentials`, `~/.config/gcloud/...`, `~/.cache/huggingface/token`;

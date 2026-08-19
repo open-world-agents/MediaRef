@@ -18,7 +18,6 @@ import pytest
 from mediaref import MediaRef, batch_decode, cleanup_cache
 from mediaref._internal import _DIRECT_URI_SCHEMES, is_cloud_uri
 
-
 # ---------------------------------------------------------------------------
 # Helpers / fixtures
 # ---------------------------------------------------------------------------
@@ -128,9 +127,11 @@ class TestMediaRefCloudUri:
         # Cloud URIs are absolute by construction.
         assert MediaRef(uri="s3://bucket/k.png").is_relative_path is False
 
-    def test_validate_uri_raises_for_cloud(self):
-        with pytest.raises(NotImplementedError, match="[Cc]loud"):
-            MediaRef(uri="s3://bucket/k.png").validate_uri()
+    def test_validate_uri_uses_fsspec(self):
+        _put_bytes("memory://validation/present.png", b"data")
+
+        assert MediaRef(uri="memory://validation/present.png").validate_uri()
+        assert not MediaRef(uri="memory://validation/missing.png").validate_uri()
 
     def test_resolve_relative_path_warns_for_cloud(self):
         ref = MediaRef(uri="s3://bucket/k.png")
@@ -174,6 +175,25 @@ class TestImageLoadingFromMemoryFS:
         ref = MediaRef(uri="memory://does/not/exist.png")
         with pytest.raises((ValueError, FileNotFoundError)):
             ref.to_ndarray()
+
+    def test_storage_options_are_forwarded(self, sample_rgb_array, monkeypatch):
+        _put_bytes("memory://imgs/options.png", _png_bytes(sample_rgb_array))
+        import mediaref._internal as internal_mod
+
+        real_open = internal_mod.fsspec.open
+        calls = []
+
+        def spy(*args, **kwargs):
+            calls.append(kwargs.copy())
+            return real_open(*args, **kwargs)
+
+        monkeypatch.setattr(internal_mod.fsspec, "open", spy)
+        loaded = MediaRef(uri="memory://imgs/options.png").to_ndarray(
+            storage_options={"test_option": "image"}
+        )
+
+        assert loaded.shape == sample_rgb_array.shape
+        assert calls[-1]["test_option"] == "image"
 
 
 # ---------------------------------------------------------------------------
@@ -286,6 +306,44 @@ class TestVideoLoadingFromMemoryFS:
         frames = batch_decode(refs)
         assert len(frames) == 1
         assert frames[0].shape == (48, 64, 3)
+
+    def test_video_storage_options_are_forwarded(self, sample_video_bytes, monkeypatch):
+        data, pts_ns_list = sample_video_bytes
+        _put_bytes("memory://videos/options.mp4", data)
+        import mediaref._internal as internal_mod
+
+        real_open = internal_mod.fsspec.open
+        calls = []
+
+        def spy(*args, **kwargs):
+            calls.append(kwargs.copy())
+            return real_open(*args, **kwargs)
+
+        monkeypatch.setattr(internal_mod.fsspec, "open", spy)
+        refs = [MediaRef(uri="memory://videos/options.mp4", pts_ns=pts_ns_list[1])]
+        frames = batch_decode(refs, storage_options={"test_option": "video"})
+
+        assert frames[0].shape == (48, 64, 3)
+        assert calls[-1]["test_option"] == "video"
+
+    def test_storage_options_are_part_of_video_cache_identity(self, sample_video_bytes, monkeypatch):
+        data, pts_ns_list = sample_video_bytes
+        _put_bytes("memory://videos/cache-options.mp4", data)
+        import mediaref._internal as internal_mod
+
+        real_open = internal_mod.fsspec.open
+        calls = []
+
+        def spy(*args, **kwargs):
+            calls.append(kwargs.copy())
+            return real_open(*args, **kwargs)
+
+        monkeypatch.setattr(internal_mod.fsspec, "open", spy)
+        refs = [MediaRef(uri="memory://videos/cache-options.mp4", pts_ns=pts_ns_list[1])]
+        batch_decode(refs, storage_options={"token": "first"})
+        batch_decode(refs, storage_options={"token": "second"})
+
+        assert [call["token"] for call in calls] == ["first", "second"]
 
 
 # ---------------------------------------------------------------------------

@@ -198,15 +198,15 @@ class TestValidateUri:
         ref_dir = MediaRef(uri=str(test_dir))
         assert ref_dir.validate_uri()
 
-    def test_validate_remote_uri_not_implemented(self):
-        """Test that remote URI validation raises NotImplementedError."""
-        ref_https = MediaRef(uri="https://example.com/image.jpg")
-        with pytest.raises(NotImplementedError):
-            ref_https.validate_uri()
+    def test_validate_fsspec_uri(self):
+        """Test remote validation through an offline fsspec backend."""
+        import fsspec
 
-        ref_http = MediaRef(uri="http://example.com/image.jpg")
-        with pytest.raises(NotImplementedError):
-            ref_http.validate_uri()
+        with fsspec.open("memory://validation/existing.bin", "wb") as file:
+            file.write(b"data")
+
+        assert MediaRef(uri="memory://validation/existing.bin").validate_uri()
+        assert not MediaRef(uri="memory://validation/missing.bin").validate_uri()
 
 
 class TestPathEdgeCases:

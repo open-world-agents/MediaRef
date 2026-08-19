@@ -2,7 +2,7 @@
 
 import warnings
 from pathlib import Path
-from typing import TYPE_CHECKING, Annotated, Literal, Optional, Union
+from typing import TYPE_CHECKING, Annotated, Any, Literal, Mapping, Optional, Union
 
 import cv2
 import numpy as np
@@ -110,7 +110,8 @@ class MediaRef(BaseModel):
     def is_relative_path(self) -> bool:
         """True if this is a relative path (not absolute, not URI).
 
-        Uses platform-specific path semantics (behavior differs on Windows vs POSIX).
+        Local paths use platform-specific semantics; other URI schemes are
+        delegated to fsspec.
         """
         if self.is_embedded or self.is_cloud_uri or self.uri.startswith("file://"):
             return False
@@ -118,8 +119,8 @@ class MediaRef(BaseModel):
 
     # ========== Path Utilities ==========
 
-    def validate_uri(self) -> bool:
-        """Validate that the URI exists (local files only).
+    def validate_uri(self, *, storage_options: Optional[Mapping[str, Any]] = None) -> bool:
+        """Validate that the URI exists.
 
         Uses platform-specific path semantics (behavior differs on Windows vs POSIX).
 
@@ -127,10 +128,12 @@ class MediaRef(BaseModel):
             True if URI is valid/accessible
 
         Raises:
-            NotImplementedError: For fsspec-routed (remote / cloud) URI validation.
+            ImportError: If the URI's fsspec backend is not installed.
         """
         if self.is_cloud_uri:
-            raise NotImplementedError("Cloud URI validation not implemented")
+            from ._internal import cloud_uri_exists
+
+            return cloud_uri_exists(self.uri, storage_options=storage_options)
         if self.is_embedded:
             return True  # Embedded data is always "valid"
         return Path(self.uri).exists()
@@ -183,7 +186,14 @@ class MediaRef(BaseModel):
 
     # ========== Loading Methods ==========
 
-    def to_ndarray(self, format: Literal["rgb", "bgr", "rgba", "bgra", "gray"] = "rgb") -> npt.NDArray[np.uint8]:
+    def to_ndarray(
+        self,
+        format: Literal["rgb", "bgr", "rgba", "bgra", "gray"] = "rgb",
+        *,
+        decoder: Literal["pyav", "torchcodec"] = "pyav",
+        decoder_options: Optional[Mapping[str, Any]] = None,
+        storage_options: Optional[Mapping[str, Any]] = None,
+    ) -> npt.NDArray[np.uint8]:
         """Load and return media as numpy ndarray in specified format.
 
         Args:
@@ -193,6 +203,9 @@ class MediaRef(BaseModel):
                 - "rgba": RGB with alpha (H, W, 4)
                 - "bgra": BGR with alpha (H, W, 4)
                 - "gray": Grayscale (H, W)
+            decoder: Video decoder backend. Ignored for image refs.
+            decoder_options: Options passed to the video decoder constructor.
+            storage_options: Credentials and backend options passed to fsspec.
         Returns:
             Numpy ndarray in requested format
 
@@ -207,7 +220,11 @@ class MediaRef(BaseModel):
             >>> ref = MediaRef(uri="video.mp4", pts_ns=1_000_000_000)
             >>> frame = ref.to_ndarray()  # Requires: pip install mediaref[video]
         """
-        rgba = self._load_as_rgba()
+        rgba = self._load_as_rgba(
+            decoder=decoder,
+            decoder_options=decoder_options,
+            storage_options=storage_options,
+        )
 
         CONVERSION_MAP = {
             "rgb": cv2.COLOR_RGBA2RGB,
@@ -222,7 +239,14 @@ class MediaRef(BaseModel):
 
         raise ValueError(f"Unsupported format: {format}. Must be one of: rgb, bgr, rgba, bgra, gray")
 
-    def to_pil_image(self, format: Literal["rgb", "rgba", "gray"] = "rgb") -> PIL.Image.Image:
+    def to_pil_image(
+        self,
+        format: Literal["rgb", "rgba", "gray"] = "rgb",
+        *,
+        decoder: Literal["pyav", "torchcodec"] = "pyav",
+        decoder_options: Optional[Mapping[str, Any]] = None,
+        storage_options: Optional[Mapping[str, Any]] = None,
+    ) -> PIL.Image.Image:
         """Load and return media as PIL Image.
 
         Args:
@@ -230,6 +254,9 @@ class MediaRef(BaseModel):
                 - "rgb": RGB color
                 - "rgba": RGB with alpha
                 - "gray": Grayscale
+            decoder: Video decoder backend. Ignored for image refs.
+            decoder_options: Options passed to the video decoder constructor.
+            storage_options: Credentials and backend options passed to fsspec.
 
         Returns:
             PIL Image object
@@ -245,11 +272,24 @@ class MediaRef(BaseModel):
         if format in ("bgr", "bgra"):
             raise ValueError(f"Format '{format}' is not compatible with to_pil_image. Use 'rgb', 'rgba', or 'gray'.")
 
-        return PIL.Image.fromarray(self.to_ndarray(format=format))
+        return PIL.Image.fromarray(
+            self.to_ndarray(
+                format=format,
+                decoder=decoder,
+                decoder_options=decoder_options,
+                storage_options=storage_options,
+            )
+        )
 
     # ========== Internal ==========
 
-    def _load_as_rgba(self) -> npt.NDArray[np.uint8]:
+    def _load_as_rgba(
+        self,
+        *,
+        decoder: Literal["pyav", "torchcodec"] = "pyav",
+        decoder_options: Optional[Mapping[str, Any]] = None,
+        storage_options: Optional[Mapping[str, Any]] = None,
+    ) -> npt.NDArray[np.uint8]:
         """Internal: Load media as RGBA array.
 
         Raises:
@@ -259,6 +299,12 @@ class MediaRef(BaseModel):
 
         if self.is_video:
             assert self.pts_ns is not None  # Type guard: is_video ensures pts_ns is not None
-            return load_video_frame_as_rgba(self.uri, self.pts_ns)
+            return load_video_frame_as_rgba(
+                self.uri,
+                self.pts_ns,
+                decoder=decoder,
+                decoder_options=decoder_options,
+                storage_options=storage_options,
+            )
         else:
-            return load_image_as_rgba(self.uri)
+            return load_image_as_rgba(self.uri, storage_options=storage_options)
