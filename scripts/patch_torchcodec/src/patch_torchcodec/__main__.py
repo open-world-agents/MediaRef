@@ -101,7 +101,7 @@ Examples:
         print()
         direct_result = diagnose_torchcodec(libs_dir, require_env=False)
         if direct_result.ok:
-            print("✓ TorchCodec works WITHOUT LD_LIBRARY_PATH")
+            print("✓ TorchCodec works in the current environment")
             sys.exit(0)
         if libs_dir is not None:
             env_result = diagnose_torchcodec(libs_dir, require_env=True)
@@ -119,11 +119,11 @@ Examples:
         if verbose:
             print("Verifying TorchCodec...")
 
-        # Try without LD_LIBRARY_PATH first
+        # Probe the caller's environment before trying the PyAV fallback.
         direct_result = diagnose_torchcodec(libs_dir, require_env=False)
         if direct_result.ok:
             if verbose:
-                print("✓ TorchCodec works without LD_LIBRARY_PATH (RPATH patched)")
+                print("✓ TorchCodec works in the current environment")
             sys.exit(0)
         env_result = diagnose_torchcodec(libs_dir, require_env=True) if libs_dir is not None else direct_result
         if libs_dir is not None and env_result.ok:
@@ -231,7 +231,7 @@ echo "TorchCodec FFmpeg libraries activated"
             if require_env:
                 print("✓ TorchCodec works (with LD_LIBRARY_PATH)")
             else:
-                print("✓ TorchCodec works (without LD_LIBRARY_PATH)")
+                print("✓ TorchCodec works in the current environment")
     else:
         if verbose:
             print("⚠ TorchCodec verification failed.")

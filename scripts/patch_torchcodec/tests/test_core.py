@@ -29,7 +29,7 @@ def test_diagnose_exercises_ffmpeg_runtime(monkeypatch: pytest.MonkeyPatch, tmp_
 
     assert result.ok
     assert "get_ffmpeg_library_versions" in captured["command"][2]
-    assert "LD_LIBRARY_PATH" not in captured["kwargs"]["env"]
+    assert captured["kwargs"]["env"]["LD_LIBRARY_PATH"] == "/ambient"
     assert captured["kwargs"]["timeout"] == 30
 
 

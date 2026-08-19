@@ -397,8 +397,8 @@ def diagnose_torchcodec(libs_dir: Path | None = None, require_env: bool = True) 
 
     Args:
         libs_dir: Path to av.libs directory. If None, will be auto-detected.
-        require_env: If True, set LD_LIBRARY_PATH for verification.
-                     If False, test without setting LD_LIBRARY_PATH (for RPATH-patched installs).
+        require_env: If True, prepend PyAV's libraries to ``LD_LIBRARY_PATH``.
+            If False, preserve the caller's environment unchanged.
 
     Returns:
         Structured verification result with captured diagnostics.
@@ -412,8 +412,6 @@ def diagnose_torchcodec(libs_dir: Path | None = None, require_env: bool = True) 
             return VerificationResult(ok=False, stderr="PyAV's av.libs directory was not found", returncode=1)
         existing = env.get("LD_LIBRARY_PATH")
         env["LD_LIBRARY_PATH"] = f"{libs_dir}:{existing}" if existing else str(libs_dir)
-    else:
-        env.pop("LD_LIBRARY_PATH", None)
 
     try:
         result = subprocess.run(
