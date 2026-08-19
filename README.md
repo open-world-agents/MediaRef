@@ -63,7 +63,7 @@ pip install 'mediaref[video,hf]'      # all extras
 
 For uv: `uv add 'mediaref[video,hf]'`. MediaRef follows [semantic versioning](https://semver.org/); the wire schema (`uri`, `pts_ns`) is frozen for the life of Spec 1.x.
 
-**Optional TorchCodec backend.** `batch_decode(refs, decoder="torchcodec")` uses TorchCodec for CUDA-accelerated decoding. TorchCodec ships its own FFmpeg shared-library expectations that may not match PyAV's bundled copies; if you see `libavcodec.so.NN: cannot open shared object file` after `pip install torchcodec`, repair the install with [`patch-torchcodec`](scripts/patch_torchcodec/) (it patches torchcodec's RPATH onto PyAV's bundled FFmpeg):
+**Optional TorchCodec backend.** `batch_decode(refs, decoder="torchcodec")` uses TorchCodec on CPU. To opt into CUDA decoding, pass `decoder_options={"device": "cuda"}`; MediaRef moves the result back to host memory for its NumPy return type. TorchCodec ships its own FFmpeg shared-library expectations that may not match PyAV's bundled copies; if you see `libavcodec.so.NN: cannot open shared object file` after `pip install torchcodec`, repair the install with [`patch-torchcodec`](scripts/patch_torchcodec/) (it patches torchcodec's RPATH onto PyAV's bundled FFmpeg):
 
 ```bash
 pip install patch-torchcodec && patch-torchcodec
