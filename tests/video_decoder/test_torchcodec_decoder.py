@@ -362,15 +362,25 @@ class TestTorchCodecVideoDecoderGetFramesPlayedInRange:
             with pytest.raises((ValueError, RuntimeError)):
                 decoder.get_frames_played_in_range(0.3, 0.1)
 
-    def test_fps_raises_not_implemented_on_old_torchcodec(self, sample_video_file: tuple[Path, list[int]]):
-        """Test that fps parameter raises NotImplementedError on TorchCodec <=0.10.0."""
+    def test_fps_resampling(self, sample_video_file: tuple[Path, list[int]]):
+        """Test target-fps resampling on TorchCodec versions that support it."""
+        import inspect
+
+        from torchcodec.decoders import VideoDecoder
+
+        if "fps" not in inspect.signature(VideoDecoder.get_frames_played_in_range).parameters:
+            pytest.skip("TorchCodec <=0.10 does not support fps resampling")
+
         from mediaref.video_decoder import TorchCodecVideoDecoder
 
         video_path, _ = sample_video_file
 
         with TorchCodecVideoDecoder(str(video_path)) as decoder:
-            with pytest.raises(NotImplementedError, match="does not support"):
-                decoder.get_frames_played_in_range(0.0, 0.2, fps=20.0)
+            batch = decoder.get_frames_played_in_range(0.0, 0.2, fps=20.0)
+
+        assert batch.data.shape[0] == 4
+        assert np.all(batch.pts_seconds >= 0.0)
+        assert np.all(batch.pts_seconds < 0.2)
 
     def test_fps_none_returns_native_rate(self, sample_video_file: tuple[Path, list[int]]):
         """Test that fps=None returns frames at native rate."""
