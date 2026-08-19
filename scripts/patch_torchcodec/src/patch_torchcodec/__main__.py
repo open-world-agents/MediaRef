@@ -10,14 +10,21 @@ from pathlib import Path
 from .core import (
     create_all_symlinks,
     create_symlinks,
+    diagnose_torchcodec,
     find_av_libs_dir,
     find_patchelf,
     find_torchcodec_libs,
     get_library_mappings,
     is_rpath_patched,
     setup_with_patchelf,
-    verify_torchcodec,
 )
+
+
+def _print_verification_failure(result) -> None:
+    if result.details:
+        print("  Runtime diagnostic:", file=sys.stderr)
+        for line in result.details.splitlines():
+            print(f"    {line}", file=sys.stderr)
 
 
 def main():
@@ -95,12 +102,16 @@ Examples:
         print(f"RPATH patched: {'YES' if rpath_patched else 'NO'}")
 
         print()
-        if verify_torchcodec(libs_dir, require_env=False):
+        direct_result = diagnose_torchcodec(libs_dir, require_env=False)
+        if direct_result.ok:
             print("✓ TorchCodec works WITHOUT LD_LIBRARY_PATH")
-        elif verify_torchcodec(libs_dir, require_env=True):
-            print("⚠ TorchCodec works only WITH LD_LIBRARY_PATH")
         else:
+            env_result = diagnose_torchcodec(libs_dir, require_env=True)
+        if not direct_result.ok and env_result.ok:
+            print("⚠ TorchCodec works only WITH LD_LIBRARY_PATH")
+        elif not direct_result.ok:
             print("✗ TorchCodec is NOT working")
+            _print_verification_failure(env_result)
         sys.exit(0)
 
     # Verify only mode
@@ -109,11 +120,13 @@ Examples:
             print("Verifying TorchCodec...")
 
         # Try without LD_LIBRARY_PATH first
-        if verify_torchcodec(libs_dir, require_env=False):
+        direct_result = diagnose_torchcodec(libs_dir, require_env=False)
+        if direct_result.ok:
             if verbose:
                 print("✓ TorchCodec works without LD_LIBRARY_PATH (RPATH patched)")
             sys.exit(0)
-        elif verify_torchcodec(libs_dir, require_env=True):
+        env_result = diagnose_torchcodec(libs_dir, require_env=True)
+        if env_result.ok:
             if verbose:
                 print("✓ TorchCodec works with LD_LIBRARY_PATH")
                 print(f'  Run: export LD_LIBRARY_PATH="{libs_dir}:$LD_LIBRARY_PATH"')
@@ -121,6 +134,7 @@ Examples:
         else:
             if verbose:
                 print("✗ TorchCodec verification failed.")
+                _print_verification_failure(env_result)
             sys.exit(1)
 
     if verbose:
@@ -206,7 +220,8 @@ echo "TorchCodec FFmpeg libraries activated"
         print("\nVerifying TorchCodec...")
 
     require_env = args.env_only
-    if verify_torchcodec(libs_dir, require_env=require_env):
+    verification = diagnose_torchcodec(libs_dir, require_env=require_env)
+    if verification.ok:
         if verbose:
             if require_env:
                 print("✓ TorchCodec works (with LD_LIBRARY_PATH)")
@@ -215,6 +230,7 @@ echo "TorchCodec FFmpeg libraries activated"
     else:
         if verbose:
             print("⚠ TorchCodec verification failed.")
+            _print_verification_failure(verification)
             if require_env:
                 print("  Make sure to set LD_LIBRARY_PATH before running your code.")
         sys.exit(1)

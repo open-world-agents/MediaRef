@@ -178,13 +178,13 @@ Both backends share unified [playback semantics](playback_semantics.md), so a gi
 
 `storage_options` is passed unchanged to fsspec and applies to every image or video URI in the call. Both decoder caches include these options in an opaque hash, so calls using different credentials or backend settings never share an open resource and secrets are not embedded in cache keys.
 
-**TorchCodec install note.** TorchCodec links against its own FFmpeg shared libraries, which often don't match the FFmpeg version PyAV bundles. If `from mediaref.video_decoder import TorchCodecVideoDecoder` (or a `decoder="torchcodec"` call) raises `libavcodec.so.NN: cannot open shared object file`, repair the install by patching torchcodec's RPATH onto PyAV's bundled FFmpeg:
+**TorchCodec install note.** TorchCodec 0.16 can import and decode images without FFmpeg, but `VideoDecoder` still requires compatible FFmpeg shared libraries. Test the video runtime explicitly:
 
 ```bash
-pip install patch-torchcodec && patch-torchcodec
+python -c 'from torchcodec._core import get_ffmpeg_library_versions; print(get_ffmpeg_library_versions())'
 ```
 
-See [`scripts/patch_torchcodec/`](../scripts/patch_torchcodec/) for details. (PyAV-only callers are unaffected — `mediaref.video_decoder` resolves `TorchCodecVideoDecoder` lazily, so a broken torchcodec install never blocks `import mediaref`.)
+Install shared FFmpeg using TorchCodec's official instructions when that probe fails. [`patch-torchcodec`](../scripts/patch_torchcodec/) is an optional Linux fallback for environments that already have PyAV and want TorchCodec to reuse PyAV's bundled libraries. Its `--verify` command performs the same FFmpeg-backed probe; a plain `import torchcodec` is intentionally not considered sufficient. PyAV-only callers remain unaffected because decoder backends are loaded independently.
 
 `cleanup_cache()` — clears loaded PyAV and TorchCodec caches. Call between long-running decode sessions if you want to release decoder memory before automatic eviction.
 
