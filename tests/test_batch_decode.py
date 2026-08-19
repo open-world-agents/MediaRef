@@ -12,6 +12,7 @@ import numpy as np
 import pytest
 
 from mediaref import MediaRef, batch_decode, cleanup_cache
+from mediaref.batch import _coalesce_native_sparse_chunks
 from tests import TORCHCODEC_INSTALLED
 
 
@@ -498,3 +499,17 @@ class TestBatchDecodeValidation:
         # Very large threshold → no gap detected → no error even with allow_gap=False
         results = batch_decode(refs, allow_gap=False, gap_threshold=9999.0)
         assert len(results) == 2
+
+
+class TestSparseBackendPlanning:
+    def test_torchcodec_coalesces_gap_chunks(self):
+        chunks = [([0, 1], [0.0, 0.1]), ([2], [10.0]), ([3], [20.0])]
+
+        assert _coalesce_native_sparse_chunks(chunks, "torchcodec") == [
+            ([0, 1, 2, 3], [0.0, 0.1, 10.0, 20.0])
+        ]
+
+    def test_pyav_preserves_gap_chunks(self):
+        chunks = [([0], [0.0]), ([1], [10.0])]
+
+        assert _coalesce_native_sparse_chunks(chunks, "pyav") == chunks

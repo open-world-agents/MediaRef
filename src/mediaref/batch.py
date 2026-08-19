@@ -40,6 +40,21 @@ def _split_by_gap(
     return chunks
 
 
+def _coalesce_native_sparse_chunks(
+    chunks: list[tuple[list[int], list[float]]],
+    backend: DecoderBackend,
+) -> list[tuple[list[int], list[float]]]:
+    """Use one native sparse request when the backend optimizes sparse seeks."""
+    if backend != "torchcodec" or len(chunks) <= 1:
+        return chunks
+    return [
+        (
+            [index for indices, _ in chunks for index in indices],
+            [pts for _, timestamps in chunks for pts in timestamps],
+        )
+    ]
+
+
 def _decode_video_chunks(
     decoder_class: Type["BaseVideoDecoder"],
     uri: str,
@@ -98,8 +113,8 @@ def batch_decode(
     """Decode multiple media references efficiently using batch decoding.
 
     Groups video frames by file and decodes them in one pass for efficiency.  When timestamps within
-    a single video have large gaps, the decoder automatically splits them into contiguous chunks and
-    seeks between them instead of decoding all intermediate frames.
+    a single video have large gaps, PyAV splits them into contiguous chunks while TorchCodec uses its
+    optimized native sparse-seek request.
 
     Args:
         refs: List of MediaRef objects to decode.
@@ -194,8 +209,10 @@ def batch_decode(
                 f"(threshold: {gap_threshold}s) but allow_gap=False."
             )
 
+        decode_chunks = _coalesce_native_sparse_chunks(chunks, decoder)
+
         try:
-            chunk_pts = [pts for _, pts in chunks]
+            chunk_pts = [pts for _, pts in decode_chunks]
             decoded = _decode_video_chunks(
                 decoder_class,
                 uri,
@@ -203,7 +220,7 @@ def batch_decode(
                 decoder_options or {},
                 storage_options,
             )
-            for (chunk_indices, _), frames in zip(chunks, decoded):
+            for (chunk_indices, _), frames in zip(decode_chunks, decoded):
                 for idx, frame in zip(chunk_indices, frames):
                     results[idx] = frame
         except ImportError:
