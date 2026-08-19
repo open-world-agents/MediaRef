@@ -15,10 +15,19 @@ import pytest
 
 
 class _FakeTensor:
-    def __init__(self, value: Any):
+    def __init__(self, value: Any, device: str = "cpu"):
         self._value = np.asarray(value)
+        self.device = device
+
+    def detach(self) -> "_FakeTensor":
+        return self
+
+    def cpu(self) -> "_FakeTensor":
+        return _FakeTensor(self._value)
 
     def numpy(self) -> np.ndarray:
+        if self.device != "cpu":
+            raise TypeError("cannot convert a CUDA tensor directly to NumPy")
         return self._value
 
 
@@ -48,10 +57,13 @@ class _FakeVideoDecoder:
         with type(self).activity_lock:
             type(self).active_calls -= 1
         count = len(seconds)
+        dimension_order = self.options.get("dimension_order", "NCHW")
+        shape = (count, 3, 4, 3) if dimension_order == "NHWC" else (count, 3, 3, 4)
+        device = self.options.get("device", "cpu")
         return SimpleNamespace(
-            data=_FakeTensor(np.zeros((count, 3, 3, 4), dtype=np.uint8)),
-            pts_seconds=_FakeTensor(seconds),
-            duration_seconds=_FakeTensor(np.full(count, 0.1)),
+            data=_FakeTensor(np.zeros(shape, dtype=np.uint8), device),
+            pts_seconds=_FakeTensor(seconds, device),
+            duration_seconds=_FakeTensor(np.full(count, 0.1), device),
         )
 
     def get_frames_played_in_range(self, **kwargs: Any) -> SimpleNamespace:
@@ -118,6 +130,18 @@ def test_decoder_options_are_part_of_cache_identity(torchcodec_decoder_module):
     exact.close()
     approximate.close()
     exact_again.close()
+
+
+def test_cuda_and_nhwc_outputs_are_normalized(torchcodec_decoder_module):
+    decoder_class = torchcodec_decoder_module.TorchCodecVideoDecoder
+    decoder = decoder_class("video.mp4", device="cuda", dimension_order="NHWC")
+
+    batch = decoder.get_frames_played_at([0.0, 0.1])
+
+    assert batch.data.shape == (2, 3, 3, 4)
+    assert batch.pts_seconds.dtype == np.float64
+    assert batch.duration_seconds.dtype == np.float64
+    decoder.close()
 
 
 def test_shared_decoder_calls_are_serialized(torchcodec_decoder_module):

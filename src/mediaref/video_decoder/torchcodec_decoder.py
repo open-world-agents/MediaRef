@@ -43,6 +43,7 @@ class TorchCodecVideoDecoder(BaseVideoDecoder):
     def __init__(self, source: PathLike, **kwargs: Any):
         super().__init__(source, **kwargs)
         self._cache_key = self._make_cache_key(source, kwargs)
+        self._dimension_order = kwargs.get("dimension_order", "NCHW")
         self._closed = False
 
         state = self.cache.try_acquire(self._cache_key)
@@ -110,12 +111,22 @@ class TorchCodecVideoDecoder(BaseVideoDecoder):
         return locked_call
 
     @staticmethod
-    def _to_frame_batch(torchcodec_batch: Any) -> FrameBatch:
+    def _to_numpy(tensor: Any) -> np.ndarray:
+        """Move a TorchCodec tensor to host memory and expose it as NumPy."""
+        if hasattr(tensor, "detach"):
+            tensor = tensor.detach()
+        if hasattr(tensor, "cpu"):
+            tensor = tensor.cpu()
+        return tensor.numpy() if hasattr(tensor, "numpy") else np.asarray(tensor)
+
+    def _to_frame_batch(self, torchcodec_batch: Any) -> FrameBatch:
+        data = self._to_numpy(torchcodec_batch.data)
+        if self._dimension_order == "NHWC":
+            data = np.moveaxis(data, -1, 1)
         return FrameBatch(
-            data=torchcodec_batch.data.numpy(),
-            # Use .numpy() first to avoid NumPy 2.0's __array__ copy warning.
-            pts_seconds=torchcodec_batch.pts_seconds.numpy().astype(np.float64),
-            duration_seconds=torchcodec_batch.duration_seconds.numpy().astype(np.float64),
+            data=data,
+            pts_seconds=self._to_numpy(torchcodec_batch.pts_seconds).astype(np.float64),
+            duration_seconds=self._to_numpy(torchcodec_batch.duration_seconds).astype(np.float64),
         )
 
     def get_frames_played_at(self, seconds: List[float]) -> FrameBatch:
