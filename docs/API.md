@@ -150,6 +150,10 @@ batch_decode(refs, decoder="pyav", *, decoder_options=None, storage_options=None
 
 Decode many `MediaRef` video frames efficiently by grouping refs that share a URI, opening each container once, and seeking through the requested timestamps in order. Significantly faster than per-ref decoding when refs cluster on the same video file.
 
+PyAV requests are split at `gap_threshold` so it can seek over large gaps. TorchCodec receives one sorted sparse request per URI, allowing TorchCodec 0.15+ to apply its native skip/seek optimization. `allow_gap=False` validates the same threshold for both backends.
+
+To compare native and manually chunked requests on your media and hardware, run `python benchmarks/benchmark_sparse_batching.py VIDEO --backend torchcodec --timestamps 0 10 30 60`.
+
 ```python
 from mediaref import MediaRef, batch_decode
 

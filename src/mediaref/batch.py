@@ -2,10 +2,12 @@
 
 import sys
 from collections import defaultdict
+from importlib.metadata import PackageNotFoundError, version
 from typing import TYPE_CHECKING, Any, Literal, Mapping, Optional, Type
 
 import numpy as np
 import numpy.typing as npt
+from packaging.version import InvalidVersion, Version
 
 from ._internal import NANOSECOND, resolve_video_source
 
@@ -38,6 +40,33 @@ def _split_by_gap(
         chunks[-1][0].append(paired[i][0])
         chunks[-1][1].append(paired[i][1])
     return chunks
+
+
+def _coalesce_native_sparse_chunks(
+    chunks: list[tuple[list[int], list[float]]],
+    backend: DecoderBackend,
+    torchcodec_version: Optional[str] = None,
+) -> list[tuple[list[int], list[float]]]:
+    """Use one native sparse request when the backend optimizes sparse seeks."""
+    if backend != "torchcodec" or len(chunks) <= 1:
+        return chunks
+    if torchcodec_version is None:
+        try:
+            torchcodec_version = version("torchcodec")
+        except PackageNotFoundError:
+            return chunks
+    try:
+        supports_native_sparse_requests = Version(torchcodec_version) >= Version("0.15")
+    except InvalidVersion:
+        return chunks
+    if not supports_native_sparse_requests:
+        return chunks
+    return [
+        (
+            [index for indices, _ in chunks for index in indices],
+            [pts for _, timestamps in chunks for pts in timestamps],
+        )
+    ]
 
 
 def _decode_video_chunks(
@@ -98,8 +127,8 @@ def batch_decode(
     """Decode multiple media references efficiently using batch decoding.
 
     Groups video frames by file and decodes them in one pass for efficiency.  When timestamps within
-    a single video have large gaps, the decoder automatically splits them into contiguous chunks and
-    seeks between them instead of decoding all intermediate frames.
+    a single video have large gaps, PyAV splits them into contiguous chunks while TorchCodec uses its
+    optimized native sparse-seek request.
 
     Args:
         refs: List of MediaRef objects to decode.
@@ -194,8 +223,10 @@ def batch_decode(
                 f"(threshold: {gap_threshold}s) but allow_gap=False."
             )
 
+        decode_chunks = _coalesce_native_sparse_chunks(chunks, decoder)
+
         try:
-            chunk_pts = [pts for _, pts in chunks]
+            chunk_pts = [pts for _, pts in decode_chunks]
             decoded = _decode_video_chunks(
                 decoder_class,
                 uri,
@@ -203,7 +234,7 @@ def batch_decode(
                 decoder_options or {},
                 storage_options,
             )
-            for (chunk_indices, _), frames in zip(chunks, decoded):
+            for (chunk_indices, _), frames in zip(decode_chunks, decoded):
                 for idx, frame in zip(chunk_indices, frames):
                     results[idx] = frame
         except ImportError:
