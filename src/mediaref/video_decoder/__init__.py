@@ -25,7 +25,7 @@ from .types import VideoStreamMetadata
 require_video()
 
 if TYPE_CHECKING:
-    from .torchcodec_decoder import TorchCodecVideoDecoder  # noqa: F401
+    from .torchcodec_decoder import TorchCodecVideoDecoder
 
 __all__ = [
     "BaseVideoDecoder",
@@ -45,9 +45,8 @@ def __getattr__(name: str):
             raise ImportError(
                 "TorchCodecVideoDecoder requires the optional `torchcodec` package: pip install torchcodec"
             ) from e
-        # OSError / RuntimeError from torchcodec's .so load propagate
-        # unchanged — users see the real FFmpeg-ABI cause and can run
-        # `patch-torchcodec` (see scripts/patch_torchcodec/).
+        # TorchCodec 0.16 defers FFmpeg load failures until a video operation;
+        # construction errors propagate unchanged so callers see the root cause.
         globals()[name] = TorchCodecVideoDecoder
         return TorchCodecVideoDecoder
     raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
