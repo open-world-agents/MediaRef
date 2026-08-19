@@ -162,7 +162,7 @@ frames = batch_decode(refs, decoder="torchcodec")    # GPU-accelerated
 | | `"pyav"` (default) | `"torchcodec"` |
 | --- | --- | --- |
 | Backend | PyAV (FFmpeg) | TorchCodec (FFmpeg) |
-| Acceleration | CPU only | CPU by default; CUDA with `decoder_options={"device": "cuda"}` |
+| Acceleration | CPU only | TorchCodec's default device; direct decoder use supports CUDA |
 | Install | `pip install 'mediaref[video]'` | `pip install 'mediaref[torchcodec]'` (PyAV not required) |
 | URI schemes | any fsspec-routable URI (`file://`, bare path, `http(s)://`, `s3://`, `gs://`, `hf://`, `memory://`, …) — opened via fsspec inside `cached_av` | only what FFmpeg natively understands: file paths, `file://`, `http(s)://`, `rtsp://`. **No fsspec dispatch** — `s3://`, `gs://`, `hf://`, etc. fail at the FFmpeg layer. Use `decoder="pyav"` for those. |
 
