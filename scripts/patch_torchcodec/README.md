@@ -1,27 +1,30 @@
 # patch-torchcodec
 
-Patch TorchCodec to use PyAV's bundled FFmpeg — **one command, no system FFmpeg needed**.
+Diagnose TorchCodec's FFmpeg video runtime and, when needed on Linux, patch TorchCodec to use PyAV's bundled libraries.
 
 ## Problem
 
-TorchCodec requires FFmpeg shared libraries (`libavcodec.so.62`, etc.), but installing FFmpeg system-wide can be complex and may cause version conflicts.
+TorchCodec video decoding requires FFmpeg shared libraries. Since TorchCodec 0.16, `import torchcodec` can succeed without FFmpeg, so import-only checks can report a false success.
 
 ## Solution
 
-PyAV already bundles FFmpeg. `patch-torchcodec` patches TorchCodec's RPATH to find them — no environment variables needed!
+Use TorchCodec's official shared-FFmpeg installation instructions first. If a Linux environment already has PyAV, `patch-torchcodec` can instead patch TorchCodec's RPATH to find PyAV's bundle.
 
 ## Quick Start
 
 ```bash
-pip install torchcodec          # install torchcodec (with PyTorch)
-pip install patch-torchcodec    # install patcher (av & patchelf included)
-patch-torchcodec                # patches RPATH — done!
+pip install torchcodec
+pip install patch-torchcodec    # portable verifier; no PyAV required
+patch-torchcodec --verify       # actual FFmpeg runtime probe
+pip install 'patch-torchcodec[patch]'  # optional Linux PyAV/patchelf fallback
+patch-torchcodec                # run only if the probe fails and PyAV reuse is desired
 ```
 
-That's it. TorchCodec now works:
+Verification calls `get_ffmpeg_library_versions()` in a fresh process. This forces the FFmpeg-backed runtime to load and prints its original diagnostic on failure.
 
 ```python
-from torchcodec.decoders import VideoDecoder  # ✓ just works
+from torchcodec._core import get_ffmpeg_library_versions
+print(get_ffmpeg_library_versions())
 ```
 
 ## Command Line Options
@@ -30,11 +33,13 @@ from torchcodec.decoders import VideoDecoder  # ✓ just works
 patch-torchcodec               # Patch RPATH (default, recommended)
 patch-torchcodec --env-only    # Symlinks only (requires LD_LIBRARY_PATH)
 patch-torchcodec --status      # Check current setup status
-patch-torchcodec --verify      # Verify TorchCodec works
+patch-torchcodec --verify      # Verify an FFmpeg-backed operation works
 patch-torchcodec --quiet       # Silent mode
 ```
 
 ## Python API
+
+The verification API is dependency-free. Install `patch-torchcodec[patch]` before calling patch functions.
 
 ```python
 from patch_torchcodec import setup_with_patchelf, verify_torchcodec, is_rpath_patched
@@ -54,11 +59,11 @@ assert verify_torchcodec(require_env=False)
 
 ## Limitations
 
-- **Linux only** (RPATH is Linux-specific)
+- **Linux only** for patching (verification itself is portable)
 - **Same virtualenv**: PyAV and TorchCodec must be in the same environment
 - **Re-run after reinstall**: If you reinstall TorchCodec, run `patch-torchcodec` again
+- **Use only when needed**: a working system/conda FFmpeg installation should not be patched
 
 ## License
 
 MIT
-

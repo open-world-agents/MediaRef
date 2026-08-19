@@ -7,7 +7,31 @@ import re
 import shutil
 import subprocess
 import sys
+from dataclasses import dataclass
 from pathlib import Path
+
+_VERIFY_CODE = """
+from torchcodec._core import get_ffmpeg_library_versions
+
+versions = get_ffmpeg_library_versions()
+if not versions:
+    raise RuntimeError("TorchCodec reported no loaded FFmpeg libraries")
+print(versions)
+"""
+
+
+@dataclass(frozen=True)
+class VerificationResult:
+    """Result of probing an FFmpeg-backed TorchCodec operation."""
+
+    ok: bool
+    stdout: str = ""
+    stderr: str = ""
+    returncode: int = 0
+
+    @property
+    def details(self) -> str:
+        return (self.stderr or self.stdout).strip()
 
 
 def find_av_libs_dir() -> Path | None:
@@ -122,7 +146,7 @@ def setup(verbose: bool = False) -> bool:
     libs_dir = find_av_libs_dir()
     if libs_dir is None:
         if verbose:
-            print("Error: PyAV not found. Install with: pip install av", file=sys.stderr)
+            print("Error: PyAV not found. Install with: pip install 'patch-torchcodec[patch]'", file=sys.stderr)
         return False
 
     mappings = get_library_mappings(libs_dir)
@@ -266,7 +290,7 @@ def setup_with_patchelf(verbose: bool = False) -> bool:
     libs_dir = find_av_libs_dir()
     if libs_dir is None:
         if verbose:
-            print("Error: PyAV not found. Install with: pip install av", file=sys.stderr)
+            print("Error: PyAV not found. Install with: pip install 'patch-torchcodec[patch]'", file=sys.stderr)
         return False
 
     torchcodec_libs = find_torchcodec_libs()
@@ -278,7 +302,7 @@ def setup_with_patchelf(verbose: bool = False) -> bool:
     patchelf = find_patchelf()
     if patchelf is None:
         if verbose:
-            print("Error: patchelf not found. Install with: pip install patchelf", file=sys.stderr)
+            print("Error: patchelf not found. Install with: pip install 'patch-torchcodec[patch]'", file=sys.stderr)
         return False
 
     # Verify required FFmpeg libs exist before proceeding
@@ -368,34 +392,50 @@ def create_all_symlinks(libs_dir: Path) -> list[Path]:
     return created
 
 
-def verify_torchcodec(libs_dir: Path | None = None, require_env: bool = True) -> bool:
-    """Verify TorchCodec can load with the configured libraries.
+def diagnose_torchcodec(libs_dir: Path | None = None, require_env: bool = True) -> VerificationResult:
+    """Probe TorchCodec's FFmpeg runtime in a fresh Python process.
 
     Args:
         libs_dir: Path to av.libs directory. If None, will be auto-detected.
-        require_env: If True, set LD_LIBRARY_PATH for verification.
-                     If False, test without setting LD_LIBRARY_PATH (for RPATH-patched installs).
+        require_env: If True, prepend PyAV's libraries to ``LD_LIBRARY_PATH``.
+            If False, preserve the caller's environment unchanged.
 
     Returns:
-        True if TorchCodec loads successfully, False otherwise.
+        Structured verification result with captured diagnostics.
     """
     if libs_dir is None:
         libs_dir = find_av_libs_dir()
 
     env = os.environ.copy()
-    if require_env and libs_dir is not None:
-        env["LD_LIBRARY_PATH"] = f"{libs_dir}:{env.get('LD_LIBRARY_PATH', '')}"
+    if require_env:
+        if libs_dir is None:
+            return VerificationResult(ok=False, stderr="PyAV's av.libs directory was not found", returncode=1)
+        existing = env.get("LD_LIBRARY_PATH")
+        env["LD_LIBRARY_PATH"] = f"{libs_dir}:{existing}" if existing else str(libs_dir)
 
     try:
         result = subprocess.run(
-            [sys.executable, "-c", "from torchcodec.decoders import VideoDecoder; print('OK')"],
+            [sys.executable, "-c", _VERIFY_CODE],
             env=env,
             capture_output=True,
             text=True,
+            timeout=30,
         )
-        return result.returncode == 0 and "OK" in result.stdout
-    except Exception:
-        return False
+        return VerificationResult(
+            ok=result.returncode == 0,
+            stdout=result.stdout,
+            stderr=result.stderr,
+            returncode=result.returncode,
+        )
+    except subprocess.TimeoutExpired as error:
+        return VerificationResult(ok=False, stderr=f"TorchCodec verification timed out: {error}", returncode=124)
+    except Exception as error:
+        return VerificationResult(ok=False, stderr=str(error), returncode=1)
+
+
+def verify_torchcodec(libs_dir: Path | None = None, require_env: bool = True) -> bool:
+    """Return whether an FFmpeg-backed TorchCodec operation succeeds."""
+    return diagnose_torchcodec(libs_dir, require_env=require_env).ok
 
 
 def is_rpath_patched() -> bool:

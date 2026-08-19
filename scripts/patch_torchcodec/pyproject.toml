@@ -4,8 +4,8 @@ build-backend = "hatchling.build"
 
 [project]
 name = "patch-torchcodec"
-version = "0.1.4"
-description = "Patch TorchCodec to use PyAV's bundled FFmpeg — one command, no system FFmpeg needed"
+version = "0.2.0"
+description = "Diagnose TorchCodec video support and optionally reuse PyAV's bundled FFmpeg"
 readme = "README.md"
 license = "MIT"
 requires-python = ">=3.9"
@@ -25,7 +25,10 @@ classifiers = [
     "Programming Language :: Python :: 3.12",
     "Topic :: Multimedia :: Video",
 ]
-dependencies = [
+dependencies = []
+
+[project.optional-dependencies]
+patch = [
     "av>=10.0.0",
     "patchelf",
 ]
@@ -38,4 +41,3 @@ packages = ["src/patch_torchcodec"]
 
 [tool.hatch.build.targets.sdist]
 include = ["src/patch_torchcodec", "README.md", "pyproject.toml"]
-
