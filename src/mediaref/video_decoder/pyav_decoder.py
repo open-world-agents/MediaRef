@@ -1,7 +1,11 @@
 """PyAV-based video decoder with TorchCodec-compatible playback semantics."""
 
+import copy
 import gc
+import os
+import threading
 import warnings
+from collections import OrderedDict
 from fractions import Fraction
 from typing import Any, List, Mapping, Optional
 
@@ -11,6 +15,7 @@ import numpy as np
 import numpy.typing as npt
 
 from .. import cached_av
+from .._internal import is_cloud_uri, make_cache_key
 from .._typing import PathLike
 from .base import BaseVideoDecoder
 from .frame_batch import FrameBatch
@@ -20,6 +25,20 @@ from .types import VideoStreamMetadata
 # Reference: https://github.com/pytorch/vision/blob/428a54c96e82226c0d2d8522e9cbfdca64283da0/torchvision/io/video.py#L53-L55
 _CALLED_TIMES = 0
 _GC_COLLECTION_INTERVAL = 10
+
+# Local containers are opened per decoder (cheap), but metadata extraction decodes
+# a frame, so cache it keyed on file identity. Remote containers are cached in
+# cached_av instead, where reopening costs seconds of network round trips.
+_METADATA_CACHE_SIZE = 256
+_metadata_cache: "OrderedDict[tuple, VideoStreamMetadata]" = OrderedDict()
+_metadata_lock = threading.Lock()
+
+
+def clear_metadata_cache() -> None:
+    """Drop cached local-file metadata."""
+    with _metadata_lock:
+        _metadata_cache.clear()
+
 
 # Threshold for sparse query detection (seconds between consecutive timestamps)
 _SPARSE_QUERY_GAP_THRESHOLD = 1.0
@@ -110,19 +129,38 @@ class PyAVVideoDecoder(BaseVideoDecoder):
             raise ValueError("expected_pixel_format requires native output")
         self.output_format = output_format
         self.expected_pixel_format = expected_pixel_format
+        remote = isinstance(source, str) and is_cloud_uri(source)
         self._container = cached_av.open(
             source,
             "r",
-            keep_av_open=True,
+            keep_av_open=remote,
             storage_options=storage_options,
             **kwargs,
         )
         self._closed = False
         try:
-            self._metadata = self._extract_metadata()
+            self._metadata = self._cached_metadata(source, kwargs) if not remote else self._extract_metadata()
         except Exception:
             self.close()
             raise
+
+    def _cached_metadata(self, source: PathLike, kwargs: Mapping[str, Any]) -> VideoStreamMetadata:
+        try:
+            stat = os.stat(source)  # type: ignore[arg-type]
+        except (OSError, TypeError, ValueError):  # file-likes, file:// URIs
+            return self._extract_metadata()
+        key = (make_cache_key(os.fspath(source), kwargs), stat.st_mtime_ns, stat.st_size)
+        with _metadata_lock:
+            metadata = _metadata_cache.get(key)
+            if metadata is not None:
+                _metadata_cache.move_to_end(key)
+                return copy.copy(metadata)
+        metadata = self._extract_metadata()
+        with _metadata_lock:
+            _metadata_cache[key] = metadata
+            while len(_metadata_cache) > _METADATA_CACHE_SIZE:
+                _metadata_cache.popitem(last=False)
+        return copy.copy(metadata)
 
     def _extract_metadata(self) -> VideoStreamMetadata:
         """Extract video stream metadata from container.
@@ -467,13 +505,11 @@ class PyAVVideoDecoder(BaseVideoDecoder):
             self._container.seek(seek_pts, stream=stream, any_frame=False, backward=True)
 
             # Check if we overshot by peeking at the first frame
-            try:
-                frame = next(self._container.decode(video=0))
-            except StopIteration:
-                # No frames at all - nothing we can do
-                return
+            # No frame means the seek landed on a packet the decoder cannot start
+            # from (e.g. MKV flags every HEVC packet as a keyframe); back off.
+            frame = next(self._container.decode(video=0), None)
 
-            if frame.time is not None and frame.time <= target_seconds:
+            if frame is not None and frame.time is not None and frame.time <= target_seconds:
                 # Good! We landed at or before the target
                 # Re-seek to restore position (we consumed one frame)
                 self._container.seek(seek_pts, stream=stream, any_frame=False, backward=True)

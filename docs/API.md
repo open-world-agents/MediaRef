@@ -258,6 +258,8 @@ Install shared FFmpeg using TorchCodec's official instructions when that probe f
 
 `cleanup_cache()` — clears loaded PyAV and TorchCodec caches. Call between long-running decode sessions if you want to release decoder memory before automatic eviction.
 
+The PyAV backend reopens local files per decoder and caches only their metadata (keyed on path, mtime and size, so replaced files are picked up). Remote containers stay open in a per-thread LRU (`AV_CACHE_SIZE`, default 10), since reopening one costs seconds of network round trips.
+
 ### Direct decoder use
 
 For finer control, use the decoder classes directly:
