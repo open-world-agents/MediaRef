@@ -279,3 +279,37 @@ def pytest_collection_modifyitems(config, items):
         # Skip video tests if video dependencies not available
         if "video" in item.keywords and not video_available:
             item.add_marker(skip_video)
+
+
+def _is_connection_error(exc: BaseException) -> bool:
+    try:
+        from aiohttp import ClientConnectionError
+    except ImportError:
+        ClientConnectionError = ConnectionError  # type: ignore[misc,assignment]
+    seen = set()
+    while exc is not None and id(exc) not in seen:
+        seen.add(id(exc))
+        if isinstance(exc, (ConnectionError, TimeoutError, ClientConnectionError)):
+            return True
+        exc = exc.__cause__ or exc.__context__
+    return False
+
+
+@pytest.hookimpl(hookwrapper=True)
+def pytest_runtest_makereport(item, call):
+    """Skip, rather than fail, network tests when the remote host is unreachable."""
+    outcome = yield
+    report = outcome.get_result()
+    if (
+        report.when == "call"
+        and report.failed
+        and "network" in item.keywords
+        and call.excinfo is not None
+        and _is_connection_error(call.excinfo.value)
+    ):
+        report.outcome = "skipped"
+        report.longrepr = (
+            str(item.path),
+            item.location[1] or 0,
+            f"Skipped: network unavailable: {call.excinfo.value}",
+        )

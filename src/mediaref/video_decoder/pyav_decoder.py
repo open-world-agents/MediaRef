@@ -15,7 +15,7 @@ import numpy as np
 import numpy.typing as npt
 
 from .. import cached_av
-from .._internal import is_cloud_uri, make_cache_key
+from .._internal import _FILE_URI_PREFIX, _file_uri_to_path, is_cloud_uri, make_cache_key
 from .._typing import PathLike
 from .base import BaseVideoDecoder
 from .frame_batch import FrameBatch
@@ -122,6 +122,8 @@ class PyAVVideoDecoder(BaseVideoDecoder):
         **kwargs,
     ):
         """Initialize PyAV video decoder."""
+        if isinstance(source, str) and source.startswith(_FILE_URI_PREFIX):
+            source = _file_uri_to_path(source)  # FFmpeg cannot open file:///C:/... on Windows
         super().__init__(source, **kwargs)
         if output_format not in {"rgb", "native"}:
             raise ValueError("output_format must be 'rgb' or 'native'")
