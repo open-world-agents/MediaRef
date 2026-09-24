@@ -1,8 +1,9 @@
 from fractions import Fraction
 
-import av
 import numpy as np
 import pytest
+
+av = pytest.importorskip("av")
 
 from mediaref import MediaRef, batch_decode
 from mediaref.video_decoder import PyAVVideoDecoder
