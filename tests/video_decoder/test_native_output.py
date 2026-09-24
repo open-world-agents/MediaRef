@@ -5,8 +5,8 @@ import pytest
 
 av = pytest.importorskip("av")
 
-from mediaref import MediaRef, batch_decode
-from mediaref.video_decoder import PyAVVideoDecoder
+from mediaref import MediaRef, batch_decode  # noqa: E402
+from mediaref.video_decoder import PyAVVideoDecoder  # noqa: E402
 
 
 @pytest.fixture(params=["gray12le", "gray16le", "gray16be"])
