@@ -302,8 +302,11 @@ def cleanup_cache():
     else:
         cached_av.cleanup_cache()
 
-    # Do not import an optional backend just to clean it up. If TorchCodec was
+    # Do not import an optional backend just to clean it up. If a backend was
     # used, its module is already loaded and its cache can be cleared directly.
+    module = sys.modules.get("mediaref.video_decoder.pyav_decoder")
+    if module is not None:
+        module.clear_metadata_cache()
     module = sys.modules.get("mediaref.video_decoder.torchcodec_decoder")
     if module is not None:
         module.TorchCodecVideoDecoder.clear_cache()

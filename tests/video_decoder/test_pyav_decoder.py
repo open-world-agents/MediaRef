@@ -473,6 +473,45 @@ class TestPyAVVideoDecoderEdgeCases:
         result = subprocess.run([sys.executable, "-W", "ignore", "-c", script], capture_output=True, text=True)
         assert result.returncode == 0, result.stderr[-2000:]
 
+    def test_local_container_is_not_cached(self, example_video_path: Path):
+        """Local files reopen per decoder; only remote containers are cached."""
+        from mediaref.cached_av import _container_cache
+        from mediaref.video_decoder import PyAVVideoDecoder
+
+        before = len(_container_cache)
+        with PyAVVideoDecoder(str(example_video_path)) as decoder:
+            container = decoder._container
+            decoder.get_frames_played_at([0.5])
+        assert len(_container_cache) == before
+        with pytest.raises(Exception):
+            container.streams.video[0].codec_context.name  # closed
+
+    def test_file_uri_source(self, example_video_path: Path):
+        from mediaref.video_decoder import PyAVVideoDecoder
+
+        with PyAVVideoDecoder(example_video_path.resolve().as_uri()) as decoder:
+            assert decoder.metadata.width == 906
+
+    def test_local_metadata_cache_tracks_file_changes(self, example_video_path: Path, sample_video_file, tmp_path):
+        """Metadata is reused for an unchanged file and refreshed when it is replaced."""
+        import os
+        import shutil
+
+        from mediaref.video_decoder import PyAVVideoDecoder
+
+        path = tmp_path / "video.mkv"
+        shutil.copy(example_video_path, path)
+        with PyAVVideoDecoder(str(path)) as decoder:
+            first = decoder.metadata
+            first.width = -1  # callers get copies
+        with PyAVVideoDecoder(str(path)) as decoder:
+            assert decoder.metadata.width == 906
+
+        shutil.copy(sample_video_file[0], path)
+        os.utime(path, ns=(0, 0))
+        with PyAVVideoDecoder(str(path)) as decoder:
+            assert decoder.metadata.width != 906
+
 
 @pytest.mark.video
 class TestPyAVVideoDecoderGetFramesPlayedInRange:
