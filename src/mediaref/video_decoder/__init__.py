@@ -30,11 +30,17 @@ __all__ = [
     "PyAVVideoDecoder",
     "TorchCodecVideoDecoder",
     "VideoStreamMetadata",
+    "VideoHeader",
+    "probe_video",
 ]
 
 
 def __getattr__(name: str):
     """Lazy resolver (PEP 562) for optional decoders."""
+    if name in {"VideoHeader", "probe_video"}:
+        from .probe import VideoHeader, probe_video
+
+        return {"VideoHeader": VideoHeader, "probe_video": probe_video}[name]
     if name == "PyAVVideoDecoder":
         from .._features import require_video
 
