@@ -2,6 +2,7 @@
 
 import dataclasses
 from dataclasses import dataclass
+from typing import Optional
 
 import numpy as np
 import numpy.typing as npt
@@ -42,6 +43,9 @@ class FrameBatch:
             - W: Frame width in pixels
         pts_seconds: Presentation timestamps in seconds for each frame (N,)
         duration_seconds: Duration of each frame in seconds (N,)
+        pixel_format: Output format, when supplied by the backend. Native gray
+            samples retain their integer values in a single channel; units and
+            sensor calibration are outside the decoder contract.
 
     Examples:
         >>> import numpy as np
@@ -59,6 +63,7 @@ class FrameBatch:
     data: npt.NDArray[np.generic]  # [N, C, H, W]
     pts_seconds: npt.NDArray[np.float64]  # [N]
     duration_seconds: npt.NDArray[np.float64]  # [N]
+    pixel_format: Optional[str] = None
 
     __repr__ = _frame_repr
 

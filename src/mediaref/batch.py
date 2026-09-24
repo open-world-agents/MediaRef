@@ -87,8 +87,15 @@ def _decode_video_chunks(
     if storage_options is not None:
         options["storage_options"] = storage_options
     with decoder_class(source, **options) as video_decoder:
+        native = options.get("output_format") == "native"
         return [
-            [np.transpose(f, (1, 2, 0)) for f in video_decoder.get_frames_played_at(chunk).data] for chunk in chunks
+            [
+                (f[0] if f.shape[0] == 1 else np.transpose(f, (1, 2, 0))).copy()
+                if native
+                else np.transpose(f, (1, 2, 0))
+                for f in video_decoder.get_frames_played_at(chunk).data
+            ]
+            for chunk in chunks
         ]
 
 
@@ -116,6 +123,7 @@ def batch_decode(
     refs: list["MediaRef"],
     decoder: DecoderBackend = "pyav",
     *,
+    output_format: Literal["rgb", "native"] = "rgb",
     decoder_options: Optional[Mapping[str, Any]] = None,
     image_decoder: Literal["pillow", "torchcodec"] = "pillow",
     image_decoder_options: Optional[Mapping[str, Any]] = None,
@@ -135,6 +143,8 @@ def batch_decode(
     Args:
         refs: List of MediaRef objects to decode.
         decoder: Decoder backend (``'pyav'`` or ``'torchcodec'``).
+        output_format: ``rgb`` (default) or value-preserving ``native`` for PyAV
+            video refs only. Native grayscale is HW; packed color is HWC.
         decoder_options: Options passed to the selected video decoder constructor.
             For TorchCodec this includes options such as ``device``, ``seek_mode``,
             ``num_ffmpeg_threads``, and ``dimension_order``. These options apply to
@@ -168,6 +178,17 @@ def batch_decode(
         >>> # Strict mode: single video, no large gaps
         >>> frames = batch_decode(refs, allow_gap=False)
     """
+    if output_format not in {"rgb", "native"}:
+        raise ValueError("output_format must be 'rgb' or 'native'")
+    options = dict(decoder_options or {})
+    if options.get("output_format", output_format) != output_format:
+        raise ValueError("Conflicting output_format and decoder_options")
+    if output_format == "native":
+        if decoder != "pyav":
+            raise ValueError("Native video output requires the PyAV backend")
+        if any(not ref.is_video for ref in refs if ref is not None):
+            raise ValueError("Native output currently supports video refs only")
+        options["output_format"] = "native"
     if not refs:
         return []
 
@@ -240,7 +261,7 @@ def batch_decode(
                 decoder_class,
                 uri,
                 chunk_pts,
-                decoder_options or {},
+                options,
                 storage_options,
             )
             for (chunk_indices, _), frames in zip(decode_chunks, decoded):

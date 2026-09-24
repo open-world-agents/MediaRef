@@ -83,6 +83,9 @@ class PyAVVideoDecoder(BaseVideoDecoder):
     Args:
         source: Local path, fsspec URI, or a binary file-like object.
         storage_options: Credentials and backend options passed to fsspec.
+        output_format: ``rgb`` (default) or ``native``. Native output preserves
+            decoded sample values in NCHW; unsupported planar/packed formats fail.
+        expected_pixel_format: Optional native source-format assertion.
 
     Examples:
         >>> with PyAVVideoDecoder("video.mp4") as decoder:
@@ -95,10 +98,18 @@ class PyAVVideoDecoder(BaseVideoDecoder):
         source: PathLike,
         *,
         storage_options: Optional[Mapping[str, Any]] = None,
+        output_format: str = "rgb",
+        expected_pixel_format: Optional[str] = None,
         **kwargs,
     ):
         """Initialize PyAV video decoder."""
         super().__init__(source, **kwargs)
+        if output_format not in {"rgb", "native"}:
+            raise ValueError("output_format must be 'rgb' or 'native'")
+        if expected_pixel_format is not None and output_format != "native":
+            raise ValueError("expected_pixel_format requires native output")
+        self.output_format = output_format
+        self.expected_pixel_format = expected_pixel_format
         self._container = cached_av.open(
             source,
             "r",
@@ -153,7 +164,9 @@ class PyAVVideoDecoder(BaseVideoDecoder):
         # begin: content-based (first decoded frame PTS)
         container.seek(0)
         first_pts: Fraction | None = None
+        pixel_format = None
         for frame in container.decode(video=0):
+            pixel_format = frame.format.name
             if frame.time is not None:
                 first_pts = Fraction(frame.time).limit_denominator(1000000)
             break
@@ -182,6 +195,7 @@ class PyAVVideoDecoder(BaseVideoDecoder):
             height=stream.height,
             begin_stream_seconds=begin_stream_seconds,
             end_stream_seconds=end_stream_seconds,
+            pixel_format=pixel_format,
         )
 
     @property
@@ -191,11 +205,43 @@ class PyAVVideoDecoder(BaseVideoDecoder):
 
     def _create_empty_batch(self) -> FrameBatch:
         """Create an empty FrameBatch with correct spatial dimensions."""
+        channels, dtype = self._output_layout(self._metadata.pixel_format)
         return FrameBatch(
-            data=np.empty((0, 3, self._metadata.height, self._metadata.width), dtype=np.uint8),
+            data=np.empty((0, channels, self._metadata.height, self._metadata.width), dtype=dtype),
             pts_seconds=np.array([], dtype=np.float64),
             duration_seconds=np.array([], dtype=np.float64),
+            pixel_format=self._metadata.pixel_format if self.output_format == "native" else "rgb24",
         )
+
+    def _output_layout(self, pixel_format):
+        if self.output_format == "rgb":
+            return 3, np.uint8
+        if self.expected_pixel_format is not None and pixel_format != self.expected_pixel_format:
+            raise ValueError(f"Expected source {self.expected_pixel_format}, got {pixel_format}")
+        # Only layouts with an unambiguous value-preserving NCHW representation.
+        layouts = {
+            "gray": (1, np.uint8),
+            "gray12le": (1, np.uint16),
+            "gray16le": (1, np.uint16),
+            "gray16be": (1, np.uint16),
+            "rgb24": (3, np.uint8),
+            "rgba": (4, np.uint8),
+        }
+        if pixel_format not in layouts:
+            raise ValueError(f"Native output does not support pixel format {pixel_format!r}")
+        return layouts[pixel_format]
+
+    def _convert_frames(self, frames):
+        if self.output_format == "rgb":
+            return _convert_av_frames_to_nchw(frames)
+        result = []
+        for frame in frames:
+            if frame.format.name != self._metadata.pixel_format:
+                raise ValueError("Pixel format changed within stream")
+            channels, _ = self._output_layout(frame.format.name)
+            array = frame.to_ndarray()  # No color conversion, rescaling or quantization.
+            result.append(array[None] if channels == 1 else array.transpose(2, 0, 1))
+        return result
 
     def get_frames_played_at(self, seconds: List[float]) -> FrameBatch:
         """Retrieve frames that would be displayed at specific timestamps.
@@ -228,7 +274,7 @@ class PyAVVideoDecoder(BaseVideoDecoder):
         av_frames = self._get_frames_played_at(seconds)
 
         # Convert to RGB numpy arrays in NCHW format
-        frames = _convert_av_frames_to_nchw(av_frames)
+        frames = self._convert_frames(av_frames)
 
         pts_list = [float(frame.time) for frame in av_frames]
         duration = float(1.0 / self._metadata.average_rate)
@@ -237,6 +283,7 @@ class PyAVVideoDecoder(BaseVideoDecoder):
             data=np.stack(frames, axis=0),
             pts_seconds=np.array(pts_list, dtype=np.float64),
             duration_seconds=np.full(len(seconds), duration, dtype=np.float64),
+            pixel_format=self._metadata.pixel_format if self.output_format == "native" else "rgb24",
         )
 
     def get_frames_played_in_range(
@@ -297,7 +344,7 @@ class PyAVVideoDecoder(BaseVideoDecoder):
         if not av_frames:
             return self._create_empty_batch()
 
-        frames = _convert_av_frames_to_nchw(av_frames)
+        frames = self._convert_frames(av_frames)
 
         pts_list = [float(frame.time) for frame in av_frames]
         duration = float(1.0 / self._metadata.average_rate)
@@ -306,6 +353,7 @@ class PyAVVideoDecoder(BaseVideoDecoder):
             data=np.stack(frames, axis=0),
             pts_seconds=np.array(pts_list, dtype=np.float64),
             duration_seconds=np.full(len(av_frames), duration, dtype=np.float64),
+            pixel_format=self._metadata.pixel_format if self.output_format == "native" else "rgb24",
         )
 
     def _get_frames_played_at(self, seconds: List[float]) -> List[av.VideoFrame]:

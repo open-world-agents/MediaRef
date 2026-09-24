@@ -40,6 +40,7 @@ class VideoStreamMetadata:
     height: int
     begin_stream_seconds: Fraction = Fraction(0)
     end_stream_seconds: Optional[Fraction] = None
+    pixel_format: Optional[str] = None
 
     def __post_init__(self):
         """Set end_stream_seconds to begin + duration if not provided."""
