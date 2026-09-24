@@ -46,7 +46,7 @@ ref = MediaRef(uri=DataURI.from_image(rgb, format="png"))
 
 `to_ndarray(format="rgb", *, decoder="pyav", decoder_options=None, image_decoder="pillow", image_decoder_options=None, storage_options=None) -> np.ndarray`
 - Loads the media as a numpy array in the requested format.
-- Formats: `"rgb"` (default), `"bgr"`, `"rgba"`, `"bgra"`, `"gray"`.
+- Formats: `"rgb"` (default), `"bgr"`, `"rgba"`, `"bgra"`, `"gray"`, and [`"native"`](#native-video-pixels) (PyAV video only).
 - Returns shape: `(H, W, 3)` for RGB/BGR, `(H, W, 4)` for RGBA/BGRA, `(H, W)` for grayscale.
 - For video URIs (`pts_ns is not None`), decodes the single frame at that timestamp.
 - `decoder` and `decoder_options` select and configure the video backend.
@@ -132,7 +132,7 @@ ref = MediaRef(uri=DataURI.from_file("photo.png"))
 
 ### Methods and properties
 
-`to_ndarray(format="rgb") -> np.ndarray` — decode to numpy. Same formats as `MediaRef.to_ndarray`.
+`to_ndarray(format="rgb") -> np.ndarray` — decode to numpy. Supports `"rgb"`, `"bgr"`, `"rgba"`, `"bgra"`, and `"gray"`; native video output does not apply to `DataURI` images.
 
 `to_pil_image() -> PIL.Image` — decode to PIL Image.
 
@@ -148,7 +148,7 @@ ref = MediaRef(uri=DataURI.from_file("photo.png"))
 ## `batch_decode`
 
 ```python
-batch_decode(refs, decoder="pyav", *, decoder_options=None, image_decoder="pillow", image_decoder_options=None, storage_options=None, ...) -> list[np.ndarray]
+batch_decode(refs, decoder="pyav", *, output_format="rgb", decoder_options=None, image_decoder="pillow", image_decoder_options=None, storage_options=None, ...) -> list[np.ndarray]
 ```
 
 Decode many `MediaRef` video frames efficiently by grouping refs that share a URI, opening each container once, and seeking through the requested timestamps in order. Significantly faster than per-ref decoding when refs cluster on the same video file.
@@ -178,6 +178,36 @@ images = batch_decode(
 )
 ```
 
+### Native video pixels
+
+Use `format="native"` for a single frame or `output_format="native"` for a batch
+to preserve decoded pixel values without RGB conversion:
+
+```python
+ref = MediaRef(uri="depth.mkv", pts_ns=100_000_000)
+pixels = ref.to_ndarray(format="native")
+frames = batch_decode([ref], output_format="native")
+```
+
+This mode requires PyAV video refs. Supported source formats and output arrays:
+
+| Source pixel format | Shape | dtype |
+| --- | --- | --- |
+| `gray` | `(H, W)` | `uint8` |
+| `gray12le`, `gray16le`, `gray16be` | `(H, W)` | `uint16` |
+| `rgb24` | `(H, W, 3)` | `uint8` |
+| `rgba` | `(H, W, 4)` | `uint8` |
+
+Pass `decoder_options={"expected_pixel_format": "gray16le"}` to assert the source
+format. Unsupported formats, within-stream format changes, non-video refs and
+native output requested from TorchCodec fail explicitly. Batch order and duplicate
+references are preserved; each native result owns its array storage.
+
+Native output preserves numeric samples, not encoded bytes, source byte order or
+padded planes. It does not apply scaling, units or invalid-value interpretation.
+The wire schema and playback selection are unchanged. RGB remains the default;
+use `to_ndarray`, not `to_pil_image`, for native output.
+
 ### Decoder backends
 
 | | `"pyav"` (default) | `"torchcodec"` |
@@ -189,7 +219,7 @@ images = batch_decode(
 
 Both backends share unified [playback semantics](playback_semantics.md), so a given `pts_ns` (when supported by both) returns the same frame regardless of decoder.
 
-`decoder_options` is passed to the selected decoder constructor. TorchCodec options include `device`, `seek_mode`, `num_ffmpeg_threads`, `dimension_order`, `stream_index`, `transforms`, and `output_dtype`. MediaRef always normalizes the returned frame batch to NCHW internally and the final `batch_decode` result to RGB HWC NumPy arrays, including when TorchCodec decodes on CUDA or uses `dimension_order="NHWC"`. TorchCodec 0.14+ accepts `output_dtype="auto"`, returning `uint8` for SDR and `float32` in `[0, 1]` for detected HDR content; MediaRef preserves that dtype and uses `1.0` for an added opaque alpha channel.
+`decoder_options` is passed to the selected decoder constructor. TorchCodec options include `device`, `seek_mode`, `num_ffmpeg_threads`, `dimension_order`, `stream_index`, `transforms`, and `output_dtype`. With the default `output_format="rgb"`, MediaRef normalizes the returned frame batch to NCHW internally and the final `batch_decode` result to RGB HWC NumPy arrays, including when TorchCodec decodes on CUDA or uses `dimension_order="NHWC"`. TorchCodec 0.14+ accepts `output_dtype="auto"`, returning `uint8` for SDR and `float32` in `[0, 1]` for detected HDR content; MediaRef preserves that dtype and uses `1.0` for an added opaque alpha channel.
 
 ```python
 frames = batch_decode(

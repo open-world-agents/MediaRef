@@ -58,29 +58,6 @@ See [API Reference](docs/API.md) for full details — `DataURI`, `batch_decode`,
   <img src=".github/assets/decoding_benchmark.png" alt="Decoding Benchmark" width="800">
 </p>
 
-## Value-preserving video output
-
-RGB remains the default. To preserve numeric pixel values in a video frame:
-
-```python
-from mediaref import MediaRef, batch_decode
-
-ref = MediaRef(uri="depth.mkv", pts_ns=100_000_000)
-pixels = ref.to_ndarray(format="native")  # HW uint16 for gray12/gray16.
-frames = batch_decode([ref], output_format="native")
-```
-
-This opt-in mode uses PyAV and supports `gray`, `gray12le`, `gray16le`,
-`gray16be`, `rgb24`, and `rgba`. Grayscale returns HW arrays; packed color
-returns HWC. Unsupported formats, non-video refs and the TorchCodec backend
-fail explicitly. Use `decoder_options={"expected_pixel_format": "gray16le"}`
-to assert the source format. The wire schema and playback selection are unchanged.
-
-Native means decoded sample preservation, not encoded bytes, source byte order,
-or padded planes. No scaling, unit conversion or invalid-value interpretation
-is applied. Image native output, nearest-frame queries, header inspection,
-audio and multi-stream references are outside this change.
-
 ## Installation
 
 ```bash
