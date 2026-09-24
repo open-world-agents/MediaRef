@@ -441,6 +441,38 @@ class TestPyAVVideoDecoderEdgeCases:
             assert batch2.pts_seconds[2] == pytest.approx(0.480, abs=0.001)
             assert batch2.pts_seconds[3] == pytest.approx(0.480, abs=0.001)
 
+    def test_seek_onto_undecodable_packet_backs_off(self, example_video_path: Path):
+        """MKV flags every HEVC packet as a keyframe; seeks past 3.69s land on
+        non-IDR packets that yield no frame and must back off, not fail."""
+        from mediaref.video_decoder import PyAVVideoDecoder
+
+        with PyAVVideoDecoder(str(example_video_path)) as decoder:
+            batch = decoder.get_frames_played_at([3.72, 4.3, 5.5])
+            np.testing.assert_allclose(batch.pts_seconds, [3.71, 3.87, 4.94], atol=0.001)
+
+    def test_concurrent_batch_decode_same_file(self, example_video_path: Path):
+        """Threads decoding one file must not share a PyAV container (segfault)."""
+        import subprocess
+        import sys
+        import textwrap
+
+        script = textwrap.dedent(f"""
+            from concurrent.futures import ThreadPoolExecutor
+            from mediaref import MediaRef, batch_decode
+
+            path = {str(example_video_path)!r}
+
+            def work(tid):
+                for it in range(20):
+                    ts = [0.01 + ((tid + it + k) % 12) * 0.25 for k in range(4)]
+                    batch_decode([MediaRef(uri=path, pts_ns=int(t * 1e9)) for t in ts])
+
+            with ThreadPoolExecutor(8) as ex:
+                list(ex.map(work, range(8)))
+        """)
+        result = subprocess.run([sys.executable, "-W", "ignore", "-c", script], capture_output=True, text=True)
+        assert result.returncode == 0, result.stderr[-2000:]
+
 
 @pytest.mark.video
 class TestPyAVVideoDecoderGetFramesPlayedInRange:

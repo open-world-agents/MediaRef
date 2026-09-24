@@ -1,4 +1,5 @@
 import os
+import threading
 from contextlib import AbstractContextManager
 from types import TracebackType
 from typing import Any, Literal, Mapping, Optional, Type, overload
@@ -49,13 +50,15 @@ def open(
     cache entry, so cross-call HITs get a container whose I/O backend is
     still alive. Raw file-likes from external callers cannot be cached
     safely (their owner / lifetime is unknown to us) and bypass the cache.
+
+    Cached containers are per thread, so the returned container must not be
+    used from another thread.
     """
     if mode == "r":
         if not isinstance(file, (str, os.PathLike)):
             # Externally-owned file-like: not cacheable.
             return av.open(file, "r", **kwargs)
         if isinstance(file, str) and is_cloud_uri(file):
-            cache_key = make_cache_key(file, kwargs, storage_options or {})
             if not keep_av_open:
                 return MockedInputContainer(
                     file,
@@ -63,14 +66,21 @@ def open(
                     storage_options=storage_options,
                     **kwargs,
                 )
+            cache_key = _thread_cache_key(make_cache_key(file, kwargs, storage_options or {}))
             return _open_cached(cache_key, file, storage_options=storage_options, **kwargs)
         if not keep_av_open:
             return av.open(file, "r", **kwargs)
-        cache_key = make_cache_key(str(file), kwargs)
+        cache_key = _thread_cache_key(make_cache_key(str(file), kwargs))
         return _open_cached(cache_key, file, storage_options=storage_options, **kwargs)
     if storage_options:
         raise ValueError("storage_options are only supported for reading")
     return av.open(file, mode, **kwargs)
+
+
+def _thread_cache_key(key: str) -> str:
+    # A PyAV container is not thread-safe: concurrent seek/decode on one
+    # AVFormatContext segfaults. Scope cached containers to the calling thread.
+    return f"{key}#thread={threading.get_ident()}"
 
 
 def _open_cached(

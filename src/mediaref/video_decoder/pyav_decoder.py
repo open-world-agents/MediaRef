@@ -467,13 +467,11 @@ class PyAVVideoDecoder(BaseVideoDecoder):
             self._container.seek(seek_pts, stream=stream, any_frame=False, backward=True)
 
             # Check if we overshot by peeking at the first frame
-            try:
-                frame = next(self._container.decode(video=0))
-            except StopIteration:
-                # No frames at all - nothing we can do
-                return
+            # No frame means the seek landed on a packet the decoder cannot start
+            # from (e.g. MKV flags every HEVC packet as a keyframe); back off.
+            frame = next(self._container.decode(video=0), None)
 
-            if frame.time is not None and frame.time <= target_seconds:
+            if frame is not None and frame.time is not None and frame.time <= target_seconds:
                 # Good! We landed at or before the target
                 # Re-seek to restore position (we consumed one frame)
                 self._container.seek(seek_pts, stream=stream, any_frame=False, backward=True)
