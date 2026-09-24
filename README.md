@@ -60,28 +60,26 @@ See [API Reference](docs/API.md) for full details — `DataURI`, `batch_decode`,
 
 ## Value-preserving video output
 
-The PyAV decoder can preserve decoded pixel values instead of converting to RGB:
+RGB remains the default. To preserve numeric pixel values in a video frame:
 
 ```python
-from mediaref.video_decoder import PyAVVideoDecoder, probe_video
+from mediaref import MediaRef, batch_decode
 
-header = probe_video("depth.mkv")  # Header values; missing frame counts stay None.
-with PyAVVideoDecoder("depth.mkv", output_format="native", expected_pixel_format="gray16le") as decoder:
-    batch = decoder.get_frames_played_at([0.0, 0.1])
-    pixels = batch.data  # NCHW; grayscale is (N, 1, H, W), uint16 for gray12/gray16.
-    assert batch.pixel_format == "gray16le"
+ref = MediaRef(uri="depth.mkv", pts_ns=100_000_000)
+pixels = ref.to_ndarray(format="native")  # HW uint16 for gray12/gray16.
+frames = batch_decode([ref], output_format="native")
 ```
 
-Native output supports `gray`, `gray12le`, `gray16le`, `gray16be`, `rgb24`, and
-`rgba`. Other formats and within-stream format changes fail explicitly. Numeric
-sample values are preserved, not source byte order, encoded bytes, or padded
-planes. No scale, unit conversion or invalid-value interpretation is applied.
-RGB remains the default; this option is specific to the PyAV backend.
+This opt-in mode uses PyAV and supports `gray`, `gray12le`, `gray16le`,
+`gray16be`, `rgb24`, and `rgba`. Grayscale returns HW arrays; packed color
+returns HWC. Unsupported formats, non-video refs and the TorchCodec backend
+fail explicitly. Use `decoder_options={"expected_pixel_format": "gray16le"}`
+to assert the source format. The wire schema and playback selection are unchanged.
 
-`get_frames_nearest_at(times, tolerance=...)` explicitly selects nearest PTS,
-breaking ties toward the earlier frame. It is distinct from playback queries
-and can match actual frames outside header bounds within tolerance. Playback
-continues to use header-derived end bounds. No exact-boundary claim is added.
+Native means decoded sample preservation, not encoded bytes, source byte order,
+or padded planes. No scaling, unit conversion or invalid-value interpretation
+is applied. Image native output, nearest-frame queries, header inspection,
+audio and multi-stream references are outside this change.
 
 ## Installation
 

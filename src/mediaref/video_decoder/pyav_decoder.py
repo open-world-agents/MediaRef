@@ -1,7 +1,6 @@
 """PyAV-based video decoder with TorchCodec-compatible playback semantics."""
 
 import gc
-import math
 import warnings
 from fractions import Fraction
 from typing import Any, List, Mapping, Optional
@@ -244,50 +243,6 @@ class PyAVVideoDecoder(BaseVideoDecoder):
             result.append(array[None] if channels == 1 else array.transpose(2, 0, 1))
         return result
 
-    def get_frames_nearest_at(self, seconds: List[float], *, tolerance: float) -> FrameBatch:
-        """Select nearest PTS within tolerance (ties choose earlier), not playback.
-
-        Unlike playback queries, a time outside header bounds may match an
-        actual frame within tolerance. No frame is synthesized or substituted.
-        """
-        if not math.isfinite(tolerance) or tolerance < 0:
-            raise ValueError("tolerance must be finite and nonnegative")
-        if any(not math.isfinite(t) or t < 0 for t in seconds):
-            raise ValueError("timestamps must be finite and nonnegative")
-        if not seconds:
-            return self._create_empty_batch()
-        selected = [None] * len(seconds)
-        groups = []
-        for item in sorted(enumerate(seconds), key=lambda item: item[1]):
-            if not groups or item[1] - groups[-1][-1][1] > _SPARSE_QUERY_GAP_THRESHOLD:
-                groups.append([])
-            groups[-1].append(item)
-        for group in groups:
-            self._seek_to_or_before(max(0, group[0][1] - tolerance))
-            frames = iter(self._container.decode(video=0))
-            previous = current = None
-            timestamp = float("-inf")
-            for index, t in group:
-                while timestamp < t:
-                    frame = next(frames, None)
-                    if frame is None:
-                        break
-                    if frame.time is None:
-                        raise ValueError("Frame time is None")
-                    previous, current = current, frame
-                    timestamp = float(frame.time)
-                candidates = [f for f in (previous, current) if f is not None]
-                closest = min(candidates, key=lambda f: abs(float(f.time) - t)) if candidates else None
-                if closest is None or abs(float(closest.time) - t) > tolerance:
-                    raise ValueError(f"No frame at {t}s within {tolerance}s")
-                selected[index] = closest
-        return FrameBatch(
-            data=np.stack(self._convert_frames(selected)),
-            pts_seconds=np.asarray([float(f.time) for f in selected]),
-            duration_seconds=np.asarray([float(f.duration * f.time_base) for f in selected]),
-            pixel_format=self._metadata.pixel_format if self.output_format == "native" else "rgb24",
-        )
-
     def get_frames_played_at(self, seconds: List[float]) -> FrameBatch:
         """Retrieve frames that would be displayed at specific timestamps.
 
@@ -310,8 +265,6 @@ class PyAVVideoDecoder(BaseVideoDecoder):
         begin_stream = float(self._metadata.begin_stream_seconds)
         end_stream = float(self._metadata.end_stream_seconds)  # type: ignore[arg-type]
         for t in seconds:
-            if not math.isfinite(t):
-                raise ValueError("Timestamp must be finite")
             if t < begin_stream:
                 raise ValueError(f"Timestamp {t}s < begin_stream_seconds ({begin_stream}s)")
             if t >= end_stream:

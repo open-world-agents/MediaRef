@@ -188,7 +188,7 @@ class MediaRef(BaseModel):
 
     def to_ndarray(
         self,
-        format: Literal["rgb", "bgr", "rgba", "bgra", "gray"] = "rgb",
+        format: Literal["rgb", "bgr", "rgba", "bgra", "gray", "native"] = "rgb",
         *,
         decoder: Literal["pyav", "torchcodec"] = "pyav",
         decoder_options: Optional[Mapping[str, Any]] = None,
@@ -205,6 +205,8 @@ class MediaRef(BaseModel):
                 - "rgba": RGB with alpha (H, W, 4)
                 - "bgra": BGR with alpha (H, W, 4)
                 - "gray": Grayscale (H, W)
+                - "native": Preserve video sample values (PyAV only); grayscale
+                  is (H, W), packed color is (H, W, C). No unit conversion.
             decoder: Video decoder backend. Ignored for image refs.
             decoder_options: Options passed to the video decoder constructor.
             image_decoder: Image decoder backend. Ignored for video refs.
@@ -224,6 +226,18 @@ class MediaRef(BaseModel):
             >>> ref = MediaRef(uri="video.mp4", pts_ns=1_000_000_000)
             >>> frame = ref.to_ndarray()  # Requires: pip install mediaref[video]
         """
+        if format == "native":
+            from .batch import batch_decode
+
+            return batch_decode(
+                [self],
+                decoder=decoder,
+                output_format="native",
+                decoder_options=decoder_options,
+                storage_options=storage_options,
+            )[0]
+        if decoder_options and decoder_options.get("output_format", "rgb") != "rgb":
+            raise ValueError("Use format='native' to request native video output")
         rgba = self._load_as_rgba(
             decoder=decoder,
             decoder_options=decoder_options,
