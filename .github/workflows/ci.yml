@@ -22,7 +22,7 @@ jobs:
     strategy:
       matrix:
         os: [ubuntu-latest, macos-latest, windows-latest]
-        python-version: ["3.9", "3.10", "3.11", "3.12", "3.13"]
+        python-version: ["3.10", "3.11", "3.12", "3.13"]
 
     steps:
     - uses: actions/checkout@v7
@@ -35,16 +35,44 @@ jobs:
       run: |
         uv venv
         uv sync --dev
-    
-    - name: Run tests
-      run: |
-        uv run pytest --cov=mediaref --cov-report=xml --cov-report=term
-    
-    - name: Setup environments with extras
-      run: 
-        uv sync --dev --all-extras
-    
-    - name: Run tests
-      run: |
-        uv run pytest --cov=mediaref --cov-report=xml --cov-report=term
 
+    - name: Run tests
+      run: |
+        uv run --no-sync pytest --cov=mediaref --cov-report=xml --cov-report=term
+
+    - name: Install PyAV and HuggingFace extras
+      run: uv sync --dev --extra pyav --extra hf
+
+    - name: Install default video backend on supported wheel platform
+      if: runner.os == 'Linux' || runner.os == 'macOS'
+      run: uv sync --dev --extra video --extra pyav --extra hf
+
+    - name: Install current CPU reference
+      if: runner.os == 'Linux'
+      run: uv pip install torch==2.14.1 torchcodec==0.17.0 --index-url https://download.pytorch.org/whl/cpu
+
+    - name: Install optional reference on macOS ARM
+      if: runner.os == 'macOS' && runner.arch == 'ARM64'
+      run: uv pip install torchcodec==0.17.0
+
+    - name: Match the Linux oracle to bundled FFmpeg
+      if: runner.os == 'Linux'
+      run: uv run --no-sync python scripts/configure_tensorcodec_oracle.py
+
+    - name: Run tests
+      run: |
+        uv run --no-sync pytest --cov=mediaref --cov-report=xml --cov-report=term
+
+  tensorcodec-only:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: astral-sh/setup-uv@v7
+        with:
+          python-version: '3.12'
+      - run: sudo apt-get update && sudo apt-get install -y ffmpeg
+      - run: uv sync --dev --extra video
+      - name: Test default decoding without PyAV or Torch
+        run: |
+          uv run --no-sync python -c "import importlib.util; assert all(importlib.util.find_spec(n) is None for n in ('av', 'torch', 'torchcodec'))"
+          uv run --no-sync pytest -m "not network and not slow"

@@ -24,7 +24,7 @@ def _run(path: str, backend: str, timestamps: list[float], strategy: str) -> Non
 def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("path")
-    parser.add_argument("--backend", choices=("pyav", "torchcodec"), default="torchcodec")
+    parser.add_argument("--backend", choices=("tensorcodec", "pyav", "torchcodec"), default="tensorcodec")
     parser.add_argument("--timestamps", type=float, nargs="+", default=[0.0, 10.0, 30.0, 60.0])
     parser.add_argument("--iterations", type=int, default=5)
     args = parser.parse_args()

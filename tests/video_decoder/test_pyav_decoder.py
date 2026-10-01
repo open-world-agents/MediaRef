@@ -12,7 +12,7 @@ import numpy as np
 import pytest
 
 
-@pytest.mark.video
+@pytest.mark.pyav
 class TestPyAVVideoDecoderBoundaryConditions:
     """Test boundary condition handling per playback_semantics.md."""
 
@@ -85,7 +85,7 @@ class TestPyAVVideoDecoderBoundaryConditions:
             assert batch.pts_seconds[0] == 0.0
 
 
-@pytest.mark.video
+@pytest.mark.pyav
 class TestPyAVVideoDecoderPlaybackSemantics:
     """Test TorchCodec playback semantics: frame[i].pts <= t < frame[i+1].pts."""
 
@@ -181,7 +181,7 @@ class TestPyAVVideoDecoderPlaybackSemantics:
             assert batch.pts_seconds[0] == pytest.approx(0.4, abs=0.01)
 
 
-@pytest.mark.video
+@pytest.mark.pyav
 class TestPyAVVideoDecoderMetadata:
     """Test metadata extraction."""
 
@@ -215,7 +215,7 @@ class TestPyAVVideoDecoderMetadata:
             assert decoder.metadata.height == 48
 
 
-@pytest.mark.video
+@pytest.mark.pyav
 class TestPyAVVideoDecoderFrameBatch:
     """Test FrameBatch output format."""
 
@@ -272,7 +272,7 @@ class TestPyAVVideoDecoderFrameBatch:
             assert len(batch.duration_seconds) == 0
 
 
-@pytest.mark.video
+@pytest.mark.pyav
 class TestPyAVVideoDecoderContextManager:
     """Test context manager functionality."""
 
@@ -314,7 +314,7 @@ class TestPyAVVideoDecoderContextManager:
         decoder.close()  # Should not raise
 
 
-@pytest.mark.video
+@pytest.mark.pyav
 class TestPyAVVideoDecoderEdgeCases:
     """Test edge cases and error handling."""
 
@@ -465,7 +465,7 @@ class TestPyAVVideoDecoderEdgeCases:
             def work(tid):
                 for it in range(20):
                     ts = [0.01 + ((tid + it + k) % 12) * 0.25 for k in range(4)]
-                    batch_decode([MediaRef(uri=path, pts_ns=int(t * 1e9)) for t in ts])
+                    batch_decode([MediaRef(uri=path, pts_ns=int(t * 1e9)) for t in ts], decoder="pyav")
 
             with ThreadPoolExecutor(8) as ex:
                 list(ex.map(work, range(8)))
@@ -513,7 +513,7 @@ class TestPyAVVideoDecoderEdgeCases:
             assert decoder.metadata.width != 906
 
 
-@pytest.mark.video
+@pytest.mark.pyav
 class TestPyAVVideoDecoderGetFramesPlayedInRange:
     """Test get_frames_played_in_range for PyAVVideoDecoder."""
 
@@ -673,7 +673,7 @@ class TestPyAVVideoDecoderGetFramesPlayedInRange:
 # tests/video_decoder/test_decoder_consistency.py
 
 
-@pytest.mark.video
+@pytest.mark.pyav
 class TestBatchConversionReformatter:
     """Batch conversion shares one VideoReformatter (one SwsContext per batch)."""
 

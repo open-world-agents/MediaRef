@@ -1,6 +1,6 @@
 # Playback Semantics
 
-MediaRef's video decoders (`PyAVVideoDecoder` and `TorchCodecVideoDecoder`) follow unified **playback semantics** for frame retrieval. This ensures consistent behavior regardless of which decoder backend you use.
+MediaRef's video decoders (`TensorCodecVideoDecoder`, `PyAVVideoDecoder` and `TorchCodecVideoDecoder`) follow unified **playback semantics** for frame retrieval. This ensures consistent behavior regardless of which decoder backend you use.
 
 ## The Display Model
 
@@ -57,6 +57,6 @@ This semantics is adopted from [TorchCodec](https://github.com/pytorch/torchcode
 > 2. In order to establish if the start of an interval maps to a particular frame, we need to figure out if it is ordered after the frame's pts, but before the next frame's pts.
 
 By adopting this model, MediaRef ensures that:
-1. Both `PyAVVideoDecoder` and `TorchCodecVideoDecoder` return identical frames for the same query
+1. The supported decoder backends return identical frames for the same query
 2. Frame selection is deterministic and matches real video player behavior
 3. Edge cases (sparse keyframes, variable frame rates) are handled consistently

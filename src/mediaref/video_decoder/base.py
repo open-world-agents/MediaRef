@@ -18,7 +18,7 @@ class BaseVideoDecoder(ABC):
     from their pts until the next frame's pts.
 
     Examples:
-        >>> with PyAVVideoDecoder("video.mp4") as decoder:
+        >>> with TensorCodecVideoDecoder("video.mp4") as decoder:
         ...     batch = decoder.get_frames_played_at([0.0, 1.0, 2.0])
         ...     print(batch.data.shape)  # (3, 3, H, W)
     """
@@ -53,7 +53,7 @@ class BaseVideoDecoder(ABC):
             ValueError: If timestamp < 0 or timestamp >= end_stream_seconds
 
         Examples:
-            >>> with PyAVVideoDecoder("video.mp4") as decoder:
+            >>> with TensorCodecVideoDecoder("video.mp4") as decoder:
             ...     batch = decoder.get_frames_played_at([0.0, 1.0, 2.0])
             ...     print(batch.data.shape)  # (3, 3, H, W)
         """
@@ -65,9 +65,9 @@ class BaseVideoDecoder(ABC):
     ) -> FrameBatch:
         """Return multiple frames in the given range.
 
-        Frames are in the half open range [start_seconds, stop_seconds). Each
-        returned frame's :term:`pts`, in seconds, is inside of the half open
-        range.
+        TensorCodec and current TorchCodec select frames overlapping the half-open
+        playback interval, including the frame already playing at start_seconds.
+        Its PTS may precede the start. The legacy PyAV range API selects by PTS.
 
         Args:
             start_seconds: Time, in seconds, of the start of the range.
@@ -85,7 +85,7 @@ class BaseVideoDecoder(ABC):
                 is outside the valid stream bounds.
 
         Examples:
-            >>> with PyAVVideoDecoder("video.mp4") as decoder:
+            >>> with TensorCodecVideoDecoder("video.mp4") as decoder:
             ...     batch = decoder.get_frames_played_in_range(0.0, 2.0)
             ...     print(batch.data.shape)
         """

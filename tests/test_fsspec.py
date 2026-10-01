@@ -6,8 +6,6 @@ offline — no S3, no GCS, no network.
 
 from __future__ import annotations
 
-import io
-from fractions import Fraction
 
 import cv2
 import fsspec
@@ -195,35 +193,17 @@ class TestImageLoadingFromMemoryFS:
 
 
 # ---------------------------------------------------------------------------
-# Video loading via memory:// (requires PyAV)
+# Video loading via memory:// (TensorCodec)
 # ---------------------------------------------------------------------------
 
 
 @pytest.fixture
-def sample_video_bytes() -> tuple[bytes, list[int]]:
-    """In-memory 5-frame H.264 MP4. Returns (bytes, list of pts_ns)."""
-    av = pytest.importorskip("av")
-    buf = io.BytesIO()
-    container = av.open(buf, mode="w", format="mp4")
-    stream = container.add_stream("h264", rate=10)
-    stream.width = 64
-    stream.height = 48
-    stream.pix_fmt = "yuv420p"
-    pts_ns = [0, 100_000_000, 200_000_000, 300_000_000, 400_000_000]
-    for i in range(5):
-        arr = np.full((48, 64, 3), i * 50, dtype=np.uint8)
-        frame = av.VideoFrame.from_ndarray(arr, format="rgb24")
-        frame.pts = i
-        frame.time_base = Fraction(1, 10)
-        for packet in stream.encode(frame):
-            container.mux(packet)
-    for packet in stream.encode():
-        container.mux(packet)
-    container.close()
-    return buf.getvalue(), pts_ns
+def sample_video_bytes(sample_video_file) -> tuple[bytes, list[int]]:
+    path, timestamps = sample_video_file
+    return path.read_bytes(), timestamps
 
 
-@pytest.mark.video
+@pytest.mark.tensorcodec
 class TestVideoLoadingFromMemoryFS:
     def test_to_ndarray_single_frame_from_memory_uri(self, sample_video_bytes):
         data, pts_ns_list = sample_video_bytes
@@ -349,7 +329,7 @@ class TestVideoLoadingFromMemoryFS:
 # ---------------------------------------------------------------------------
 
 
-@pytest.mark.video
+@pytest.mark.tensorcodec
 @pytest.mark.network
 class TestHfDatasetIntegration:
     """Live integration tests against the open-world-agents/D2E-480p HF dataset.

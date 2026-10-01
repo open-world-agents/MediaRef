@@ -16,6 +16,12 @@ from mediaref.data_uri import DataURI
 from mediaref.video_decoder import FrameBatch
 
 
+def test_missing_torchcodec_image_reports_unified_extra(sample_image_file, monkeypatch):
+    monkeypatch.setitem(sys.modules, "torchcodec.decoders", None)
+    with pytest.raises(ImportError, match=r"mediaref\[torchcodec\]"):
+        MediaRef(uri=str(sample_image_file)).to_ndarray(image_decoder="torchcodec")
+
+
 @pytest.fixture
 def fake_torchcodec_image(monkeypatch: pytest.MonkeyPatch):
     calls = []
