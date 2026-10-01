@@ -22,7 +22,7 @@ jobs:
     strategy:
       matrix:
         os: [ubuntu-latest, macos-latest, windows-latest]
-        python-version: ["3.9", "3.10", "3.11", "3.12", "3.13"]
+        python-version: ["3.10", "3.11", "3.12", "3.13"]
 
     steps:
     - uses: actions/checkout@v7
@@ -44,23 +44,19 @@ jobs:
       run: uv sync --dev --extra pyav --extra hf
 
     - name: Install default video backend on supported wheel platform
-      if: runner.os == 'Linux' && matrix.python-version != '3.9'
+      if: runner.os == 'Linux'
       run: uv sync --dev --extra video --extra pyav --extra hf
 
     - name: Install current CPU reference
-      if: runner.os == 'Linux' && matrix.python-version != '3.9'
+      if: runner.os == 'Linux'
       run: uv pip install torch==2.14.1 torchcodec==0.17.0 --index-url https://download.pytorch.org/whl/cpu
 
-    - name: Install Python 3.9 CPU reference
-      if: runner.os == 'Linux' && matrix.python-version == '3.9'
-      run: uv pip install torch==2.8.0 torchcodec==0.7.0 --index-url https://download.pytorch.org/whl/cpu
-
     - name: Install optional reference on macOS ARM
-      if: runner.os == 'macOS' && runner.arch == 'ARM64' && matrix.python-version != '3.9'
+      if: runner.os == 'macOS' && runner.arch == 'ARM64'
       run: uv pip install torchcodec==0.17.0
 
     - name: Match the Linux oracle to bundled FFmpeg
-      if: runner.os == 'Linux' && matrix.python-version != '3.9'
+      if: runner.os == 'Linux'
       run: uv run --no-sync python scripts/configure_tensorcodec_oracle.py
 
     - name: Run tests

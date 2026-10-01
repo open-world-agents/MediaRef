@@ -77,16 +77,13 @@ use TensorCodec's CPU playback selection and NumPy output. Its Linux x86_64/ARM6
 bundle FFmpeg, so no system FFmpeg, PyAV, or PyTorch is needed at runtime.
 The default video backend requires Python 3.10+ and glibc 2.17+ for these wheels;
 other platforms need a TensorCodec source build with Rust and FFmpeg 7 headers.
-Python 3.9 image loading remains supported. For Python 3.9, legacy platforms, or
-value-preserving grayscale/depth output, install `mediaref[pyav]` and pass
-`decoder="pyav"` explicitly. CUDA, HDR transfer functions, display rotation and
-decoder transforms require the appropriate optional backend. Published TensorCodec
-0.1.1 supports CPU SDR RGB decoding. Its source branch
-also supports HDR and right-angle rotation; a new release is needed to use those
-features through this extra. Historical benchmark numbers above were measured
+MediaRef requires Python 3.10+. For other platforms or value-preserving
+grayscale/depth output, install `mediaref[pyav]` and pass
+`decoder="pyav"` explicitly. CUDA and decoder transforms require the appropriate optional backend. TensorCodec 0.1.2
+supports CPU SDR/HDR RGB, right-angle rotation and uint16 RGB output. Historical benchmark numbers above were measured
 with PyAV, not TensorCodec.
 
-**Optional TorchCodec backend.** On Python 3.10+, install `mediaref[torchcodec-image]` for the 0.16+ image API; PyAV is not required. It decodes JPEG, PNG, WebP, GIF, AVIF, and HEIC images without FFmpeg via `ref.to_ndarray(image_decoder="torchcodec")`. Use `image_decoder_options={"output_dtype": "auto"}` to preserve native high-bit-depth image data as `uint16`. The broader `mediaref[torchcodec]` extra keeps TorchCodec 0.7+ support for video-only users, including Python 3.9.
+**Optional TorchCodec backend.** On Python 3.10+, install `mediaref[torchcodec-image]` for the 0.16+ image API; PyAV is not required. It decodes JPEG, PNG, WebP, GIF, AVIF, and HEIC images without FFmpeg via `ref.to_ndarray(image_decoder="torchcodec")`. Use `image_decoder_options={"output_dtype": "auto"}` to preserve native high-bit-depth image data as `uint16`. The broader `mediaref[torchcodec]` extra keeps TorchCodec 0.7+ support for video-only users.
 
 `batch_decode(refs, decoder="torchcodec")` uses TorchCodec for video on CPU. To opt into CUDA decoding, pass `decoder_options={"device": "cuda"}`; MediaRef moves the result back to host memory for its NumPy return type. Video decoding still requires an FFmpeg installation with shared libraries. Verify the runtime, not just the import:
 
