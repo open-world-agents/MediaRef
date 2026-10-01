@@ -53,9 +53,9 @@ def __getattr__(name: str):
         globals()[name] = TensorCodecVideoDecoder
         return TensorCodecVideoDecoder
     if name == "PyAVVideoDecoder":
-        from .._features import require_video
+        from .._features import require_pyav
 
-        require_video()
+        require_pyav()
         from .pyav_decoder import PyAVVideoDecoder
 
         globals()[name] = PyAVVideoDecoder

@@ -13,8 +13,7 @@ import pytest
 from tests import TORCHCODEC_AVAILABLE
 
 pytestmark = [
-    pytest.mark.video,
-    pytest.mark.skipif(not TORCHCODEC_AVAILABLE, reason="TorchCodec not installed"),
+    pytest.mark.skipif(not TORCHCODEC_AVAILABLE, reason="TorchCodec video runtime unavailable"),
 ]
 
 

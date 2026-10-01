@@ -4,29 +4,25 @@ This module detects available features once at import time and provides
 a single source of truth for feature availability throughout the package.
 """
 
-# Video support (PyAV)
+# Optional PyAV backend
 try:
     import av  # noqa: F401
 
-    HAS_VIDEO = True
-    VIDEO_ERROR = None
+    HAS_PYAV = True
+    PYAV_ERROR = None
 except ImportError as e:
-    HAS_VIDEO = False
-    VIDEO_ERROR = str(e)
+    HAS_PYAV = False
+    PYAV_ERROR = str(e)
 
 
-def require_video() -> None:
-    """Raise ImportError if video support is not available.
-
-    Raises:
-        ImportError: If PyAV is not installed
-    """
-    if not HAS_VIDEO:
+def require_pyav() -> None:
+    """Require the optional PyAV backend."""
+    if not HAS_PYAV:
         raise ImportError(
             "PyAV video frame extraction requires the 'pyav' extra. "
             "Install with: pip install mediaref[pyav]\n"
-            f"Original error: {VIDEO_ERROR}"
+            f"Original error: {PYAV_ERROR}"
         )
 
 
-__all__ = ["HAS_VIDEO", "require_video"]
+__all__ = ["HAS_PYAV", "require_pyav"]

@@ -40,11 +40,11 @@ jobs:
       run: |
         uv run --no-sync pytest --cov=mediaref --cov-report=xml --cov-report=term
 
-    - name: Setup environments with legacy and image extras
+    - name: Install PyAV and HuggingFace extras
       run: uv sync --dev --extra pyav --extra hf
 
     - name: Install default video backend on supported wheel platform
-      if: runner.os == 'Linux'
+      if: runner.os == 'Linux' || runner.os == 'macOS'
       run: uv sync --dev --extra video --extra pyav --extra hf
 
     - name: Install current CPU reference
@@ -75,4 +75,4 @@ jobs:
       - name: Test default decoding without PyAV or Torch
         run: |
           uv run --no-sync python -c "import importlib.util; assert all(importlib.util.find_spec(n) is None for n in ('av', 'torch', 'torchcodec'))"
-          uv run --no-sync pytest tests/video_decoder/test_tensorcodec_decoder.py tests/test_imports.py
+          uv run --no-sync pytest -m "not network and not slow"

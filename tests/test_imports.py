@@ -24,7 +24,7 @@ def _run(script: str) -> subprocess.CompletedProcess:
     )
 
 
-@pytest.mark.video
+@pytest.mark.pyav
 def test_pyav_only_import_does_not_load_torchcodec():
     """Loading the PyAV backend must not transitively load TorchCodec."""
     result = _run("""
@@ -82,6 +82,7 @@ def test_pyav_backend_has_specific_install_error():
             from mediaref.video_decoder import PyAVVideoDecoder  # noqa: F401
         except ImportError as error:
             assert "mediaref[pyav]" in str(error)
+            assert "mediaref[video]" not in str(error)
         else:
             raise AssertionError("PyAV import unexpectedly succeeded")
         print("OK")

@@ -1,7 +1,4 @@
-"""Tests for batch_decode functionality with performance benchmarks.
-
-These tests require the [video] extra to be installed.
-"""
+"""Batch decoding tests; optional backend requirements are marked per test."""
 
 import sys
 import time
@@ -16,9 +13,8 @@ from mediaref.batch import _coalesce_native_sparse_chunks
 from tests import TORCHCODEC_INSTALLED
 
 
-@pytest.mark.tensorcodec
 class TestBatchDecodeImages:
-    """Test batch decoding of images (requires video extra for batch_decode)."""
+    """Image batches work without any optional video backend."""
 
     def test_batch_decode_single_image(self, sample_image_files: list[Path]):
         """Test batch decoding with single image."""
@@ -166,10 +162,10 @@ class TestBatchDecodeMixed:
             np.testing.assert_array_equal(result, individual_result)
 
 
-@pytest.mark.video
 class TestBatchDecodeDecoders:
     """Test different decoder backends."""
 
+    @pytest.mark.pyav
     def test_batch_decode_pyav_decoder(self, sample_video_file: tuple[Path, list[int]]):
         """Test batch decoding with PyAV decoder."""
         video_path, timestamps = sample_video_file
@@ -239,18 +235,18 @@ class TestBatchDecodeDecoders:
         with pytest.raises(ImportError, match="TorchCodec.*not.*install"):
             batch_decode(refs, decoder="torchcodec")
 
-    def test_batch_decode_without_video_extra_shows_helpful_error(self, sample_video_file: tuple[Path, list[int]]):
-        """Test that batch_decode shows helpful error when [video] extra is not installed.
+    def test_batch_decode_without_pyav_extra_shows_helpful_error(self, sample_video_file: tuple[Path, list[int]]):
+        """Test that batch_decode shows helpful error when [pyav] extra is not installed.
 
         This test simulates the scenario where someone tries to use batch_decode
-        without installing the [video] extra.
+        without installing the [pyav] extra.
         """
         video_path, timestamps = sample_video_file
         refs = [MediaRef(uri=str(video_path), pts_ns=timestamps[0])]
 
-        # Mock HAS_VIDEO to simulate [video] extra not being installed
-        with patch("mediaref._features.HAS_VIDEO", False):
-            with patch("mediaref._features.VIDEO_ERROR", "No module named 'av'"):
+        # Mock HAS_PYAV to simulate [pyav] extra not being installed
+        with patch("mediaref._features.HAS_PYAV", False):
+            with patch("mediaref._features.PYAV_ERROR", "No module named 'av'"):
                 # Clear the module cache to force re-import with mocked values
                 if "mediaref.video_decoder" in sys.modules:
                     del sys.modules["mediaref.video_decoder"]

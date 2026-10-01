@@ -2,6 +2,8 @@
 
 import base64
 import importlib.util
+import shutil
+import subprocess
 from pathlib import Path
 
 import cv2
@@ -86,136 +88,72 @@ def sample_rgb_array() -> npt.NDArray[np.uint8]:
 # ============================================================================
 
 
-@pytest.fixture
-def sample_video_file(tmp_path: Path) -> tuple[Path, list[int]]:
-    """Create a sample video file with known frames at specific timestamps.
-
-    Returns:
-        Tuple of (video_path, list of timestamps in nanoseconds).
-    """
-    try:
-        import av
-    except ImportError:
-        pytest.skip("Video dependencies not installed (av)")
-
-    from fractions import Fraction
-
-    video_path = tmp_path / "test_video.mp4"
-    # 5 frames at 10fps = 0.1 second intervals
-    # pts values: 0, 1, 2, 3, 4 (frame numbers)
-    # timestamps in nanoseconds
-    timestamps_ns = [0, 100_000_000, 200_000_000, 300_000_000, 400_000_000]
-
-    # Create video with av
-    container = av.open(str(video_path), "w")
-    stream = container.add_stream("h264", rate=10)
-    stream.width = 64
-    stream.height = 48
-    stream.pix_fmt = "yuv420p"
-
-    # Write frames with distinct colors
-    for i in range(5):
-        frame = av.VideoFrame(64, 48, "rgb24")
-        # Create distinct color for each frame
-        arr = np.full((48, 64, 3), i * 50, dtype=np.uint8)
-        frame.planes[0].update(arr)
-        frame.pts = i  # Frame number
-        frame.time_base = Fraction(1, 10)  # 10 fps
-        for packet in stream.encode(frame):
+def _write_video(path: Path, pixels: np.ndarray, fps: int) -> None:
+    height, width = pixels.shape[1:3]
+    if shutil.which("ffmpeg"):
+        subprocess.run(
+            [
+                "ffmpeg",
+                "-v",
+                "error",
+                "-y",
+                "-f",
+                "rawvideo",
+                "-pixel_format",
+                "rgb24",
+                "-video_size",
+                f"{width}x{height}",
+                "-framerate",
+                str(fps),
+                "-i",
+                "pipe:0",
+                "-c:v",
+                "libx264",
+                "-pix_fmt",
+                "yuv420p",
+                "-threads",
+                "1",
+                str(path),
+            ],
+            input=pixels.tobytes(),
+            check=True,
+        )
+        return
+    # Platforms without the CLI can use the optional fixture encoder.
+    av = pytest.importorskip("av", reason="Video fixtures require FFmpeg CLI or PyAV")
+    with av.open(str(path), "w") as container:
+        stream = container.add_stream("h264", rate=fps)
+        stream.width, stream.height, stream.pix_fmt = width, height, "yuv420p"
+        stream.codec_context.thread_count = 1
+        for pixels_at_time in pixels:
+            for packet in stream.encode(av.VideoFrame.from_ndarray(pixels_at_time, format="rgb24")):
+                container.mux(packet)
+        for packet in stream.encode():
             container.mux(packet)
 
-    # Flush encoder
-    for packet in stream.encode():
-        container.mux(packet)
-    container.close()
 
-    return video_path, timestamps_ns
+@pytest.fixture
+def sample_video_file(tmp_path: Path) -> tuple[Path, list[int]]:
+    path = tmp_path / "test_video.mp4"
+    pixels = np.array([np.full((48, 64, 3), i * 50, dtype=np.uint8) for i in range(5)])
+    _write_video(path, pixels, 10)
+    return path, [i * 100_000_000 for i in range(5)]
 
 
 @pytest.fixture
 def sample_video_file_large(tmp_path: Path) -> tuple[Path, list[int]]:
-    """Create a larger video file for performance testing.
-
-    Returns:
-        Tuple of (video_path, list of timestamps in nanoseconds).
-    """
-    try:
-        import av
-    except ImportError:
-        pytest.skip("Video dependencies not installed (av)")
-
-    from fractions import Fraction
-
-    video_path = tmp_path / "test_video_large.mp4"
-    # 30 frames at 30fps = 1 second of video
-    # timestamps in nanoseconds
-    timestamps_ns = [int(i * 1_000_000_000 / 30) for i in range(30)]
-
-    container = av.open(str(video_path), "w")
-    stream = container.add_stream("h264", rate=30)
-    stream.width = 640
-    stream.height = 480
-    stream.pix_fmt = "yuv420p"
-
-    for i in range(30):
-        frame = av.VideoFrame(640, 480, "rgb24")
-        # Create frame with varying intensity
-        arr = np.full((480, 640, 3), (i * 8) % 256, dtype=np.uint8)
-        frame.planes[0].update(arr)
-        frame.pts = i
-        frame.time_base = Fraction(1, 30)
-        for packet in stream.encode(frame):
-            container.mux(packet)
-
-    for packet in stream.encode():
-        container.mux(packet)
-    container.close()
-
-    return video_path, timestamps_ns
+    path = tmp_path / "test_video_large.mp4"
+    pixels = np.array([np.full((480, 640, 3), (i * 8) % 256, dtype=np.uint8) for i in range(30)])
+    _write_video(path, pixels, 30)
+    return path, [int(i * 1_000_000_000 / 30) for i in range(30)]
 
 
 @pytest.fixture
 def sample_video_file_long(tmp_path: Path) -> tuple[Path, float]:
-    """Create a longer video file (10 seconds) for testing various start positions.
-
-    Returns:
-        Tuple of (video_path, duration_seconds).
-    """
-    try:
-        import av
-    except ImportError:
-        pytest.skip("Video dependencies not installed (av)")
-
-    from fractions import Fraction
-
-    video_path = tmp_path / "test_video_long.mp4"
-    # 100 frames at 10fps = 10 seconds of video
-    num_frames = 100
-    fps = 10
-    duration = num_frames / fps
-
-    container = av.open(str(video_path), "w")
-    stream = container.add_stream("h264", rate=fps)
-    stream.width = 64
-    stream.height = 48
-    stream.pix_fmt = "yuv420p"
-
-    for i in range(num_frames):
-        frame = av.VideoFrame(64, 48, "rgb24")
-        # Create frame with varying intensity based on frame number
-        color = (i * 2) % 256
-        arr = np.full((48, 64, 3), color, dtype=np.uint8)
-        frame.planes[0].update(arr)
-        frame.pts = i
-        frame.time_base = Fraction(1, fps)
-        for packet in stream.encode(frame):
-            container.mux(packet)
-
-    for packet in stream.encode():
-        container.mux(packet)
-    container.close()
-
-    return video_path, duration
+    path = tmp_path / "test_video_long.mp4"
+    pixels = np.array([np.full((48, 64, 3), (i * 2) % 256, dtype=np.uint8) for i in range(100)])
+    _write_video(path, pixels, 10)
+    return path, 10.0
 
 
 # ============================================================================
@@ -258,7 +196,7 @@ def remote_test_image_url() -> str:
 def pytest_configure(config):
     """Register custom markers."""
     config.addinivalue_line("markers", "network: tests requiring network access")
-    config.addinivalue_line("markers", "video: tests requiring PyAV")
+    config.addinivalue_line("markers", "pyav: tests requiring the optional PyAV backend")
     config.addinivalue_line("markers", "tensorcodec: tests requiring the default TensorCodec backend")
     config.addinivalue_line("markers", "slow: slow tests (batch processing, large files)")
     config.addinivalue_line("markers", "integration: integration tests")
@@ -267,15 +205,15 @@ def pytest_configure(config):
 
 def pytest_collection_modifyitems(config, items):
     """Automatically skip tests based on markers and available dependencies."""
-    # Check if video dependencies are available
+    # Check the optional PyAV backend.
     try:
         import av  # noqa: F401
 
-        video_available = True
+        pyav_available = True
     except ImportError:
-        video_available = False
+        pyav_available = False
 
-    skip_video = pytest.mark.skip(reason="Video dependencies not installed (av)")
+    skip_pyav = pytest.mark.skip(reason="Optional PyAV backend not installed")
 
     tensorcodec_available = importlib.util.find_spec("tensorcodec") is not None
     skip_tensorcodec = pytest.mark.skip(reason="Default TensorCodec backend not installed")
@@ -283,9 +221,9 @@ def pytest_collection_modifyitems(config, items):
     for item in items:
         if "tensorcodec" in item.keywords and not tensorcodec_available:
             item.add_marker(skip_tensorcodec)
-        # Skip video tests if video dependencies not available
-        if "video" in item.keywords and not video_available:
-            item.add_marker(skip_video)
+        # Skip only tests that explicitly require PyAV.
+        if "pyav" in item.keywords and not pyav_available:
+            item.add_marker(skip_pyav)
 
 
 def _is_connection_error(exc: BaseException) -> bool:

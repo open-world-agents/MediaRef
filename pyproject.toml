@@ -39,15 +39,12 @@ mediaref = "mediaref._cli:main"
 
 [project.optional-dependencies]
 video = [
-    "tensorcodec>=0.1.2,<0.2",
+    "tensorcodec>=0.1.3,<0.2",
 ]
 pyav = [
     "av>=15.0",  # FFmpeg 7.0 support
 ]
 torchcodec = [
-    "torchcodec>=0.7",
-]
-torchcodec-image = [
     "torchcodec>=0.16",
 ]
 hf = [

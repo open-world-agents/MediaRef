@@ -7,13 +7,13 @@ from typing import Any, Literal, Mapping, Optional, Type, overload
 import av
 import av.container
 
-from .._features import require_video
+from .._features import require_pyav
 from .._internal import is_cloud_uri, make_cache_key, open_cloud
 from .._typing import PathLike
 from ..resource_cache import ResourceCache
 from .input_container_mixin import InputContainerMixin
 
-require_video()
+require_pyav()
 
 DEFAULT_CACHE_SIZE = int(os.environ.get("AV_CACHE_SIZE", 10))
 

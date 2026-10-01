@@ -57,7 +57,7 @@ def _compare_decoder_outputs(
         assert diff <= max_pixel_diff, f"Frame {i} pixel diff too large: {diff} > {max_pixel_diff}"
 
 
-@pytest.mark.video
+@pytest.mark.pyav
 @pytest.mark.skipif(not TORCHCODEC_AVAILABLE, reason="TorchCodec not installed")
 class TestDecoderConsistency:
     """Test that PyAVVideoDecoder and TorchCodecVideoDecoder produce consistent outputs."""
@@ -171,7 +171,7 @@ class TestDecoderConsistency:
                 _compare_decoder_outputs(str(video_path), timestamps, self.MAX_PIXEL_DIFF)
 
 
-@pytest.mark.video
+@pytest.mark.pyav
 @pytest.mark.skipif(not TORCHCODEC_AVAILABLE, reason="TorchCodec not installed")
 class TestDecoderConsistencyAdvanced:
     """Advanced decoder consistency tests with more comprehensive coverage."""
@@ -286,7 +286,7 @@ class TestDecoderConsistencyAdvanced:
                     assert max_diff <= self.MAX_PIXEL_DIFF, f"Sequential call {timestamps}: max_diff={max_diff}"
 
 
-@pytest.mark.video
+@pytest.mark.pyav
 @pytest.mark.skipif(not TORCHCODEC_AVAILABLE, reason="TorchCodec not installed")
 class TestDecoderConsistencyLongVideo:
     """Decoder consistency tests using longer video (10 seconds)."""
@@ -376,7 +376,7 @@ class TestDecoderConsistencyLongVideo:
                     assert max_diff <= self.MAX_PIXEL_DIFF, f"Sequential call {timestamps}: max_diff={max_diff}"
 
 
-@pytest.mark.video
+@pytest.mark.pyav
 @pytest.mark.skipif(not TORCHCODEC_AVAILABLE, reason="TorchCodec not installed")
 class TestDecoderConsistencyRealVideos:
     """Decoder consistency tests using real video files.
@@ -427,7 +427,7 @@ class TestDecoderConsistencyRealVideos:
         _compare_decoder_outputs(str(example_video_path), timestamps, self.MAX_PIXEL_DIFF)
 
 
-@pytest.mark.video
+@pytest.mark.pyav
 @pytest.mark.skipif(not TORCHCODEC_AVAILABLE, reason="TorchCodec not installed")
 class TestDecoderConsistencyEdgeCases:
     """Edge case tests for decoder consistency."""

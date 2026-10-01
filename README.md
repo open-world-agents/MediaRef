@@ -64,24 +64,20 @@ See [API Reference](docs/API.md) for full details — `DataURI`, `batch_decode`,
 pip install mediaref                  # core: image loading + cloud-storage URIs (fsspec)
 pip install 'mediaref[video]'         # + TensorCodec: default CPU video decoding, no Torch/PyAV
 pip install 'mediaref[pyav]'          # legacy PyAV backend; select decoder='pyav'
-pip install 'mediaref[torchcodec]'    # + TorchCodec video backend, compatible with 0.7+
-pip install 'mediaref[torchcodec-image]'  # + TorchCodec 0.16+ image/video (Python 3.10+)
+pip install 'mediaref[torchcodec]'    # + TorchCodec 0.16+ image/video (Python 3.10+)
 pip install 'mediaref[hf]'            # + HuggingFace datasets feature registration
-pip install 'mediaref[video,torchcodec-image,hf]'  # video + image + HF extras
+pip install 'mediaref[video,torchcodec,hf]'  # video + image + HF extras
 ```
 
-For uv: `uv add 'mediaref[video,torchcodec-image,hf]'`. MediaRef follows [semantic versioning](https://semver.org/); the wire schema (`uri`, `pts_ns`) is frozen for the life of Spec 1.x.
+For uv: `uv add 'mediaref[video,torchcodec,hf]'`. MediaRef follows [semantic versioning](https://semver.org/); the wire schema (`uri`, `pts_ns`) is frozen for the life of Spec 1.x.
 
 **Default video backend: TensorCodec.** `ref.to_ndarray()` and `batch_decode(refs)`
-use TensorCodec's CPU playback selection and NumPy output. Its Linux x86_64/ARM64 wheels
-bundle FFmpeg, so no system FFmpeg, PyAV, or PyTorch is needed at runtime.
-The default video backend requires Python 3.10+ and glibc 2.17+ for these wheels;
-other platforms need a TensorCodec source build with Rust and FFmpeg 7 headers.
-MediaRef requires Python 3.10+. For other platforms or value-preserving
-grayscale/depth output, install `mediaref[pyav]` and pass
-`decoder="pyav"` explicitly. CUDA and decoder transforms require the appropriate optional backend. TensorCodec 0.1.2
-supports CPU SDR/HDR RGB, right-angle rotation and uint16 RGB output. Historical benchmark numbers above were measured
-with PyAV, not TensorCodec.
+use TensorCodec's CPU playback selection and NumPy output. TensorCodec 0.1.3+
+bundles FFmpeg in Linux (glibc 2.17+) and macOS 14+ wheels for x86_64/ARM64.
+Other platforms require a source build with Rust and FFmpeg 7 headers, or the
+optional PyAV backend: install `mediaref[pyav]` and pass `decoder="pyav"`.
+MediaRef's native grayscale/depth path still uses PyAV. Historical benchmark
+numbers above were measured with PyAV, not TensorCodec.
 
 For time-based windows, TensorCodec's opt-in `timestamp` mode avoids the initial
 full packet scan and selects frames by actual PTS (requires the unreleased
@@ -94,7 +90,7 @@ frames = batch_decode(refs, decoder_options={"seek_mode": "timestamp"})
 The default remains `exact`, matching TorchCodec. `timestamp` mode does not support
 frame-index queries; use `exact` when accessing the decoder by frame number.
 
-**Optional TorchCodec backend.** On Python 3.10+, install `mediaref[torchcodec-image]` for the 0.16+ image API; PyAV is not required. It decodes JPEG, PNG, WebP, GIF, AVIF, and HEIC images without FFmpeg via `ref.to_ndarray(image_decoder="torchcodec")`. Use `image_decoder_options={"output_dtype": "auto"}` to preserve native high-bit-depth image data as `uint16`. The broader `mediaref[torchcodec]` extra keeps TorchCodec 0.7+ support for video-only users.
+**Optional TorchCodec backend.** On Python 3.10+, install `mediaref[torchcodec]` for the 0.16+ image API; PyAV is not required. It decodes JPEG, PNG, WebP, GIF, AVIF, and HEIC images without FFmpeg via `ref.to_ndarray(image_decoder="torchcodec")`. Use `image_decoder_options={"output_dtype": "auto"}` to preserve native high-bit-depth image data as `uint16`.
 
 `batch_decode(refs, decoder="torchcodec")` uses TorchCodec for video on CPU. To opt into CUDA decoding, pass `decoder_options={"device": "cuda"}`; MediaRef moves the result back to host memory for its NumPy return type. Video decoding still requires an FFmpeg installation with shared libraries. Verify the runtime, not just the import:
 

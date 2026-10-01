@@ -188,7 +188,7 @@ def _load_torchcodec_image_as_rgba(
     except (ImportError, RuntimeError) as e:
         raise ImportError(
             "TorchCodec image decoding requires Python>=3.10 and torchcodec>=0.16. "
-            "Install with: pip install 'mediaref[torchcodec-image]'"
+            "Install with: pip install 'mediaref[torchcodec]'"
         ) from e
 
     options = dict(decoder_options or {})
