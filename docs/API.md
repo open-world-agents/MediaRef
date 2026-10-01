@@ -215,8 +215,8 @@ use `to_ndarray`, not `to_pil_image`, for native output.
 | Output | NumPy CPU arrays | NumPy CPU arrays | Torch tensors converted to host NumPy |
 | Install | `mediaref[video]` | `mediaref[pyav]` | `mediaref[torchcodec]` |
 | Python | 3.10+ | 3.9+ | 3.9+ with a compatible TorchCodec version |
-| FFmpeg | Bundled in Linux x86_64/glibc 2.28+ wheels | Bundled by PyAV | Compatible shared FFmpeg required |
-| Scope | CPU SDR RGB; exact seeking; one FFmpeg thread by default | Legacy RGB and value-preserving native output | CPU/CUDA, transforms and HDR when supported |
+| FFmpeg | Bundled in Linux x86_64/ARM64, glibc 2.17+ wheels | Bundled by PyAV | Compatible shared FFmpeg required |
+| Scope | Published 0.1.1: CPU SDR RGB; exact seeking; one FFmpeg thread by default | Legacy RGB and value-preserving native output | CPU/CUDA, transforms and HDR when supported |
 | Sources | Paths, bytes, file-likes, fsspec URIs | Paths, file-likes, fsspec URIs | Paths, bytes, file-likes, fsspec URIs |
 
 All backends follow [playback semantics](playback_semantics.md). Pixel conversion
@@ -224,6 +224,13 @@ can differ slightly between FFmpeg builds. TensorCodec source builds on other
 platforms require Rust, libclang and FFmpeg 7 development headers/libraries;
 use the explicit PyAV backend when those are unavailable. The Python 3.9 core
 continues to support images and optional PyAV/TorchCodec video decoding.
+
+`TensorCodecVideoDecoder` and `TorchCodecVideoDecoder` inherit the shared
+`CodecVideoDecoder` adapter, which implements cache leases, fsspec ownership,
+serialized access and NCHW NumPy playback batches. Their native factories and
+array conversions are backend-specific. Active leases reopen after cache clear;
+caller-owned file objects remain open. PyAV remains a separate implementation
+for native grayscale/depth values and platforms without TensorCodec wheels.
 
 `decoder_options` is passed to the selected decoder constructor. TorchCodec options include `device`, `seek_mode`, `num_ffmpeg_threads`, `dimension_order`, `stream_index`, `transforms`, and `output_dtype`. With the default `output_format="rgb"`, MediaRef normalizes the returned frame batch to NCHW internally and the final `batch_decode` result to RGB HWC NumPy arrays, including when TorchCodec decodes on CUDA or uses `dimension_order="NHWC"`. TorchCodec 0.14+ accepts `output_dtype="auto"`, returning `uint8` for SDR and `float32` in `[0, 1]` for detected HDR content; MediaRef preserves that dtype and uses `1.0` for an added opaque alpha channel.
 

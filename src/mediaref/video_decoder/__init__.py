@@ -18,6 +18,7 @@ Examples:
 from typing import TYPE_CHECKING
 
 from .base import BaseVideoDecoder
+from .codec_decoder import CodecVideoDecoder
 from .frame_batch import FrameBatch
 from .types import VideoStreamMetadata
 
@@ -28,6 +29,7 @@ if TYPE_CHECKING:
 
 __all__ = [
     "BaseVideoDecoder",
+    "CodecVideoDecoder",
     "FrameBatch",
     "TensorCodecVideoDecoder",
     "PyAVVideoDecoder",
@@ -45,7 +47,7 @@ def __getattr__(name: str):
             raise ImportError(
                 "The default TensorCodec decoder requires Python>=3.10 and the video extra. "
                 "Install with: pip install 'mediaref[video]'. "
-                "Linux x86_64 wheels bundle FFmpeg; other platforms need a source build. "
+                "Linux x86_64/ARM64 wheels bundle FFmpeg; other platforms need a source build. "
                 "For the legacy backend install 'mediaref[pyav]' and select decoder='pyav'."
             ) from error
         globals()[name] = TensorCodecVideoDecoder

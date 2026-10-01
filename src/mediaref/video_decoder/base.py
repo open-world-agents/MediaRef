@@ -18,7 +18,7 @@ class BaseVideoDecoder(ABC):
     from their pts until the next frame's pts.
 
     Examples:
-        >>> with PyAVVideoDecoder("video.mp4") as decoder:
+        >>> with TensorCodecVideoDecoder("video.mp4") as decoder:
         ...     batch = decoder.get_frames_played_at([0.0, 1.0, 2.0])
         ...     print(batch.data.shape)  # (3, 3, H, W)
     """
@@ -53,7 +53,7 @@ class BaseVideoDecoder(ABC):
             ValueError: If timestamp < 0 or timestamp >= end_stream_seconds
 
         Examples:
-            >>> with PyAVVideoDecoder("video.mp4") as decoder:
+            >>> with TensorCodecVideoDecoder("video.mp4") as decoder:
             ...     batch = decoder.get_frames_played_at([0.0, 1.0, 2.0])
             ...     print(batch.data.shape)  # (3, 3, H, W)
         """
@@ -85,7 +85,7 @@ class BaseVideoDecoder(ABC):
                 is outside the valid stream bounds.
 
         Examples:
-            >>> with PyAVVideoDecoder("video.mp4") as decoder:
+            >>> with TensorCodecVideoDecoder("video.mp4") as decoder:
             ...     batch = decoder.get_frames_played_in_range(0.0, 2.0)
             ...     print(batch.data.shape)
         """

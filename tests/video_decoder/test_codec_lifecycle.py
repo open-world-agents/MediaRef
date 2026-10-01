@@ -1,4 +1,4 @@
-"""Unit tests for TorchCodec leases that do not require TorchCodec or FFmpeg."""
+"""Shared codec lease contract tested without optional codecs or FFmpeg."""
 
 from __future__ import annotations
 
@@ -38,6 +38,7 @@ class _FakeVideoDecoder:
     sources = []
     active_calls = 0
     max_active_calls = 0
+    closed = 0
     activity_lock = threading.Lock()
 
     def __init__(self, source: Any, **kwargs: Any):
@@ -74,47 +75,56 @@ class _FakeVideoDecoder:
         return self.get_frames_played_at([kwargs["start_seconds"]])
 
 
-@pytest.fixture
-def torchcodec_decoder_module(monkeypatch: pytest.MonkeyPatch):
-    """Load the wrapper against a small in-memory TorchCodec substitute."""
-    torchcodec = ModuleType("torchcodec")
-    decoders = ModuleType("torchcodec.decoders")
-    decoders.VideoDecoder = _FakeVideoDecoder
-    torchcodec.decoders = decoders
-    monkeypatch.setitem(sys.modules, "torchcodec", torchcodec)
-    monkeypatch.setitem(sys.modules, "torchcodec.decoders", decoders)
+class _FakeNumpyDecoder(_FakeVideoDecoder):
+    def close(self):
+        type(self).closed += 1
 
-    module_name = "mediaref.video_decoder.torchcodec_decoder"
+    def get_frames_played_at(self, seconds):
+        batch = super().get_frames_played_at(seconds)
+        return SimpleNamespace(**{name: value.cpu().numpy() for name, value in vars(batch).items()})
+
+
+@pytest.fixture(params=["torchcodec", "tensorcodec"])
+def codec_adapter(request, monkeypatch: pytest.MonkeyPatch):
+    backend = request.param
+    fake = _FakeVideoDecoder if backend == "torchcodec" else _FakeNumpyDecoder
+    package = ModuleType(backend)
+    decoders = ModuleType(f"{backend}.decoders")
+    decoders.VideoDecoder = fake
+    package.decoders = decoders
+    monkeypatch.setitem(sys.modules, backend, package)
+    monkeypatch.setitem(sys.modules, f"{backend}.decoders", decoders)
+    module_name = f"mediaref.video_decoder.{backend}_decoder"
     previous = sys.modules.pop(module_name, None)
     module = importlib.import_module(module_name)
+    name = "TorchCodecVideoDecoder" if backend == "torchcodec" else "TensorCodecVideoDecoder"
+    adapter = getattr(module, name)
     decoder_package = importlib.import_module("mediaref.video_decoder")
-    previous_export = decoder_package.__dict__.get("TorchCodecVideoDecoder")
-    decoder_package.TorchCodecVideoDecoder = module.TorchCodecVideoDecoder
-    module.TorchCodecVideoDecoder.clear_cache()
-    _FakeVideoDecoder.created = 0
-    _FakeVideoDecoder.sources = []
-    _FakeVideoDecoder.active_calls = 0
-    _FakeVideoDecoder.max_active_calls = 0
-    yield module
-    module.TorchCodecVideoDecoder.clear_cache()
+    previous_export = decoder_package.__dict__.get(name)
+    setattr(decoder_package, name, adapter)
+    adapter.clear_cache()
+    fake.created = fake.active_calls = fake.max_active_calls = fake.closed = 0
+    fake.sources = []
+    yield SimpleNamespace(adapter=adapter, fake=fake, backend=backend)
+    adapter.clear_cache()
     sys.modules.pop(module_name, None)
     if previous_export is None:
-        decoder_package.__dict__.pop("TorchCodecVideoDecoder", None)
+        decoder_package.__dict__.pop(name, None)
     else:
-        decoder_package.TorchCodecVideoDecoder = previous_export
+        setattr(decoder_package, name, previous_export)
     if previous is not None:
         sys.modules[module_name] = previous
 
 
-def test_cache_returns_independent_leases(torchcodec_decoder_module):
-    decoder_class = torchcodec_decoder_module.TorchCodecVideoDecoder
+def test_cache_returns_independent_leases(codec_adapter):
+    decoder_class = codec_adapter.adapter
 
     first = decoder_class("video.mp4")
     second = decoder_class("video.mp4")
 
     assert first is not second
     assert first._state is second._state
-    assert _FakeVideoDecoder.created == 1
+    assert codec_adapter.fake.created == 1
     assert decoder_class.cache.refs("video.mp4") == 2
 
     first.close()
@@ -128,8 +138,8 @@ def test_cache_returns_independent_leases(torchcodec_decoder_module):
         second.get_frames_played_at([0.0])
 
 
-def test_decoder_options_are_part_of_cache_identity(torchcodec_decoder_module):
-    decoder_class = torchcodec_decoder_module.TorchCodecVideoDecoder
+def test_decoder_options_are_part_of_cache_identity(codec_adapter):
+    decoder_class = codec_adapter.adapter
 
     exact = decoder_class("video.mp4", seek_mode="exact")
     approximate = decoder_class("video.mp4", seek_mode="approximate")
@@ -137,16 +147,18 @@ def test_decoder_options_are_part_of_cache_identity(torchcodec_decoder_module):
 
     assert exact._state is exact_again._state
     assert exact._state is not approximate._state
-    assert _FakeVideoDecoder.created == 2
+    assert codec_adapter.fake.created == 2
 
     exact.close()
     approximate.close()
     exact_again.close()
 
 
-def test_cuda_and_nhwc_outputs_are_normalized(torchcodec_decoder_module):
-    decoder_class = torchcodec_decoder_module.TorchCodecVideoDecoder
-    decoder = decoder_class("video.mp4", device="cuda", dimension_order="NHWC")
+def test_cuda_and_nhwc_outputs_are_normalized(codec_adapter):
+    decoder_class = codec_adapter.adapter
+    decoder = decoder_class(
+        "video.mp4", device="cuda" if codec_adapter.backend == "torchcodec" else "cpu", dimension_order="NHWC"
+    )
 
     batch = decoder.get_frames_played_at([0.0, 0.1])
 
@@ -156,8 +168,8 @@ def test_cuda_and_nhwc_outputs_are_normalized(torchcodec_decoder_module):
     decoder.close()
 
 
-def test_shared_decoder_calls_are_serialized(torchcodec_decoder_module):
-    decoder_class = torchcodec_decoder_module.TorchCodecVideoDecoder
+def test_shared_decoder_calls_are_serialized(codec_adapter):
+    decoder_class = codec_adapter.adapter
     first = decoder_class("video.mp4")
     second = decoder_class("video.mp4")
 
@@ -169,15 +181,15 @@ def test_shared_decoder_calls_are_serialized(torchcodec_decoder_module):
         for future in futures:
             future.result()
 
-    assert _FakeVideoDecoder.max_active_calls == 1
+    assert codec_adapter.fake.max_active_calls == 1
     first.close()
     second.close()
 
 
-def test_cleanup_cache_drops_loaded_torchcodec_state(torchcodec_decoder_module):
+def test_cleanup_cache_drops_loaded_torchcodec_state(codec_adapter):
     from mediaref import cleanup_cache
 
-    decoder_class = torchcodec_decoder_module.TorchCodecVideoDecoder
+    decoder_class = codec_adapter.adapter
     decoder = decoder_class("video.mp4")
     assert len(decoder_class.cache) == 1
 
@@ -187,8 +199,8 @@ def test_cleanup_cache_drops_loaded_torchcodec_state(torchcodec_decoder_module):
     decoder.close()
 
 
-def test_old_lease_does_not_release_replacement_state(torchcodec_decoder_module):
-    decoder_class = torchcodec_decoder_module.TorchCodecVideoDecoder
+def test_old_lease_does_not_release_replacement_state(codec_adapter):
+    decoder_class = codec_adapter.adapter
     old = decoder_class("video.mp4")
 
     decoder_class.clear_cache()
@@ -203,14 +215,14 @@ def test_old_lease_does_not_release_replacement_state(torchcodec_decoder_module)
     replacement.close()
 
 
-def test_fsspec_source_lifetime_is_owned_by_cache(torchcodec_decoder_module):
-    decoder_class = torchcodec_decoder_module.TorchCodecVideoDecoder
+def test_fsspec_source_lifetime_is_owned_by_cache(codec_adapter):
+    decoder_class = codec_adapter.adapter
     uri = "memory://torchcodec/clip.mp4"
     with fsspec.open(uri, "wb") as file:
         file.write(b"video bytes")
 
     decoder = decoder_class(uri, storage_options={"client_kwargs": {"region": "test"}})
-    opened_file = _FakeVideoDecoder.sources[-1]
+    opened_file = codec_adapter.fake.sources[-1]
     state = decoder._state
 
     assert not isinstance(opened_file, str)
@@ -223,8 +235,8 @@ def test_fsspec_source_lifetime_is_owned_by_cache(torchcodec_decoder_module):
     assert state.owned_open_context is None
 
 
-def test_storage_options_isolate_cache_without_exposing_values(torchcodec_decoder_module):
-    decoder_class = torchcodec_decoder_module.TorchCodecVideoDecoder
+def test_storage_options_isolate_cache_without_exposing_values(codec_adapter):
+    decoder_class = codec_adapter.adapter
     uri = "memory://torchcodec/options.mp4"
     with fsspec.open(uri, "wb") as file:
         file.write(b"video bytes")
@@ -239,8 +251,8 @@ def test_storage_options_isolate_cache_without_exposing_values(torchcodec_decode
     second.close()
 
 
-def test_external_file_like_is_not_cached_or_closed(torchcodec_decoder_module):
-    decoder_class = torchcodec_decoder_module.TorchCodecVideoDecoder
+def test_external_file_like_is_not_cached_or_closed(codec_adapter):
+    decoder_class = codec_adapter.adapter
     source = io.BytesIO(b"video bytes")
 
     first = decoder_class(source)
@@ -253,7 +265,7 @@ def test_external_file_like_is_not_cached_or_closed(torchcodec_decoder_module):
     assert not source.closed
 
 
-def test_mediaref_single_frame_uses_torchcodec_with_fsspec(torchcodec_decoder_module):
+def test_mediaref_single_frame_uses_backend_with_fsspec(codec_adapter):
     from mediaref import MediaRef
 
     uri = "memory://torchcodec/mediaref.mp4"
@@ -261,8 +273,45 @@ def test_mediaref_single_frame_uses_torchcodec_with_fsspec(torchcodec_decoder_mo
         file.write(b"video bytes")
 
     frame = MediaRef(uri=uri, pts_ns=0).to_ndarray(
-        decoder="torchcodec",
+        decoder=codec_adapter.backend,
         storage_options={"token": "secret"},
     )
 
     assert frame.shape == (3, 4, 3)
+
+
+def test_active_cloud_lease_reopens_after_cache_clear(codec_adapter):
+    uri = f"memory://{codec_adapter.backend}/reopen.mp4"
+    with fsspec.open(uri, "wb") as file:
+        file.write(b"video")
+    with codec_adapter.adapter(uri) as lease:
+        old = lease._state
+        codec_adapter.adapter.clear_cache()
+        assert old.disposed and old.decoder is None
+        assert old.owned_open_context is None
+        assert lease.get_frames_played_at([0]).data.shape == (1, 3, 3, 4)
+        assert lease._state is not old
+        assert not codec_adapter.fake.sources[-1].closed
+
+
+def test_uncached_state_is_disposed_on_close(codec_adapter):
+    source = io.BytesIO(b"video")
+    lease = codec_adapter.adapter(source)
+    state = lease._state
+    lease.close()
+    lease.close()
+    assert state.disposed and state.decoder is None
+    assert not source.closed
+    if codec_adapter.backend == "tensorcodec":
+        assert codec_adapter.fake.closed == 1
+
+
+def test_internal_typeerror_is_not_reported_as_missing_fps(codec_adapter, monkeypatch):
+    with codec_adapter.adapter("video.mp4") as lease:
+
+        def fail(**kwargs):
+            raise TypeError("invalid internal conversion")
+
+        monkeypatch.setattr(lease._state.decoder, "get_frames_played_in_range", fail)
+        with pytest.raises(TypeError, match="internal conversion"):
+            lease.get_frames_played_in_range(0, 1, fps=2)

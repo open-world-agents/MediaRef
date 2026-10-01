@@ -183,16 +183,22 @@ assert not {'av', 'torch', 'torchcodec'}.intersection(sys.modules)
 
 
 @pytest.mark.skipif(not hasattr(os, "fork"), reason="fork requires POSIX")
-def test_fork_reopens_inherited_lease_without_closing_parent(codec_videos):
+@pytest.mark.parametrize("backend", ["TensorCodecVideoDecoder", "TorchCodecVideoDecoder"])
+def test_fork_reopens_inherited_lease_without_closing_parent(codec_videos, backend):
+    from tests import TORCHCODEC_AVAILABLE
+
+    if backend == "TorchCodecVideoDecoder" and not TORCHCODEC_AVAILABLE:
+        pytest.skip("Optional TorchCodec video runtime is unavailable")
     script = r"""
 import io, multiprocessing, sys
 from pathlib import Path
-from mediaref.video_decoder import TensorCodecVideoDecoder
+import mediaref.video_decoder as decoders
 from mediaref import MediaRef, batch_decode
+Decoder = getattr(decoders, sys.argv[2])
 path = sys.argv[1]
-lease = TensorCodecVideoDecoder(path, num_ffmpeg_threads=2)
+lease = Decoder(path, num_ffmpeg_threads=2)
 lease.get_frames_played_at([0.35])
-uncached = TensorCodecVideoDecoder(io.BytesIO(Path(path).read_bytes()), num_ffmpeg_threads=2)
+uncached = Decoder(io.BytesIO(Path(path).read_bytes()), num_ffmpeg_threads=2)
 uncached.get_frames_played_at([0.35])
 def child(pipe):
     assert uncached.get_frames_played_at([0.35]).pts_seconds.tolist() == [0.3]
@@ -220,7 +226,7 @@ assert uncached.get_frames_played_at([0.35]).pts_seconds.tolist() == [0.3]
 uncached.close()
 lease.close()
 """
-    subprocess.run([sys.executable, "-c", script, str(codec_videos["cfr"])], check=True, timeout=30)
+    subprocess.run([sys.executable, "-c", script, str(codec_videos["cfr"]), backend], check=True, timeout=30)
 
 
 def test_options_isolate_cache_and_preserve_float_rgb(codec_videos):
