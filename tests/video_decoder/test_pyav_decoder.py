@@ -465,7 +465,7 @@ class TestPyAVVideoDecoderEdgeCases:
             def work(tid):
                 for it in range(20):
                     ts = [0.01 + ((tid + it + k) % 12) * 0.25 for k in range(4)]
-                    batch_decode([MediaRef(uri=path, pts_ns=int(t * 1e9)) for t in ts])
+                    batch_decode([MediaRef(uri=path, pts_ns=int(t * 1e9)) for t in ts], decoder="pyav")
 
             with ThreadPoolExecutor(8) as ex:
                 list(ex.map(work, range(8)))

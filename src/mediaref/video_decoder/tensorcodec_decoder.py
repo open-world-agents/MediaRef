@@ -64,6 +64,9 @@ class TensorCodecVideoDecoder(BaseVideoDecoder):
     def _acquire_state(self) -> _DecoderState:
         state = self.cache.try_acquire(self._cache_key) if self._cache_key is not None else None
         if state is not None:
+            if state.disposed:
+                self.cache.release_if(self._cache_key, state)
+                raise RuntimeError("Cached decoder cleanup failed; retry cleanup_cache() before decoding")
             return state
         context = None
         source = self.source
@@ -98,9 +101,9 @@ class TensorCodecVideoDecoder(BaseVideoDecoder):
             try:
                 state.decoder.close()
             finally:
-                if state.owned_open_context is not None:
-                    state.owned_open_context.__exit__(None, None, None)
-                    state.owned_open_context = None
+                context, state.owned_open_context = state.owned_open_context, None
+                if context is not None:
+                    context.__exit__(None, None, None)
 
     def _after_fork(self) -> None:
         if self._pid != os.getpid():

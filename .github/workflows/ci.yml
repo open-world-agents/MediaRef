@@ -38,18 +38,34 @@ jobs:
 
     - name: Run tests
       run: |
-        uv run pytest --cov=mediaref --cov-report=xml --cov-report=term
+        uv run --no-sync pytest --cov=mediaref --cov-report=xml --cov-report=term
 
     - name: Setup environments with legacy and image extras
-      run: uv sync --dev --extra pyav --extra torchcodec --extra torchcodec-image --extra hf
+      run: uv sync --dev --extra pyav --extra hf
 
     - name: Install default video backend on supported wheel platform
       if: runner.os == 'Linux' && matrix.python-version != '3.9'
-      run: uv sync --dev --extra video --extra pyav --extra torchcodec --extra torchcodec-image --extra hf
+      run: uv sync --dev --extra video --extra pyav --extra hf
+
+    - name: Install current CPU reference
+      if: runner.os == 'Linux' && matrix.python-version != '3.9'
+      run: uv pip install torch==2.14.1 torchcodec==0.17.0 --index-url https://download.pytorch.org/whl/cpu
+
+    - name: Install Python 3.9 CPU reference
+      if: runner.os == 'Linux' && matrix.python-version == '3.9'
+      run: uv pip install torch==2.8.0 torchcodec==0.7.0 --index-url https://download.pytorch.org/whl/cpu
+
+    - name: Install optional reference on macOS ARM
+      if: runner.os == 'macOS' && runner.arch == 'ARM64' && matrix.python-version != '3.9'
+      run: uv pip install torchcodec==0.17.0
+
+    - name: Match the Linux oracle to bundled FFmpeg
+      if: runner.os == 'Linux' && matrix.python-version != '3.9'
+      run: uv run --no-sync python scripts/configure_tensorcodec_oracle.py
 
     - name: Run tests
       run: |
-        uv run pytest --cov=mediaref --cov-report=xml --cov-report=term
+        uv run --no-sync pytest --cov=mediaref --cov-report=xml --cov-report=term
 
   tensorcodec-only:
     runs-on: ubuntu-latest
@@ -62,5 +78,5 @@ jobs:
       - run: uv sync --dev --extra video
       - name: Test default decoding without PyAV or Torch
         run: |
-          uv run python -c "import importlib.util; assert all(importlib.util.find_spec(n) is None for n in ('av', 'torch', 'torchcodec'))"
-          uv run pytest tests/video_decoder/test_tensorcodec_decoder.py tests/test_imports.py
+          uv run --no-sync python -c "import importlib.util; assert all(importlib.util.find_spec(n) is None for n in ('av', 'torch', 'torchcodec'))"
+          uv run --no-sync pytest tests/video_decoder/test_tensorcodec_decoder.py tests/test_imports.py

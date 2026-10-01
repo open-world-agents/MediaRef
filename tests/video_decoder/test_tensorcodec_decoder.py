@@ -259,3 +259,34 @@ def test_agreement_with_optional_torchcodec(codec_videos, name):
         np.testing.assert_allclose(actual.duration_seconds, expected.duration_seconds, atol=1e-12)
         difference = np.abs(actual.data.astype(np.int16) - expected.data.astype(np.int16))
         assert difference.max() <= 1
+
+
+def test_cleanup_error_cannot_loop_on_disposed_cache_state(codec_videos, monkeypatch):
+    from mediaref.video_decoder import TensorCodecVideoDecoder
+
+    class FailingContext:
+        def __exit__(self, *args):
+            raise OSError("source cleanup failed")
+
+    lease = TensorCodecVideoDecoder(codec_videos["cfr"])
+    state = lease._state
+    state.owned_open_context = FailingContext()
+    with pytest.raises(OSError, match="source cleanup failed"):
+        TensorCodecVideoDecoder.clear_cache()
+    assert state.disposed and state.owned_open_context is None
+    acquire = lease._acquire_state
+    calls = 0
+
+    def bounded_acquire():
+        nonlocal calls
+        calls += 1
+        assert calls <= 1, "disposed cache state retried indefinitely"
+        return acquire()
+
+    monkeypatch.setattr(lease, "_acquire_state", bounded_acquire)
+    with pytest.raises(RuntimeError, match="retry cleanup_cache"):
+        lease.get_frames_played_at([0])
+    TensorCodecVideoDecoder.clear_cache()
+    monkeypatch.setattr(lease, "_acquire_state", acquire)
+    assert lease.get_frames_played_at([0]).data.shape == (1, 3, 48, 64)
+    lease.close()
