@@ -13,6 +13,7 @@ class TensorCodecVideoDecoder(CodecVideoDecoder):
     """TensorCodec implementation of the cached playback interface."""
 
     cache: ClassVar[ResourceCache[_DecoderState]] = ResourceCache(max_size=10)
+    native_output: ClassVar[bool] = True  # gray, gray12le, gray16le/be, rgb24, rgba
     _open_decoder = staticmethod(VideoDecoder)
 
     @staticmethod
