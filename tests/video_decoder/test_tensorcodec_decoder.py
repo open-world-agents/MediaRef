@@ -106,7 +106,7 @@ def test_vfr_offset_ranges_and_indices(codec_videos):
             decoder.get_frames_played_at([0])
 
 
-def test_default_public_api_and_native_requires_pyav(codec_videos):
+def test_default_public_api_and_native_formats(codec_videos):
     from mediaref import MediaRef, batch_decode
 
     refs = [MediaRef(uri=str(codec_videos["cfr"]), pts_ns=t) for t in (350_000_000, 10_000_000, 350_000_000)]
@@ -118,8 +118,8 @@ def test_default_public_api_and_native_requires_pyav(codec_videos):
     np.testing.assert_array_equal(explicit_rgb[0], frames[0])
     np.testing.assert_array_equal(refs[0].to_ndarray(decoder_options={"output_format": "rgb"}), frames[0])
     assert refs[0].to_pil_image().size == (64, 48)
-    with pytest.raises(ValueError, match="PyAV"):
-        refs[0].to_ndarray(format="native")
+    with pytest.raises(ValueError, match="does not support pixel format 'yuv420p'"):
+        refs[0].to_ndarray(format="native")  # TensorCodec preserves gray and packed RGB(A) samples, not YUV
 
 
 def test_cache_leases_fsspec_and_owned_sources(codec_videos):

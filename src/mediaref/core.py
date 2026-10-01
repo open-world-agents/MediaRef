@@ -205,7 +205,7 @@ class MediaRef(BaseModel):
                 - "rgba": RGB with alpha (H, W, 4)
                 - "bgra": BGR with alpha (H, W, 4)
                 - "gray": Grayscale (H, W)
-                - "native": Preserve video sample values (PyAV only); grayscale
+                - "native": Preserve video sample values (PyAV or TensorCodec); grayscale
                   is (H, W), packed color is (H, W, C). No unit conversion.
             decoder: Video decoder backend. Ignored for image refs.
             decoder_options: Options passed to the video decoder constructor.

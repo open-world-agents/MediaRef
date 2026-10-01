@@ -149,7 +149,7 @@ def batch_decode(
     Args:
         refs: List of MediaRef objects to decode.
         decoder: Decoder backend: ``'tensorcodec'`` (default), ``'pyav'`` or ``'torchcodec'``.
-        output_format: ``rgb`` (default) or value-preserving ``native`` for PyAV
+        output_format: ``rgb`` (default) or value-preserving ``native`` for PyAV or TensorCodec
             video refs only. Native grayscale is HW; packed color is HWC.
         decoder_options: Options passed to the selected video decoder constructor.
             For TensorCodec/TorchCodec this includes options such as ``device``, ``seek_mode``,
@@ -192,8 +192,8 @@ def batch_decode(
     if output_format == "native":
         if any(not ref.is_video for ref in refs if ref is not None):
             raise ValueError("Native output currently supports video refs only")
-        if decoder != "pyav":
-            raise ValueError("Native video output requires the PyAV backend")
+        if decoder not in {"pyav", "tensorcodec"}:
+            raise ValueError("Native video output requires the PyAV or TensorCodec backend")
         options["output_format"] = "native"
     if not refs:
         return []

@@ -46,7 +46,7 @@ ref = MediaRef(uri=DataURI.from_image(rgb, format="png"))
 
 `to_ndarray(format="rgb", *, decoder="tensorcodec", decoder_options=None, image_decoder="pillow", image_decoder_options=None, storage_options=None) -> np.ndarray`
 - Loads the media as a numpy array in the requested format.
-- Formats: `"rgb"` (default), `"bgr"`, `"rgba"`, `"bgra"`, `"gray"`, and [`"native"`](#native-video-pixels) (PyAV video only).
+- Formats: `"rgb"` (default), `"bgr"`, `"rgba"`, `"bgra"`, `"gray"`, and [`"native"`](#native-video-pixels) (video with TensorCodec or PyAV).
 - Returns shape: `(H, W, 3)` for RGB/BGR, `(H, W, 4)` for RGBA/BGRA, `(H, W)` for grayscale.
 - For video URIs (`pts_ns is not None`), decodes the single frame at that timestamp.
 - `decoder` and `decoder_options` select and configure the video backend.
@@ -185,11 +185,11 @@ to preserve decoded pixel values without RGB conversion:
 
 ```python
 ref = MediaRef(uri="depth.mkv", pts_ns=100_000_000)
-pixels = ref.to_ndarray(format="native", decoder="pyav")
-frames = batch_decode([ref], output_format="native", decoder="pyav")
+pixels = ref.to_ndarray(format="native")  # TensorCodec; decoder="pyav" works too
+frames = batch_decode([ref], output_format="native")
 ```
 
-This mode requires PyAV video refs. Supported source formats and output arrays:
+This mode requires video refs and the TensorCodec or PyAV backend. Supported source formats and output arrays:
 
 | Source pixel format | Shape | dtype |
 | --- | --- | --- |
@@ -200,7 +200,7 @@ This mode requires PyAV video refs. Supported source formats and output arrays:
 
 Pass `decoder_options={"expected_pixel_format": "gray16le"}` to assert the source
 format. Unsupported formats, within-stream format changes, non-video refs and
-native output requested from TensorCodec or TorchCodec fail explicitly. Batch order and duplicate
+native output requested from TorchCodec fail explicitly. Batch order and duplicate
 references are preserved; each native result owns its array storage.
 
 Native output preserves numeric samples, not encoded bytes, source byte order or
@@ -216,7 +216,7 @@ use `to_ndarray`, not `to_pil_image`, for native output.
 | Install | `mediaref[video]` | `mediaref[pyav]` | `mediaref[torchcodec]` |
 | Python | 3.10+ | 3.10+ | 3.10+ |
 | FFmpeg | Bundled in Linux (glibc 2.17+) and macOS 14+ x86_64/ARM64 wheels | Bundled by PyAV | Compatible shared FFmpeg required |
-| Scope | 0.1.4+: CPU SDR/HDR RGB, rotation and uint16; exact seeking; one FFmpeg thread by default | Legacy RGB and value-preserving native output | CPU/CUDA, transforms and HDR when supported |
+| Scope | 0.1.4+: CPU SDR/HDR RGB, rotation and uint16; value-preserving native output (gray, gray12le, gray16le/be, rgb24, rgba); exact seeking; one FFmpeg thread by default | Legacy RGB and value-preserving native output | CPU/CUDA, transforms and HDR when supported |
 | Sources | Paths, bytes, file-likes, fsspec URIs | Paths, file-likes, fsspec URIs | Paths, bytes, file-likes, fsspec URIs |
 
 All backends follow [playback semantics](playback_semantics.md). Pixel conversion

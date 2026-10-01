@@ -38,6 +38,8 @@ class CodecVideoDecoder(BaseVideoDecoder):
     """
 
     cache: ClassVar[ResourceCache[_DecoderState]]
+    # Whether the backend decoder accepts output_format="native" (sample values preserved, no colour conversion).
+    native_output: ClassVar[bool] = False
 
     @staticmethod
     @abstractmethod
@@ -58,8 +60,16 @@ class CodecVideoDecoder(BaseVideoDecoder):
         **kwargs: Any,
     ):
         super().__init__(source, **kwargs)
-        if output_format != "rgb":
-            raise ValueError("Native video output requires the PyAV backend")
+        if output_format not in {"rgb", "native"}:
+            raise ValueError("output_format must be 'rgb' or 'native'")
+        if output_format == "native":
+            if not self.native_output:
+                raise ValueError("Native video output requires the PyAV or TensorCodec backend")
+            kwargs = {**kwargs, "output_format": "native"}  # also part of the cache key
+        elif kwargs.get("expected_pixel_format") is not None:
+            raise ValueError("expected_pixel_format requires native output")
+        self.output_format = output_format
+        self._native_pixel_format: Optional[str] = None
         self._options = dict(kwargs)
         self._storage_options = dict(storage_options or {})
         self._dimension_order = kwargs.get("dimension_order", "NCHW")
@@ -180,10 +190,13 @@ class CodecVideoDecoder(BaseVideoDecoder):
         data = self._to_numpy(batch.data)
         if self._dimension_order == "NHWC":
             data = np.moveaxis(data, -1, 1)
+        if self.output_format == "native" and self._native_pixel_format is None:
+            self._native_pixel_format = self.metadata.pixel_format
         return FrameBatch(
             data,
             self._to_numpy(batch.pts_seconds).astype(np.float64, copy=False),
             self._to_numpy(batch.duration_seconds).astype(np.float64, copy=False),
+            pixel_format=self._native_pixel_format,
         )
 
     def get_frames_played_at(self, seconds: list[float]) -> FrameBatch:
