@@ -83,6 +83,17 @@ grayscale/depth output, install `mediaref[pyav]` and pass
 supports CPU SDR/HDR RGB, right-angle rotation and uint16 RGB output. Historical benchmark numbers above were measured
 with PyAV, not TensorCodec.
 
+For time-based windows, TensorCodec's opt-in `timestamp` mode avoids the initial
+full packet scan and selects frames by actual PTS (requires the unreleased
+[TensorCodec timestamp support](https://github.com/MilkClouds/tensorcodec/pull/4)):
+
+```python
+frames = batch_decode(refs, decoder_options={"seek_mode": "timestamp"})
+```
+
+The default remains `exact`, matching TorchCodec. `timestamp` mode does not support
+frame-index queries; use `exact` when accessing the decoder by frame number.
+
 **Optional TorchCodec backend.** On Python 3.10+, install `mediaref[torchcodec-image]` for the 0.16+ image API; PyAV is not required. It decodes JPEG, PNG, WebP, GIF, AVIF, and HEIC images without FFmpeg via `ref.to_ndarray(image_decoder="torchcodec")`. Use `image_decoder_options={"output_dtype": "auto"}` to preserve native high-bit-depth image data as `uint16`. The broader `mediaref[torchcodec]` extra keeps TorchCodec 0.7+ support for video-only users.
 
 `batch_decode(refs, decoder="torchcodec")` uses TorchCodec for video on CPU. To opt into CUDA decoding, pass `decoder_options={"device": "cuda"}`; MediaRef moves the result back to host memory for its NumPy return type. Video decoding still requires an FFmpeg installation with shared libraries. Verify the runtime, not just the import:
