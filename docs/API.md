@@ -216,7 +216,7 @@ use `to_ndarray`, not `to_pil_image`, for native output.
 | Install | `mediaref[video]` | `mediaref[pyav]` | `mediaref[torchcodec]` |
 | Python | 3.10+ | 3.10+ | 3.10+ |
 | FFmpeg | Bundled in Linux (glibc 2.17+) and macOS 14+ x86_64/ARM64 wheels | Bundled by PyAV | Compatible shared FFmpeg required |
-| Scope | 0.1.3+: CPU SDR/HDR RGB, rotation and uint16; exact seeking; one FFmpeg thread by default | Legacy RGB and value-preserving native output | CPU/CUDA, transforms and HDR when supported |
+| Scope | 0.1.4+: CPU SDR/HDR RGB, rotation and uint16; exact seeking; one FFmpeg thread by default | Legacy RGB and value-preserving native output | CPU/CUDA, transforms and HDR when supported |
 | Sources | Paths, bytes, file-likes, fsspec URIs | Paths, file-likes, fsspec URIs | Paths, bytes, file-likes, fsspec URIs |
 
 All backends follow [playback semantics](playback_semantics.md). Pixel conversion

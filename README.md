@@ -72,7 +72,7 @@ pip install 'mediaref[video,torchcodec,hf]'  # video + image + HF extras
 For uv: `uv add 'mediaref[video,torchcodec,hf]'`. MediaRef follows [semantic versioning](https://semver.org/); the wire schema (`uri`, `pts_ns`) is frozen for the life of Spec 1.x.
 
 **Default video backend: TensorCodec.** `ref.to_ndarray()` and `batch_decode(refs)`
-use TensorCodec's CPU playback selection and NumPy output. TensorCodec 0.1.3+
+use TensorCodec's CPU playback selection and NumPy output. TensorCodec 0.1.4+
 bundles FFmpeg in Linux (glibc 2.17+) and macOS 14+ wheels for x86_64/ARM64.
 Other platforms require a source build with Rust and FFmpeg 7 headers, or the
 optional PyAV backend: install `mediaref[pyav]` and pass `decoder="pyav"`.
@@ -80,8 +80,7 @@ MediaRef's native grayscale/depth path still uses PyAV. Historical benchmark
 numbers above were measured with PyAV, not TensorCodec.
 
 For time-based windows, TensorCodec's opt-in `timestamp` mode avoids the initial
-full packet scan and selects frames by actual PTS (requires the unreleased
-[TensorCodec timestamp support](https://github.com/MilkClouds/tensorcodec/pull/4)):
+full packet scan and selects frames by actual PTS:
 
 ```python
 frames = batch_decode(refs, decoder_options={"seek_mode": "timestamp"})
