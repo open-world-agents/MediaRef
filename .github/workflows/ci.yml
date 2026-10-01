@@ -35,16 +35,32 @@ jobs:
       run: |
         uv venv
         uv sync --dev
-    
-    - name: Run tests
-      run: |
-        uv run pytest --cov=mediaref --cov-report=xml --cov-report=term
-    
-    - name: Setup environments with extras
-      run: 
-        uv sync --dev --all-extras
-    
+
     - name: Run tests
       run: |
         uv run pytest --cov=mediaref --cov-report=xml --cov-report=term
 
+    - name: Setup environments with legacy and image extras
+      run: uv sync --dev --extra pyav --extra torchcodec --extra torchcodec-image --extra hf
+
+    - name: Install default video backend on supported wheel platform
+      if: runner.os == 'Linux' && matrix.python-version != '3.9'
+      run: uv sync --dev --extra video --extra pyav --extra torchcodec --extra torchcodec-image --extra hf
+
+    - name: Run tests
+      run: |
+        uv run pytest --cov=mediaref --cov-report=xml --cov-report=term
+
+  tensorcodec-only:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: astral-sh/setup-uv@v7
+        with:
+          python-version: '3.12'
+      - run: sudo apt-get update && sudo apt-get install -y ffmpeg
+      - run: uv sync --dev --extra video
+      - name: Test default decoding without PyAV or Torch
+        run: |
+          uv run python -c "import importlib.util; assert all(importlib.util.find_spec(n) is None for n in ('av', 'torch', 'torchcodec'))"
+          uv run pytest tests/video_decoder/test_tensorcodec_decoder.py tests/test_imports.py

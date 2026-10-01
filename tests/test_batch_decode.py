@@ -16,7 +16,7 @@ from mediaref.batch import _coalesce_native_sparse_chunks
 from tests import TORCHCODEC_INSTALLED
 
 
-@pytest.mark.video
+@pytest.mark.tensorcodec
 class TestBatchDecodeImages:
     """Test batch decoding of images (requires video extra for batch_decode)."""
 
@@ -74,7 +74,7 @@ class TestBatchDecodeImages:
             np.testing.assert_array_equal(result, individual_result)
 
 
-@pytest.mark.video
+@pytest.mark.tensorcodec
 class TestBatchDecodeVideo:
     """Test batch decoding of video frames."""
 
@@ -124,7 +124,7 @@ class TestBatchDecodeVideo:
             np.testing.assert_array_equal(result, individual_result)
 
 
-@pytest.mark.video
+@pytest.mark.tensorcodec
 class TestBatchDecodeMixed:
     """Test batch decoding with mixed images and videos."""
 
@@ -258,14 +258,14 @@ class TestBatchDecodeDecoders:
                     del sys.modules["mediaref.video_decoder.pyav_decoder"]
 
                 # Now trying to use batch_decode should raise ImportError with helpful message
-                with pytest.raises(ImportError, match="Video frame extraction requires.*video.*extra"):
+                with pytest.raises(ImportError, match="PyAV video frame extraction requires.*pyav.*extra"):
                     batch_decode(refs, decoder="pyav")
 
 
 class TestBatchDecodeCache:
     """Test cache cleanup functionality."""
 
-    @pytest.mark.video
+    @pytest.mark.tensorcodec
     def test_cleanup_cache(self, sample_video_file: tuple[Path, list[int]]):
         """Test that cleanup_cache doesn't raise errors."""
         video_path, timestamps = sample_video_file
@@ -277,14 +277,14 @@ class TestBatchDecodeCache:
         # Cleanup should not raise
         cleanup_cache()
 
-    @pytest.mark.video
+    @pytest.mark.tensorcodec
     def test_cleanup_cache_multiple_times(self, sample_video_file: tuple[Path, list[int]]):
         """Test that cleanup_cache can be called multiple times."""
         cleanup_cache()
         cleanup_cache()
         cleanup_cache()
 
-    @pytest.mark.video
+    @pytest.mark.tensorcodec
     def test_batch_decode_after_cleanup(self, sample_video_file: tuple[Path, list[int]]):
         """Test that batch_decode works after cache cleanup."""
         video_path, timestamps = sample_video_file
@@ -301,7 +301,7 @@ class TestBatchDecodeCache:
 
 
 @pytest.mark.performance
-@pytest.mark.video
+@pytest.mark.tensorcodec
 class TestBatchDecodePerformance:
     """Performance benchmarks for batch decoding."""
 
@@ -394,7 +394,7 @@ class TestBatchDecodePerformance:
         print(f"\nMemory test: decoded {len(refs)} frames {self.NUM_RUNS} times (no errors)")
 
 
-@pytest.mark.video
+@pytest.mark.tensorcodec
 class TestBatchDecodeErrorHandling:
     """Test error handling in batch decoding."""
 
@@ -421,7 +421,7 @@ class TestBatchDecodeErrorHandling:
             batch_decode(refs, allow_images=True)
 
 
-@pytest.mark.video
+@pytest.mark.tensorcodec
 class TestBatchDecodeValidation:
     """Test allow_images, allow_multi_video, allow_gap, and gap_threshold."""
 
@@ -502,6 +502,10 @@ class TestBatchDecodeValidation:
 
 
 class TestSparseBackendPlanning:
+    def test_tensorcodec_coalesces_gap_chunks(self):
+        chunks = [([3, 0], [0.1, 0.2]), ([2, 1], [10.0, 10.1])]
+        assert _coalesce_native_sparse_chunks(chunks, "tensorcodec") == [([3, 0, 2, 1], [0.1, 0.2, 10.0, 10.1])]
+
     def test_torchcodec_coalesces_gap_chunks(self):
         chunks = [([0, 1], [0.0, 0.1]), ([2], [10.0]), ([3], [20.0])]
 

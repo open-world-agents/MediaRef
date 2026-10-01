@@ -1,6 +1,7 @@
 """Shared test fixtures for MediaRef test suite."""
 
 import base64
+import importlib.util
 from pathlib import Path
 
 import cv2
@@ -257,7 +258,8 @@ def remote_test_image_url() -> str:
 def pytest_configure(config):
     """Register custom markers."""
     config.addinivalue_line("markers", "network: tests requiring network access")
-    config.addinivalue_line("markers", "video: tests requiring video dependencies")
+    config.addinivalue_line("markers", "video: tests requiring PyAV")
+    config.addinivalue_line("markers", "tensorcodec: tests requiring the default TensorCodec backend")
     config.addinivalue_line("markers", "slow: slow tests (batch processing, large files)")
     config.addinivalue_line("markers", "integration: integration tests")
     config.addinivalue_line("markers", "performance: performance benchmark tests")
@@ -275,7 +277,12 @@ def pytest_collection_modifyitems(config, items):
 
     skip_video = pytest.mark.skip(reason="Video dependencies not installed (av)")
 
+    tensorcodec_available = importlib.util.find_spec("tensorcodec") is not None
+    skip_tensorcodec = pytest.mark.skip(reason="Default TensorCodec backend not installed")
+
     for item in items:
+        if "tensorcodec" in item.keywords and not tensorcodec_available:
+            item.add_marker(skip_tensorcodec)
         # Skip video tests if video dependencies not available
         if "video" in item.keywords and not video_available:
             item.add_marker(skip_video)

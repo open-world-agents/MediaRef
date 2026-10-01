@@ -81,7 +81,7 @@ def test_pyav_backend_has_specific_install_error():
         try:
             from mediaref.video_decoder import PyAVVideoDecoder  # noqa: F401
         except ImportError as error:
-            assert "mediaref[video]" in str(error)
+            assert "mediaref[pyav]" in str(error)
         else:
             raise AssertionError("PyAV import unexpectedly succeeded")
         print("OK")

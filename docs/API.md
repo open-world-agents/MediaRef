@@ -44,7 +44,7 @@ ref = MediaRef(uri=DataURI.from_image(rgb, format="png"))
 
 ### Methods
 
-`to_ndarray(format="rgb", *, decoder="pyav", decoder_options=None, image_decoder="pillow", image_decoder_options=None, storage_options=None) -> np.ndarray`
+`to_ndarray(format="rgb", *, decoder="tensorcodec", decoder_options=None, image_decoder="pillow", image_decoder_options=None, storage_options=None) -> np.ndarray`
 - Loads the media as a numpy array in the requested format.
 - Formats: `"rgb"` (default), `"bgr"`, `"rgba"`, `"bgra"`, `"gray"`, and [`"native"`](#native-video-pixels) (PyAV video only).
 - Returns shape: `(H, W, 3)` for RGB/BGR, `(H, W, 4)` for RGBA/BGRA, `(H, W)` for grayscale.
@@ -53,7 +53,7 @@ ref = MediaRef(uri=DataURI.from_image(rgb, format="png"))
 - `image_decoder` selects Pillow (default) or TorchCodec 0.16+; `image_decoder_options` configures TorchCodec's `decode_image` call.
 - `storage_options` is passed to fsspec for either media type.
 
-`to_pil_image(format="rgb", *, decoder="pyav", decoder_options=None, image_decoder="pillow", image_decoder_options=None, storage_options=None) -> PIL.Image`
+`to_pil_image(format="rgb", *, decoder="tensorcodec", decoder_options=None, image_decoder="pillow", image_decoder_options=None, storage_options=None) -> PIL.Image`
 - Same as `to_ndarray` but returns a PIL Image. Formats: `"rgb"`, `"rgba"`, `"gray"`.
 - PIL output requires `uint8`; use `to_ndarray` when preserving TorchCodec `uint16` image or `float32` HDR video output.
 
@@ -148,12 +148,12 @@ ref = MediaRef(uri=DataURI.from_file("photo.png"))
 ## `batch_decode`
 
 ```python
-batch_decode(refs, decoder="pyav", *, output_format="rgb", decoder_options=None, image_decoder="pillow", image_decoder_options=None, storage_options=None, ...) -> list[np.ndarray]
+batch_decode(refs, decoder="tensorcodec", *, output_format="rgb", decoder_options=None, image_decoder="pillow", image_decoder_options=None, storage_options=None, ...) -> list[np.ndarray]
 ```
 
 Decode many `MediaRef` video frames efficiently by grouping refs that share a URI, opening each container once, and seeking through the requested timestamps in order. Significantly faster than per-ref decoding when refs cluster on the same video file.
 
-PyAV requests are split at `gap_threshold` so it can seek over large gaps. TorchCodec receives one sorted sparse request per URI, allowing TorchCodec 0.15+ to apply its native skip/seek optimization. `allow_gap=False` validates the same threshold for both backends.
+PyAV requests are split at `gap_threshold` so it can seek over large gaps. TensorCodec and TorchCodec 0.15+ receive one sorted sparse request per URI, allowing TorchCodec 0.15+ to apply its native skip/seek optimization. `allow_gap=False` validates the same threshold for all backends.
 
 To compare native and manually chunked requests on your media and hardware, run `python benchmarks/benchmark_sparse_batching.py VIDEO --backend torchcodec --timestamps 0 10 30 60`.
 
@@ -161,7 +161,7 @@ To compare native and manually chunked requests on your media and hardware, run 
 from mediaref import MediaRef, batch_decode
 
 refs = [MediaRef(uri="episode.mp4", pts_ns=int(i * 1e9)) for i in range(10)]
-frames = batch_decode(refs)  # default: PyAV (CPU)
+frames = batch_decode(refs)  # default: TensorCodec (CPU)
 frames = batch_decode(refs, decoder="torchcodec")  # TorchCodec on CPU by default
 frames = batch_decode(
     refs,
@@ -185,8 +185,8 @@ to preserve decoded pixel values without RGB conversion:
 
 ```python
 ref = MediaRef(uri="depth.mkv", pts_ns=100_000_000)
-pixels = ref.to_ndarray(format="native")
-frames = batch_decode([ref], output_format="native")
+pixels = ref.to_ndarray(format="native", decoder="pyav")
+frames = batch_decode([ref], output_format="native", decoder="pyav")
 ```
 
 This mode requires PyAV video refs. Supported source formats and output arrays:
@@ -200,7 +200,7 @@ This mode requires PyAV video refs. Supported source formats and output arrays:
 
 Pass `decoder_options={"expected_pixel_format": "gray16le"}` to assert the source
 format. Unsupported formats, within-stream format changes, non-video refs and
-native output requested from TorchCodec fail explicitly. Batch order and duplicate
+native output requested from TensorCodec or TorchCodec fail explicitly. Batch order and duplicate
 references are preserved; each native result owns its array storage.
 
 Native output preserves numeric samples, not encoded bytes, source byte order or
@@ -210,14 +210,20 @@ use `to_ndarray`, not `to_pil_image`, for native output.
 
 ### Decoder backends
 
-| | `"pyav"` (default) | `"torchcodec"` |
-| --- | --- | --- |
-| Backend | PyAV (FFmpeg) | TorchCodec (FFmpeg) |
-| Acceleration | CPU only | CPU by default; CUDA with `decoder_options={"device": "cuda"}` |
-| Install | `pip install 'mediaref[video]'` | `pip install 'mediaref[torchcodec]'` (PyAV not required) |
-| Sources | local paths, external file-likes, and any fsspec URI | local paths, bytes, external file-likes, and any fsspec URI |
+| | `"tensorcodec"` (default) | `"pyav"` | `"torchcodec"` |
+| --- | --- | --- | --- |
+| Output | NumPy CPU arrays | NumPy CPU arrays | Torch tensors converted to host NumPy |
+| Install | `mediaref[video]` | `mediaref[pyav]` | `mediaref[torchcodec]` |
+| Python | 3.10+ | 3.9+ | 3.9+ with a compatible TorchCodec version |
+| FFmpeg | Bundled in Linux x86_64/glibc 2.28+ wheels | Bundled by PyAV | Compatible shared FFmpeg required |
+| Scope | CPU SDR RGB; exact seeking; one FFmpeg thread by default | Legacy RGB and value-preserving native output | CPU/CUDA, transforms and HDR when supported |
+| Sources | Paths, bytes, file-likes, fsspec URIs | Paths, file-likes, fsspec URIs | Paths, bytes, file-likes, fsspec URIs |
 
-Both backends share unified [playback semantics](playback_semantics.md), so a given `pts_ns` (when supported by both) returns the same frame regardless of decoder.
+All backends follow [playback semantics](playback_semantics.md). Pixel conversion
+can differ slightly between FFmpeg builds. TensorCodec source builds on other
+platforms require Rust, libclang and FFmpeg 7 development headers/libraries;
+use the explicit PyAV backend when those are unavailable. The Python 3.9 core
+continues to support images and optional PyAV/TorchCodec video decoding.
 
 `decoder_options` is passed to the selected decoder constructor. TorchCodec options include `device`, `seek_mode`, `num_ffmpeg_threads`, `dimension_order`, `stream_index`, `transforms`, and `output_dtype`. With the default `output_format="rgb"`, MediaRef normalizes the returned frame batch to NCHW internally and the final `batch_decode` result to RGB HWC NumPy arrays, including when TorchCodec decodes on CUDA or uses `dimension_order="NHWC"`. TorchCodec 0.14+ accepts `output_dtype="auto"`, returning `uint8` for SDR and `float32` in `[0, 1]` for detected HDR content; MediaRef preserves that dtype and uses `1.0` for an added opaque alpha channel.
 
@@ -256,7 +262,11 @@ python -c 'from torchcodec._core import get_ffmpeg_library_versions; print(get_f
 
 Install shared FFmpeg using TorchCodec's official instructions when that probe fails. [`patch-torchcodec`](../scripts/patch_torchcodec/) is an optional Linux fallback for environments that already have PyAV and want TorchCodec to reuse PyAV's bundled libraries. Its `--verify` command performs the same FFmpeg-backed probe; a plain `import torchcodec` is intentionally not considered sufficient. PyAV-only callers remain unaffected because decoder backends are loaded independently.
 
-`cleanup_cache()` — clears loaded PyAV and TorchCodec caches. Call between long-running decode sessions if you want to release decoder memory before automatic eviction.
+`cleanup_cache()` — clears loaded TensorCodec, PyAV and TorchCodec caches. Call between long-running decode sessions if you want to release decoder memory before automatic eviction.
+
+TensorCodec range queries include the frame playing at the start even when its PTS is earlier; the stop is exclusive. FPS queries return timestamps on the requested sampling grid.
+
+TensorCodec caches decoders by source/options, serializes shared calls and reopens active leases after cache clear or fork. `close()` releases a lease; `cleanup_cache()` frees the cached native decoder before closing its owned fsspec source. External file-likes remain caller-owned.
 
 The PyAV backend reopens local files per decoder and caches only their metadata (keyed on path, mtime and size, so replaced files are picked up). Remote containers stay open in a per-thread LRU (`AV_CACHE_SIZE`, default 10), since reopening one costs seconds of network round trips.
 
@@ -266,9 +276,9 @@ For finer control, use the decoder classes directly:
 
 ```python
 import numpy as np
-from mediaref.video_decoder import PyAVVideoDecoder, TorchCodecVideoDecoder
+from mediaref.video_decoder import TensorCodecVideoDecoder, TorchCodecVideoDecoder
 
-with PyAVVideoDecoder("episode.mp4") as dec:
+with TensorCodecVideoDecoder("episode.mp4") as dec:
     batch = dec.get_frames_played_at([1.5])
     frame = np.transpose(batch.data[0], (1, 2, 0))
 

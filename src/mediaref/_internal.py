@@ -285,7 +285,7 @@ def load_video_frame_as_rgba(
     path_or_url: str,
     pts_ns: int,
     *,
-    decoder: str = "pyav",
+    decoder: str = "tensorcodec",
     decoder_options: Optional[Mapping[str, Any]] = None,
     storage_options: Optional[Mapping[str, Any]] = None,
 ) -> npt.NDArray[np.generic]:
@@ -303,16 +303,9 @@ def load_video_frame_as_rgba(
         ValueError: If loading fails
         FileNotFoundError: If local file doesn't exist
     """
-    if decoder == "pyav":
-        from .video_decoder import PyAVVideoDecoder
+    from .batch import _get_decoder_class
 
-        decoder_class = PyAVVideoDecoder
-    elif decoder == "torchcodec":
-        from .video_decoder import TorchCodecVideoDecoder
-
-        decoder_class = TorchCodecVideoDecoder
-    else:
-        raise ValueError(f"Unknown decoder backend: {decoder}. Must be 'pyav' or 'torchcodec'")
+    decoder_class = _get_decoder_class(decoder)
 
     pts_seconds = pts_ns / NANOSECOND
 

@@ -74,7 +74,7 @@ class TestToNdarrayImage:
             ref.to_ndarray()
 
 
-@pytest.mark.video
+@pytest.mark.tensorcodec
 class TestToNdarrayVideo:
     """Test to_ndarray method for video frames."""
 
@@ -169,7 +169,7 @@ class TestToPilImage:
         assert pil_img.size == (64, 48)
         assert pil_img.mode == "RGB"
 
-    @pytest.mark.video
+    @pytest.mark.tensorcodec
     def test_to_pil_image_from_video(self, sample_video_file: tuple[Path, list[int]]):
         """Test loading PIL Image from video frame."""
         video_path, timestamps = sample_video_file
@@ -252,7 +252,7 @@ class TestDataURICreation:
         assert parsed.is_base64 == original.is_base64
         assert parsed.data == original.data
 
-    @pytest.mark.video
+    @pytest.mark.tensorcodec
     def test_from_video_frame(self, sample_video_file: tuple[Path, list[int]]):
         """Test creating DataURI from video frame."""
         video_path, timestamps = sample_video_file
@@ -568,7 +568,7 @@ class TestDataURIWithMediaRef:
         assert ref.is_embedded
         np.testing.assert_array_equal(ref.to_ndarray(), sample_rgb)
 
-    @pytest.mark.video
+    @pytest.mark.tensorcodec
     def test_video_frame_to_datauri(self, sample_video_file: tuple[Path, list[int]]):
         """Test creating DataURI from video frame."""
         video_path, timestamps = sample_video_file

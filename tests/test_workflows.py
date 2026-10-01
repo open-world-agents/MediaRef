@@ -37,7 +37,7 @@ class TestEndToEndWorkflows:
         # 5. Verify data is identical (PNG is lossless)
         np.testing.assert_array_equal(rgb, embedded_rgb)
 
-    @pytest.mark.video
+    @pytest.mark.tensorcodec
     def test_video_workflow_batch_processing(self, sample_video_file: tuple[Path, list[int]]):
         """Test complete workflow: create video refs -> batch decode -> process."""
         video_path, timestamps = sample_video_file
@@ -64,7 +64,7 @@ class TestEndToEndWorkflows:
         # 6. Cleanup
         cleanup_cache()
 
-    @pytest.mark.video
+    @pytest.mark.tensorcodec
     def test_mixed_media_workflow(self, sample_image_files: list[Path], sample_video_file: tuple[Path, list[int]]):
         """Test workflow with mixed images and videos."""
         video_path, timestamps = sample_video_file
@@ -173,7 +173,7 @@ class TestDataURIIntegration:
         restored_rgb = restored.to_ndarray()
         np.testing.assert_array_equal(original_rgb, restored_rgb)
 
-    @pytest.mark.video
+    @pytest.mark.tensorcodec
     def test_video_frame_to_data_uri(self, sample_video_file: tuple[Path, list[int]]):
         """Test converting video frame to data URI."""
         video_path, timestamps = sample_video_file
@@ -222,7 +222,7 @@ class TestRemoteURLIntegration:
         # Verify roundtrip
         np.testing.assert_array_equal(original_rgb, embedded_ref.to_ndarray())
 
-    @pytest.mark.video
+    @pytest.mark.tensorcodec
     def test_remote_video_loading(self):
         """Test loading video frame from remote URL."""
         remote_video_url = (
@@ -265,7 +265,7 @@ class TestPropertyInteractions:
         assert remote_ref.is_remote
         assert not remote_ref.is_embedded
 
-    @pytest.mark.video
+    @pytest.mark.tensorcodec
     def test_video_property_combinations(self, sample_video_file: tuple[Path, list[int]]):
         """Test video property combinations."""
         video_path, timestamps = sample_video_file
@@ -283,7 +283,7 @@ class TestPropertyInteractions:
         assert not image_ref.is_embedded
 
 
-@pytest.mark.video
+@pytest.mark.tensorcodec
 class TestRGBADecoding:
     """Test RGBA decoding stability.
 
@@ -348,7 +348,7 @@ class TestRGBADecoding:
 class TestErrorRecovery:
     """Test error recovery and cleanup."""
 
-    @pytest.mark.video
+    @pytest.mark.tensorcodec
     def test_cleanup_after_error(self, sample_video_file: tuple[Path, list[int]]):
         """Test that cleanup works after errors."""
         video_path, timestamps = sample_video_file
@@ -369,14 +369,14 @@ class TestErrorRecovery:
         results = batch_decode(refs)
         assert len(results) == 3
 
-    @pytest.mark.video
+    @pytest.mark.tensorcodec
     def test_multiple_cleanup_calls(self):
         """Test that multiple cleanup calls don't cause issues."""
         cleanup_cache()
         cleanup_cache()
         cleanup_cache()
 
-    @pytest.mark.video
+    @pytest.mark.tensorcodec
     def test_load_after_cleanup(self, sample_video_file: tuple[Path, list[int]]):
         """Test loading after cleanup."""
         video_path, timestamps = sample_video_file

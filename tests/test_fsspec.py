@@ -223,7 +223,7 @@ def sample_video_bytes() -> tuple[bytes, list[int]]:
     return buf.getvalue(), pts_ns
 
 
-@pytest.mark.video
+@pytest.mark.tensorcodec
 class TestVideoLoadingFromMemoryFS:
     def test_to_ndarray_single_frame_from_memory_uri(self, sample_video_bytes):
         data, pts_ns_list = sample_video_bytes
@@ -349,7 +349,7 @@ class TestVideoLoadingFromMemoryFS:
 # ---------------------------------------------------------------------------
 
 
-@pytest.mark.video
+@pytest.mark.tensorcodec
 @pytest.mark.network
 class TestHfDatasetIntegration:
     """Live integration tests against the open-world-agents/D2E-480p HF dataset.

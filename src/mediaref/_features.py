@@ -23,8 +23,8 @@ def require_video() -> None:
     """
     if not HAS_VIDEO:
         raise ImportError(
-            "Video frame extraction requires the 'video' extra. "
-            "Install with: pip install mediaref[video]\n"
+            "PyAV video frame extraction requires the 'pyav' extra. "
+            "Install with: pip install mediaref[pyav]\n"
             f"Original error: {VIDEO_ERROR}"
         )
 

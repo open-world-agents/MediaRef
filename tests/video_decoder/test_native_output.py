@@ -65,20 +65,20 @@ def test_public_native_api(native_video):
     path, fmt, expected = native_video
     refs = [MediaRef(uri=str(path), pts_ns=t) for t in [190_000_000, 0, 190_000_000]]
     options = {"expected_pixel_format": fmt}
-    frames = batch_decode(refs, output_format="native", decoder_options=options)
+    frames = batch_decode(refs, output_format="native", decoder="pyav", decoder_options=options)
     for ref, frame, value in zip(refs, frames, [expected + 1, expected, expected + 1]):
         assert frame.dtype == np.uint16 and frame.shape == (16, 16)
         np.testing.assert_array_equal(frame, value)
-        np.testing.assert_array_equal(ref.to_ndarray(format="native", decoder_options=options), value)
+        np.testing.assert_array_equal(ref.to_ndarray(format="native", decoder="pyav", decoder_options=options), value)
     frames[0][:] = 0
     np.testing.assert_array_equal(frames[2], expected + 1)
-    assert refs[0].to_ndarray().shape == (16, 16, 3)
+    assert refs[0].to_ndarray(decoder="pyav").shape == (16, 16, 3)
     with pytest.raises(ValueError, match="PyAV"):
         refs[0].to_ndarray(format="native", decoder="torchcodec")
     with pytest.raises(ValueError, match="Expected source"):
-        refs[0].to_ndarray(format="native", decoder_options={"expected_pixel_format": "gray"})
+        refs[0].to_ndarray(format="native", decoder="pyav", decoder_options={"expected_pixel_format": "gray"})
     with pytest.raises(ValueError, match="Conflicting"):
-        batch_decode(refs, output_format="native", decoder_options={"output_format": "rgb"})
+        batch_decode(refs, output_format="native", decoder="pyav", decoder_options={"output_format": "rgb"})
     with pytest.raises(ValueError, match="format='native'"):
         refs[0].to_ndarray(decoder_options={"output_format": "native"})
 
@@ -105,6 +105,6 @@ def test_native_byte_formats(tmp_path, fmt, channels):
         for packet in stream.encode():
             container.mux(packet)
     ref = MediaRef(uri=str(path), pts_ns=0)
-    actual = ref.to_ndarray(format="native")
+    actual = ref.to_ndarray(format="native", decoder="pyav")
     assert actual.dtype == expected.dtype and actual.shape == expected.shape
     np.testing.assert_array_equal(actual, expected)

@@ -40,6 +40,9 @@ mediaref = "mediaref._cli:main"
 
 [project.optional-dependencies]
 video = [
+    "tensorcodec>=0.1.0,<0.2; python_version >= '3.10'",
+]
+pyav = [
     "av>=15.0",  # FFmpeg 7.0 support
 ]
 torchcodec = [

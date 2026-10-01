@@ -16,7 +16,7 @@ if TYPE_CHECKING:
     from .video_decoder import BaseVideoDecoder
 
 # Type alias for decoder backend selection
-DecoderBackend = Literal["pyav", "torchcodec"]
+DecoderBackend = Literal["tensorcodec", "pyav", "torchcodec"]
 
 
 def _split_by_gap(
@@ -48,8 +48,10 @@ def _coalesce_native_sparse_chunks(
     torchcodec_version: Optional[str] = None,
 ) -> list[tuple[list[int], list[float]]]:
     """Use one native sparse request when the backend optimizes sparse seeks."""
-    if backend != "torchcodec" or len(chunks) <= 1:
+    if len(chunks) <= 1 or backend not in {"tensorcodec", "torchcodec"}:
         return chunks
+    if backend == "tensorcodec":
+        return [([i for indices, _ in chunks for i in indices], [t for _, times in chunks for t in times])]
     if torchcodec_version is None:
         try:
             torchcodec_version = version("torchcodec")
@@ -101,7 +103,11 @@ def _decode_video_chunks(
 
 def _get_decoder_class(backend: DecoderBackend) -> Type["BaseVideoDecoder"]:
     """Get decoder class for the specified backend."""
-    if backend == "pyav":
+    if backend == "tensorcodec":
+        from .video_decoder import TensorCodecVideoDecoder
+
+        return TensorCodecVideoDecoder
+    elif backend == "pyav":
         from .video_decoder import PyAVVideoDecoder
 
         return PyAVVideoDecoder
@@ -116,12 +122,12 @@ def _get_decoder_class(backend: DecoderBackend) -> Type["BaseVideoDecoder"]:
                 "Install with: pip install 'mediaref[torchcodec]'"
             ) from e
     else:
-        raise ValueError(f"Unknown decoder backend: {backend}. Must be 'pyav' or 'torchcodec'")
+        raise ValueError(f"Unknown decoder backend: {backend}. Must be 'tensorcodec', 'pyav' or 'torchcodec'")
 
 
 def batch_decode(
     refs: list["MediaRef"],
-    decoder: DecoderBackend = "pyav",
+    decoder: DecoderBackend = "tensorcodec",
     *,
     output_format: Literal["rgb", "native"] = "rgb",
     decoder_options: Optional[Mapping[str, Any]] = None,
@@ -137,16 +143,16 @@ def batch_decode(
     """Decode multiple media references efficiently using batch decoding.
 
     Groups video frames by file and decodes them in one pass for efficiency.  When timestamps within
-    a single video have large gaps, PyAV splits them into contiguous chunks while TorchCodec uses its
-    optimized native sparse-seek request.
+    a single video have large gaps, PyAV splits them into contiguous chunks. TensorCodec and recent
+    TorchCodec use an optimized native sparse-seek request.
 
     Args:
         refs: List of MediaRef objects to decode.
-        decoder: Decoder backend (``'pyav'`` or ``'torchcodec'``).
+        decoder: Decoder backend: ``'tensorcodec'`` (default), ``'pyav'`` or ``'torchcodec'``.
         output_format: ``rgb`` (default) or value-preserving ``native`` for PyAV
             video refs only. Native grayscale is HW; packed color is HWC.
         decoder_options: Options passed to the selected video decoder constructor.
-            For TorchCodec this includes options such as ``device``, ``seek_mode``,
+            For TensorCodec/TorchCodec this includes options such as ``device``, ``seek_mode``,
             ``num_ffmpeg_threads``, and ``dimension_order``. These options apply to
             video refs only.
         image_decoder: Image decoder backend (``'pillow'`` or ``'torchcodec'``).
@@ -184,10 +190,10 @@ def batch_decode(
     if options.get("output_format", output_format) != output_format:
         raise ValueError("Conflicting output_format and decoder_options")
     if output_format == "native":
-        if decoder != "pyav":
-            raise ValueError("Native video output requires the PyAV backend")
         if any(not ref.is_video for ref in refs if ref is not None):
             raise ValueError("Native output currently supports video refs only")
+        if decoder != "pyav":
+            raise ValueError("Native video output requires the PyAV backend")
         options["output_format"] = "native"
     if not refs:
         return []
@@ -295,12 +301,9 @@ def cleanup_cache():
         >>> # Clean up when done
         >>> cleanup_cache()
     """
-    try:
-        from . import cached_av
-    except ImportError:
-        pass
-    else:
-        cached_av.cleanup_cache()
+    module = sys.modules.get("mediaref.cached_av")
+    if module is not None:
+        module.cleanup_cache()
 
     # Do not import an optional backend just to clean it up. If a backend was
     # used, its module is already loaded and its cache can be cleared directly.
@@ -310,3 +313,7 @@ def cleanup_cache():
     module = sys.modules.get("mediaref.video_decoder.torchcodec_decoder")
     if module is not None:
         module.TorchCodecVideoDecoder.clear_cache()
+
+    module = sys.modules.get("mediaref.video_decoder.tensorcodec_decoder")
+    if module is not None:
+        module.TensorCodecVideoDecoder.clear_cache()

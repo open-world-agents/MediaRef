@@ -65,9 +65,9 @@ class BaseVideoDecoder(ABC):
     ) -> FrameBatch:
         """Return multiple frames in the given range.
 
-        Frames are in the half open range [start_seconds, stop_seconds). Each
-        returned frame's :term:`pts`, in seconds, is inside of the half open
-        range.
+        TensorCodec and current TorchCodec select frames overlapping the half-open
+        playback interval, including the frame already playing at start_seconds.
+        Its PTS may precede the start. The legacy PyAV range API selects by PTS.
 
         Args:
             start_seconds: Time, in seconds, of the start of the range.
